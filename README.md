@@ -160,7 +160,7 @@ The same binary codebase compiles to native executables for each platform with *
 
 If you need a **production-ready** visual novel library manager **right now**, use **VN Pathfinder 1.0**:
 
-🔗 **[VN Pathfinder 1.0 on GitHub](https://github.com/mizua/vn-pathfinder)**
+🔗 **[VN Pathfinder 1.0 on GitHub](https://github.com/NikoCloud/VN-Pathfinder)**
 
 Version 1.0 is feature-complete and stable. Grab the latest release and start managing your library today. We'll transition to 2.0 when it reaches parity — no rush.
 
