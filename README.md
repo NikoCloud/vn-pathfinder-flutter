@@ -116,7 +116,7 @@ VN Pathfinder 2.0 targets:
 | **Windows** 10+ | 🎯 Primary | Tested on Windows 10/11 |
 | **macOS** 11+ | 🔄 Planned | Intel & Apple Silicon support |
 | **Linux** (GTK 3+) | 🔄 Planned | Ubuntu, Fedora, Debian, etc. |
-| **iOS/Android** | ⏸️ Future | Out of scope for 1.0, but codebase supports it |
+| **iOS/Android** | ⏸️ Future (3.0+) | Out of scope for 2.0 launch, but codebase supports it |
 
 The same binary codebase compiles to native executables for each platform with **zero code changes** — Flutter handles platform-specific details.
 
