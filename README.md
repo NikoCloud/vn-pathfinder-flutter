@@ -87,7 +87,7 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
 |--------|--------------|---------------|
 | **Language** | Python 3.11+ | Dart 3.x |
 | **GUI Framework** | Tkinter | Flutter + Material 3 |
-| **Rendering** | Software/Tk engine | Skia (GPU-accelerated) |
+| **Rendering** | Software/Tk engine | Impeller (GPU-accelerated; Vulkan/Metal backends) |
 | **Data Serialization** | JSON (custom parsing) | JSON + Dart serialization |
 | **Threading** | Python threading | Dart async/await |
 | **Packaging** | PyInstaller | Flutter build system |
