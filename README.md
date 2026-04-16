@@ -252,4 +252,4 @@ For development updates and status, follow this repository's commit history and 
 
 ---
 
-**Made with ❤️ by [Developer Name]** — Building the best VN library manager, one version at a time.
+**Made with ❤️ by NikoCloud** — Building the best VN library manager, one version at a time.
