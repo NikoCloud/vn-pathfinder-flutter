@@ -1,0 +1,71 @@
+# Flutter/Dart specifics
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+*.log
+
+# Generated files
+*.g.dart
+*.config.dart
+
+# Build directories
+build/
+.gradle/
+.idea/
+*.iml
+*.lock
+
+# macOS
+.DS_Store
+macos/Flutter/GeneratedPluginRegistrant.swift
+
+# Windows
+windows/flutter/generated_plugins.cmake
+windows/flutter/generated_plugin_register.cc
+
+# Linux
+linux/flutter/generated_plugins.cmake
+linux/flutter/generated_plugin_register.cc
+
+# Web
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.exe
+
+# Coverage
+coverage/
+
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.pyo
+*.swp
+.atom/
+.buildlog/
+.history
+.svn/
+.env
+.env.prod
+
+# Custom for project
+.vscode/launch.json
+pubspec.lock
