@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme.dart';
 import '../providers/settings_provider.dart';
+import 'modals/settings_modal.dart';
 
 class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
   final int selectedTab;
@@ -177,14 +178,13 @@ class _SettingsButtonState extends State<_SettingsButton> {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Settings',
+      message: 'Settings  (Ctrl+,)',
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         cursor: SystemMouseCursors.click,
         child: GestureDetector(
-          // Settings modal will be wired in Phase 5
-          onTap: () {},
+          onTap: () => showSettingsModal(context),
           child: Container(
             width: 32,
             height: 28,
