@@ -12,7 +12,7 @@
 | # | Phase | Status | Commit |
 |---|-------|--------|--------|
 | 1 | Project scaffold — shell, theme, models, providers | ✅ Done | `76b9d4a` |
-| 2 | Library screen — sidebar + detail panel | 🔄 In Progress | — |
+| 2 | Library screen — sidebar + detail panel | ✅ Done | `34f13ac` |
 | 3 | Settings modal | ⏳ Pending | — |
 | 4 | Launch + playtime tracking | ⏳ Pending | — |
 | 5 | Library — grid mode | ⏳ Pending | — |
@@ -52,20 +52,23 @@
 
 ---
 
-## Phase 2 — In Progress 🔄
+## Phase 2 — Done ✅
 
-**Goal:** Full Library screen UI matching the mockup.
+**Files created:**
+- `lib/widgets/sidebar/sidebar.dart` — 280px sidebar, Home/view-toggle header, Add Game button
+- `lib/widgets/sidebar/filter_panel.dart` — search (title/creator), tag include/exclude dropdowns (OR/AND), Engine + Status collapsibles, sort row
+- `lib/widgets/sidebar/game_list.dart` — virtualized ListView.builder, 62px item extent
+- `lib/widgets/sidebar/game_entry.dart` — cover thumb, title+dev+version meta, played-status dot, hover/select animations
+- `lib/widgets/detail/hero_banner.dart` — 400px hero, blurred cover bg, screenshot carousel overlay, title/dev, version selector, PLAY + Properties buttons
+- `lib/widgets/detail/screenshot_carousel.dart` — PageView with peek effect, auto-advance timer, dot indicators, prev/next nav
+- `lib/widgets/detail/meta_bar.dart` — Disk Size (async isolate), Last Played, Play Time, Play Count, Version
+- `lib/widgets/detail/detail_content.dart` — synopsis, tag chips, Edit/Fetch Metadata/Source Pages actions, notes textarea with auto-save
+- `lib/screens/library_screen.dart` — Row(sidebar | detail), empty states, _DetailPane with version switching + game launch
 
-**Widgets to build:**
-- `lib/widgets/sidebar/sidebar.dart` — sidebar container + bottom Add Game button
-- `lib/widgets/sidebar/filter_panel.dart` — search, tag include/exclude dropdowns, engine/status collapsibles, sort row
-- `lib/widgets/sidebar/game_list.dart` — virtualized ListView.builder of game entries
-- `lib/widgets/sidebar/game_entry.dart` — single row: cover thumb, title, meta, status dot
-- `lib/widgets/detail/hero_banner.dart` — 400px hero with blurred bg + screenshot carousel overlay + title/dev/play area
-- `lib/widgets/detail/screenshot_carousel.dart` — PageView with peek-prev/next effect, dots, auto-advance
-- `lib/widgets/detail/meta_bar.dart` — Disk Size / Last Played / Play Time / Play Count / Version
-- `lib/widgets/detail/detail_content.dart` — synopsis, tags, action buttons, notes textarea
-- `lib/screens/library_screen.dart` — replaces skeleton with Row(sidebar | detail)
+**Key decisions:**
+- `libraryScanProvider` wired into AppShell.build — activates auto-scan on startup and dir change
+- Disk size computation uses `compute()` isolate — never blocks UI thread
+- ListView.builder with fixed `itemExtent: 62` — virtualized for 1000+ game libraries
 
 ---
 
