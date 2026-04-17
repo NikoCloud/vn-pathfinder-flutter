@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/filter_provider.dart';
+import '../../providers/settings_provider.dart';
 import 'game_entry.dart';
 
 class GameList extends ConsumerWidget {
@@ -42,6 +43,8 @@ class GameList extends ConsumerWidget {
     }
 
     if (groups.isEmpty) {
+      final libraryDir = ref.watch(libraryDirProvider);
+      if (libraryDir.isEmpty) return const SizedBox.shrink();
       return const Padding(
         padding: EdgeInsets.all(16),
         child: Text(
