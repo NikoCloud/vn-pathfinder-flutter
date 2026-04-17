@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme.dart';
+import '../providers/library_provider.dart';
 import '../screens/library_screen.dart';
 import '../screens/archive_screen.dart';
 import 'navbar.dart';
@@ -14,6 +15,7 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(libraryScanProvider); // activates auto-scan listener
     final tab = ref.watch(activeTabProvider);
 
     return Scaffold(

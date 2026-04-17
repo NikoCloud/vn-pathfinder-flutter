@@ -162,8 +162,14 @@ final libraryProvider =
   (ref) => LibraryNotifier(ref),
 );
 
-// Auto-scan when library dir changes
+// Auto-scan on startup and whenever the library dir changes
 final libraryScanProvider = Provider<void>((ref) {
+  // Initial scan if dir is already configured
+  final dir = ref.read(libraryDirProvider);
+  if (dir.isNotEmpty) {
+    Future.microtask(() => ref.read(libraryProvider.notifier).scan());
+  }
+  // Re-scan whenever the dir changes
   ref.listen<String>(libraryDirProvider, (prev, next) {
     if (next.isNotEmpty && next != prev) {
       ref.read(libraryProvider.notifier).scan();
