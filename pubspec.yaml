@@ -1,0 +1,74 @@
+name: vn_pathfinder
+description: "Visual novel library manager — track, organise, and launch your collection."
+publish_to: 'none'
+version: 2.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Routing
+  go_router: ^14.8.1
+
+  # Window management (custom chrome, always-on-top, etc.)
+  window_manager: ^0.4.3
+
+  # File picking (library directory, exe override, custom art)
+  file_picker: ^8.3.7
+
+  # JSON serialisation
+  json_annotation: ^4.9.0
+
+  # Path utilities
+  path: ^1.9.1
+  path_provider: ^2.1.5
+
+  # Image loading & caching
+  cached_network_image: ^3.4.1
+
+  # HTTP client (metadata scraping)
+  http: ^1.3.0
+
+  # HTML parsing (scraper)
+  html: ^0.15.5
+
+  # URL launcher (open browser, open folder in Explorer)
+  url_launcher: ^6.3.1
+
+  # Archive extraction (zip)
+  archive: ^4.0.4
+
+  # Shared preferences (lightweight settings that don't need full JSON)
+  shared_preferences: ^2.3.5
+
+  # Intl (date formatting)
+  intl: ^0.20.2
+
+  # Crypto (file hashing for dedup, if needed)
+  crypto: ^3.0.6
+
+  # Equatable (value equality on models)
+  equatable: ^2.0.7
+
+  # Fonts (Inter UI + JetBrains Mono)
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.15
+  riverpod_generator: ^2.6.5
+  json_serializable: ^6.9.4
+  custom_lint: ^0.7.5
+  riverpod_lint: ^2.6.5
+
+flutter:
+  uses-material-design: true

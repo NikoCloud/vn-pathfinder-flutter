@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280">
+  <title>VN Pathfinder 2.0 — UI/UX Mockup</title>
+  <meta name="description" content="Interactive UI/UX prototype for VN Pathfinder 2.0 visual novel library manager">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TOP NAVIGATION BAR
+       ═══════════════════════════════════════════════════════════════ -->
+  <nav id="navbar">
+    <div class="nav-brand"
+         data-tooltip="VN Pathfinder 2.0 — Visual Novel Library Manager"
+         data-dev-tooltip="*Brand area: use Flutter Row + SvgPicture for logo. Material 3 NavigationBar.*">
+      <div class="nav-brand-icon">VP</div>
+      <span class="nav-brand-text">VN Pathfinder</span>
+    </div>
+
+    <div class="nav-tabs">
+      <div class="nav-tab active" data-view="library"
+           data-dev-tooltip="*Primary view — default on launch. Use GoRouter /library route.*">
+        LIBRARY
+      </div>
+      <div class="nav-tab" data-view="archive"
+           data-dev-tooltip="*Archive manager — extract, assign patches, manage archive files.*">
+        ARCHIVE
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <button class="nav-btn" id="settings-btn"
+              data-tooltip="Settings"
+              data-dev-tooltip="*Opens Settings modal. Keyboard shortcut: Ctrl+,*">
+        ⚙
+      </button>
+
+      <div class="lockdown-indicator locked" id="lockdown-badge"
+           data-tooltip="Network access is disabled. Click to open Settings."
+           data-dev-tooltip="*Lockdown state from SettingsProvider. Red=locked, Green=unlocked.*">
+        🔒 <span>LOCKDOWN</span>
+      </div>
+
+      <div class="window-controls"
+           data-dev-tooltip="*Remove these in Flutter — use window_manager package for native chrome.*">
+        <button class="win-btn" data-tooltip="Minimize">─</button>
+        <button class="win-btn" data-tooltip="Maximize">☐</button>
+        <button class="win-btn close" data-tooltip="Close">✕</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MAIN APP CONTAINER
+       ═══════════════════════════════════════════════════════════════ -->
+  <div id="app-container">
+
+    <!-- ─── SIDEBAR (Advanced Filter Panel + Game List) ─────────── -->
+    <aside id="sidebar"
+           data-dev-tooltip="*Sidebar width resizable in Flutter via GestureDetector + Draggable.*">
+
+      <div class="sidebar-header">
+        <div class="sidebar-home-row">
+          <button class="home-btn active" id="home-btn"
+                  data-tooltip="Return to library home"
+                  data-dev-tooltip="*Resets selection, shows overview or first game.*">
+            Home
+          </button>
+          <div class="view-toggle-group">
+            <button class="view-toggle active" id="list-view-btn"
+                    data-tooltip="List View"
+                    data-dev-tooltip="*Default view mode — sidebar+detail layout.*">
+              ☰
+            </button>
+            <button class="view-toggle" id="grid-view-btn"
+                    data-tooltip="Grid View"
+                    data-dev-tooltip="*Secondary view — cover art grid. Toggle stored in user prefs.*">
+              ⊞
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Advanced Filter Panel ──────────────────────────────── -->
+        <div class="filter-panel" id="filter-panel"
+             data-dev-tooltip="*FilterProvider: combines text, tags, exclusions, engine, status filters. Debounce 150ms.*">
+
+          <!-- Search -->
+          <div class="filter-section">
+            <div class="filter-section-label">
+              <span>SEARCH</span>
+              <button class="filter-toggle-btn" id="search-mode-toggle"
+                      data-tooltip="Toggle search by Title or Creator">TITLE</button>
+            </div>
+            <div class="filter-search">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="search-input" placeholder="Search titles..."
+                     data-dev-tooltip="*Live-filter with debounce 150ms. Matches title or developer based on toggle.*">
+            </div>
+          </div>
+
+          <!-- Tags include -->
+          <div class="filter-section">
+            <div class="filter-section-label">
+              <span>TAGS <span class="text-muted">(MAX 10)</span></span>
+              <button class="filter-toggle-btn" id="tag-mode-toggle"
+                      data-tooltip="Toggle OR / AND matching">OR</button>
+            </div>
+            <div class="filter-dropdown-multi" id="tag-filter-dropdown">
+              <div class="filter-dropdown-trigger" id="tag-filter-trigger">
+                <span>Select a tag to filter...</span>
+                <span class="arrow">▾</span>
+              </div>
+              <div class="filter-dropdown-menu" id="tag-filter-menu">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+            <div class="filter-chips" id="tag-filter-chips"></div>
+          </div>
+
+          <!-- Tags exclude -->
+          <div class="filter-section">
+            <div class="filter-section-label">
+              <span>EXCLUDE TAGS <span class="text-muted">(MAX 10)</span></span>
+            </div>
+            <div class="filter-dropdown-multi" id="exclude-filter-dropdown">
+              <div class="filter-dropdown-trigger" id="exclude-filter-trigger">
+                <span>Select to exclude...</span>
+                <span class="arrow">▾</span>
+              </div>
+              <div class="filter-dropdown-menu" id="exclude-filter-menu">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+            <div class="filter-chips" id="exclude-filter-chips"></div>
+          </div>
+
+          <!-- Engine (collapsible) -->
+          <div class="filter-collapsible">
+            <div class="filter-collapsible-header collapsed" id="engine-filter-header">
+              <span class="arrow">▾</span>
+              <span>ENGINE</span>
+            </div>
+            <div class="filter-collapsible-body hidden" id="engine-filter-body">
+              <label class="filter-checkbox"><input type="checkbox" value="renpy" checked> Ren'Py</label>
+              <label class="filter-checkbox"><input type="checkbox" value="rpgm" checked> RPGM</label>
+              <label class="filter-checkbox"><input type="checkbox" value="unity" checked> Unity</label>
+              <label class="filter-checkbox"><input type="checkbox" value="html" checked> HTML</label>
+              <label class="filter-checkbox"><input type="checkbox" value="unreal" checked> Unreal</label>
+              <label class="filter-checkbox"><input type="checkbox" value="other" checked> Others</label>
+            </div>
+          </div>
+
+          <!-- Status (collapsible) -->
+          <div class="filter-collapsible">
+            <div class="filter-collapsible-header collapsed" id="status-filter-header">
+              <span class="arrow">▾</span>
+              <span>STATUS</span>
+            </div>
+            <div class="filter-collapsible-body hidden" id="status-filter-body">
+              <label class="filter-checkbox"><input type="checkbox" value="playing" checked> Playing</label>
+              <label class="filter-checkbox"><input type="checkbox" value="completed" checked> Completed</label>
+              <label class="filter-checkbox"><input type="checkbox" value="on-hold" checked> On Hold</label>
+              <label class="filter-checkbox"><input type="checkbox" value="unplayed" checked> Unplayed</label>
+              <label class="filter-checkbox"><input type="checkbox" value="abandoned" checked> Abandoned</label>
+            </div>
+          </div>
+
+          <!-- Sort row + result count -->
+          <div class="filter-sort-row">
+            <span class="filter-result-count" id="filter-result-count">15 Results</span>
+            <button class="sort-btn active" data-tooltip="Sort A-Z" data-sort="alpha">A↓</button>
+            <button class="sort-btn" data-tooltip="Sort by Recently Played" data-sort="recent">🕐</button>
+            <button class="sort-btn" data-tooltip="Sort by Date Added" data-sort="added">📅</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="game-list" id="game-list"
+           data-dev-tooltip="*Use ListView.builder for perf with 1000+ games. Virtualized scrolling.*">
+        <!-- Game entries populated by JS -->
+      </div>
+
+      <div class="sidebar-bottom">
+        <button class="add-game-btn" id="add-game-btn"
+                data-tooltip="Add a new game to your library"
+                data-dev-tooltip="*Opens file picker → scans for RenPy structure → adds GameEntry.*">
+          ＋ Add a Game
+        </button>
+      </div>
+    </aside>
+
+    <!-- ─── MAIN CONTENT AREA ─────────────────────────────────────── -->
+    <div id="main-content">
+
+      <!-- LIBRARY VIEW (Detail — Single Scroll) -->
+      <div class="view active" id="library-view">
+        <div id="detail-view">
+          <div id="detail-center">
+
+            <!-- Hero Banner with Carousel Over -->
+            <div class="hero-banner" id="hero-banner"
+                 data-dev-tooltip="*Hero image from cover art. CachedNetworkImage + ShaderMask gradient.*">
+              <div class="hero-banner-bg" id="hero-bg"></div>
+
+              <!-- Screenshot Carousel floating over hero -->
+              <div class="hero-carousel" id="hero-carousel"
+                   data-dev-tooltip="*PageView with auto-advance. Peek effect uses Transform + Opacity.*">
+                <div class="hero-carousel-track" id="carousel-track">
+                  <!-- Slides inserted by JS -->
+                </div>
+                <button class="hero-carousel-nav prev" id="carousel-prev">❮</button>
+                <button class="hero-carousel-nav next" id="carousel-next">❯</button>
+                <div class="hero-carousel-dots" id="carousel-dots"></div>
+              </div>
+
+              <div class="hero-content">
+                <div class="hero-info">
+                  <div class="hero-title" id="hero-title">Select a Game</div>
+                  <div class="hero-developer" id="hero-developer"></div>
+                </div>
+                <div class="play-area">
+                  <select class="version-selector" id="version-selector"
+                          data-tooltip="Select active game version"
+                          data-dev-tooltip="*Multi-version grouping: multiple folders → one GameGroup entry.*">
+                  </select>
+                  <div class="play-btn-group">
+                    <button class="play-btn play" id="play-btn"
+                            data-tooltip="Launch the game"
+                            data-dev-tooltip="*PlayTracker.launch() — spawns process, monitors PID, tracks playtime.*">
+                      ▶ PLAY
+                    </button>
+                    <button class="btn-square" id="properties-btn"
+                            data-tooltip="Open game properties"
+                            data-dev-tooltip="*Opens GamePropertiesModal with full editing.*">
+                      ⚙
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Metadata Bar (always visible) -->
+            <div class="meta-bar" id="meta-bar"
+                 data-dev-tooltip="*MetadataBar widget — reads from GameEntry model. Always visible.*">
+              <div class="meta-item">
+                <span class="meta-item-label">Disk Size</span>
+                <span class="meta-item-value" id="meta-size">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-item-label">Last Played</span>
+                <span class="meta-item-value" id="meta-played">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-item-label">Play Time</span>
+                <span class="meta-item-value" id="meta-playtime">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-item-label">Play Count</span>
+                <span class="meta-item-value" id="meta-count">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-item-label">Version</span>
+                <span class="meta-item-value" id="meta-version">—</span>
+              </div>
+            </div>
+
+            <!-- Single-scroll detail content (no tabs) -->
+            <div class="detail-content">
+              <!-- Synopsis -->
+              <div class="detail-section">
+                <h3>Synopsis</h3>
+                <p class="overview-synopsis" id="detail-synopsis">Select a game from the sidebar to view its details.</p>
+              </div>
+
+              <!-- Tags with + button -->
+              <div class="detail-section">
+                <h3>Tags</h3>
+                <div class="tag-chips" id="detail-tags">
+                  <button class="btn-square small" id="add-tag-btn"
+                          data-tooltip="Add or manage tags"
+                          data-dev-tooltip="*Opens TagPickerDialog: presets + custom text + color picker.*">
+                    ＋
+                  </button>
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="detail-section">
+                <div class="detail-actions">
+                  <button class="btn-action secondary" id="edit-metadata-btn"
+                          data-tooltip="Edit game metadata inline"
+                          data-dev-tooltip="*Toggles edit mode — text fields become editable.*">
+                    ✏ Edit
+                  </button>
+                  <button class="btn-action primary" id="fetch-metadata-btn"
+                          data-tooltip="Fetch metadata from online sources"
+                          data-dev-tooltip="*Opens MetadataFetchDialog. Requires lockdown=OFF.*">
+                    ⬇ Fetch Metadata
+                  </button>
+                  <div class="source-dropdown" id="source-dropdown">
+                    <button class="source-dropdown-btn" id="source-dropdown-btn"
+                            data-tooltip="Open linked source pages"
+                            data-dev-tooltip="*Lists linked pages. url_launcher to open external browser.*">
+                      🔗 Source Pages <span class="arrow">▾</span>
+                    </button>
+                    <div class="source-dropdown-menu" id="source-dropdown-menu">
+                      <!-- Populated by JS -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Notes -->
+              <div class="detail-section">
+                <h3>Notes</h3>
+                <textarea class="notes-area" id="detail-notes" placeholder="Add personal notes about this game..."
+                          data-dev-tooltip="*Auto-saves on blur with 500ms debounce. Stored per-game in UserData.*"></textarea>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- GRID VIEW -->
+      <div class="view" id="grid-view-container">
+        <div id="grid-view">
+          <!-- Horizontal Filter Bar -->
+          <div class="grid-filter-bar" id="grid-filter-bar"
+               data-dev-tooltip="*Same FilterProvider as sidebar — synced state.*">
+            <div class="filter-search">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="grid-search-input" placeholder="Search...">
+            </div>
+            <div class="filter-dropdown-multi" id="grid-tag-dropdown" style="position:relative;">
+              <div class="filter-dropdown-trigger" id="grid-tag-trigger">
+                <span>Tags</span>
+                <span class="arrow">▾</span>
+              </div>
+              <div class="filter-dropdown-menu" id="grid-tag-menu"></div>
+            </div>
+            <div class="filter-dropdown-multi" id="grid-exclude-dropdown" style="position:relative;">
+              <div class="filter-dropdown-trigger" id="grid-exclude-trigger">
+                <span>Exclude</span>
+                <span class="arrow">▾</span>
+              </div>
+              <div class="filter-dropdown-menu" id="grid-exclude-menu"></div>
+            </div>
+            <span class="filter-result-count" id="grid-result-count">15 Results</span>
+            <button class="sort-btn active" data-tooltip="Sort A-Z" data-sort="alpha" data-grid-sort>A↓</button>
+            <button class="sort-btn" data-tooltip="Sort by Recently Played" data-sort="recent" data-grid-sort>🕐</button>
+            <button class="sort-btn" data-tooltip="Sort by Date Added" data-sort="added" data-grid-sort>📅</button>
+            <div class="grid-filter-divider"></div>
+            <button class="sort-btn" id="grid-to-list-btn"
+                    data-tooltip="Switch to list view"
+                    data-dev-tooltip="*Calls toggleGridView(false) — returns to sidebar+detail layout.*">
+              ☰
+            </button>
+          </div>
+          <div class="grid-scroll-area">
+            <div class="grid-container" id="grid-container"
+                 data-dev-tooltip="*Use GridView.builder with SliverGridDelegate. Virtualized for perf.*">
+              <!-- Grid cards populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARCHIVE VIEW -->
+      <div class="view" id="archive-view-container">
+        <div id="archive-view">
+
+          <!-- Archive Header -->
+          <div class="archive-header"
+               data-dev-tooltip="*ArchiveManager header — subtitle + batch actions.*">
+            <span class="archive-subtitle">Archives (.zip, .rar, .rpa, .rpy) — manage &amp; extract</span>
+            <div class="archive-header-actions">
+              <button class="btn-action danger-outline" id="batch-delete-extracted-btn"
+                      data-tooltip="Delete ALL extracted folders for archives marked as extracted"
+                      data-dev-tooltip="*Batch operation — iterates extracted archives, deletes target dirs. Confirm dialog first.*">
+                🗑 Delete Extracted (<span id="extracted-count">0</span>)
+              </button>
+              <button class="btn-action secondary" id="archive-refresh-btn"
+                      data-tooltip="Re-scan archive directory for changes"
+                      data-dev-tooltip="*Re-reads archive dir, diffs with cached state, updates list.*">
+                ⟳ Refresh
+              </button>
+            </div>
+          </div>
+
+          <!-- Extraction Hero (Steam-style progress) -->
+          <div class="extraction-hero" id="extraction-hero"
+               data-dev-tooltip="*ExtractionService: runs in Isolate. Progress via Stream. Hero-style progress display.*">
+            <!-- Idle State -->
+            <div class="extraction-idle" id="extraction-idle">
+              <span class="extraction-idle-icon">📦</span>
+              <span class="extraction-idle-text">No active extraction — select an archive and press Extract</span>
+            </div>
+            <!-- Active State (hidden by default) -->
+            <div class="extraction-active" id="extraction-active" style="display:none;">
+              <div class="extraction-bg" id="extraction-bg"></div>
+              <div class="extraction-content">
+                <div class="extraction-info">
+                  <div class="extraction-stats-row">
+                    <div class="extraction-stat">
+                      <span class="extraction-stat-label">READ</span>
+                      <span class="extraction-stat-value" id="extract-read-speed">0 MB/s</span>
+                    </div>
+                    <div class="extraction-stat">
+                      <span class="extraction-stat-label">WRITE</span>
+                      <span class="extraction-stat-value" id="extract-write-speed">0 MB/s</span>
+                    </div>
+                    <div class="extraction-stat">
+                      <span class="extraction-stat-label">DISK USAGE</span>
+                      <span class="extraction-stat-value" id="extract-disk-usage">0 B/s</span>
+                    </div>
+                  </div>
+                  <div class="extraction-status-lines">
+                    <div class="extraction-status-line" id="extract-status-1">Preparing extraction...</div>
+                    <div class="extraction-status-line" id="extract-status-2">Waiting...</div>
+                    <div class="extraction-status-line" id="extract-status-3">Estimated time: calculating...</div>
+                  </div>
+                  <div class="extraction-controls">
+                    <button class="btn-action accent" id="extract-pause-btn">⏸ Pause</button>
+                    <button class="btn-action secondary" id="extract-cancel-btn">✕ Cancel</button>
+                  </div>
+                </div>
+                <div class="extraction-progress-area">
+                  <div class="extraction-file-name" id="extract-file-name">archive_name.zip</div>
+                  <div class="extraction-progress-bar">
+                    <div class="extraction-progress-fill" id="extract-progress-fill" style="width:0%"></div>
+                  </div>
+                  <div class="extraction-progress-meta">
+                    <span id="extract-progress-bytes">0 MB / 0 MB</span>
+                    <span id="extract-progress-pct">0%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Up Next Queue (Collapsible) -->
+          <div class="extraction-queue" id="extraction-queue">
+            <div class="extraction-queue-header" id="extraction-queue-header">
+              <span class="extraction-queue-title">
+                Up Next <span class="extraction-queue-count" id="queue-count">(0)</span>
+              </span>
+              <span class="extraction-queue-toggle" id="queue-toggle">▾</span>
+            </div>
+            <div class="extraction-queue-body" id="extraction-queue-body">
+              <div class="extraction-queue-empty" id="queue-empty">No queued extractions</div>
+              <div class="extraction-queue-list" id="extraction-queue-list">
+                <!-- Queue items injected by JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Completed Extractions Queue -->
+          <div class="extraction-queue" id="completed-queue" style="display: none;">
+            <div class="extraction-queue-header completed-header" id="completed-queue-header">
+              <span class="extraction-queue-title">
+                Completed <span class="extraction-queue-count" id="completed-count">(0)</span>
+              </span>
+              <div class="completed-queue-actions">
+                <button class="completed-action-btn" id="clear-all-completed-btn" title="Clear all from this list">Clear All</button>
+                <button class="completed-action-btn delete-action" id="clear-delete-all-completed-btn" title="Clear all and delete their archive files">Clear & Delete All</button>
+                <span class="extraction-queue-toggle" id="completed-toggle">▾</span>
+              </div>
+            </div>
+            <div class="extraction-queue-body" id="completed-queue-body">
+              <div class="extraction-queue-list" id="completed-queue-list">
+                <!-- Completed items injected by JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Archive Table -->
+          <div class="archive-table-container">
+            <table class="archive-table" id="archive-table"
+                   data-dev-tooltip="*Archive list — DataTable with sortable columns. Single-select rows.*">
+              <thead>
+                <tr>
+                  <th class="archive-th sortable active" data-sort-key="name" data-sort-dir="asc">
+                    Name <span class="sort-indicator">↑</span>
+                  </th>
+                  <th class="archive-th sortable" data-sort-key="size">
+                    Size <span class="sort-indicator"></span>
+                  </th>
+                  <th class="archive-th sortable" data-sort-key="type">
+                    Type <span class="sort-indicator"></span>
+                  </th>
+                  <th class="archive-th sortable" data-sort-key="modified">
+                    Modified <span class="sort-indicator"></span>
+                  </th>
+                  <th class="archive-th sortable" data-sort-key="status">
+                    Status <span class="sort-indicator"></span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="archive-tbody">
+                <!-- Archive rows injected by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Summary Bar -->
+          <div class="archive-summary" id="archive-summary"
+               data-dev-tooltip="*Aggregate stats from ArchiveManager.getStats(). Updates on refresh.*">
+            15 archives · 18.2 GB total · 0 extracted (safe to delete)
+          </div>
+
+          <!-- Bottom Action Bar -->
+          <div class="archive-action-bar">
+            <button class="btn-action primary" id="archive-extract-btn" disabled
+                    data-tooltip="Extract selected archive"
+                    data-dev-tooltip="*ExtractionService.extract() — spawns Isolate, streams progress.*">
+              📦 Extract
+            </button>
+            <button class="btn-action danger-outline" id="archive-delete-btn" disabled
+                    data-tooltip="Delete the archive file permanently"
+                    data-dev-tooltip="*File.delete() — confirmation dialog first. Irreversible.*">
+              🗑 Delete Archive
+            </button>
+            <button class="btn-action secondary" id="archive-open-folder-btn" disabled
+                    data-tooltip="Open archive directory in file explorer"
+                    data-dev-tooltip="*openUrl() with file:// scheme. Platform.isWindows → explorer.exe.*">
+              📂 Open Folder
+            </button>
+            <button class="btn-action secondary" id="archive-assign-patch-btn" disabled
+                    data-tooltip="Link this archive as a patch for a game"
+                    data-dev-tooltip="*Opens PatchAssignDialog with game+version picker.*">
+              🔗 Assign Patch for...
+            </button>
+            <button class="btn-action warning-outline" id="archive-delete-extracted-btn" disabled
+                    data-tooltip="Delete the extracted folder, keep the archive"
+                    data-dev-tooltip="*Directory.delete(recursive: true) on extracted path. Only if extracted.*">
+              🗑 Delete Extracted
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Archive Context Menu -->
+      <div class="context-menu" id="archive-context-menu">
+        <div class="context-menu-item" data-action="extract">📦 Extract</div>
+        <div class="context-menu-item" data-action="delete-archive">🗑 Delete Archive</div>
+        <div class="context-menu-item" data-action="open-folder">📂 Open Folder</div>
+        <div class="context-menu-item" data-action="assign-patch">🔗 Assign Patch for...</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" data-action="delete-extracted">🗑 Delete Extracted</div>
+        <div class="context-menu-item" data-action="copy-path">📋 Copy Path</div>
+      </div>
+    </div><!-- /main-content -->
+  </div><!-- /app-container -->
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       STATUS BAR
+       ═══════════════════════════════════════════════════════════════ -->
+  <div id="statusbar"
+       data-dev-tooltip="*Persistent status bar — shows current operation + lockdown state.*">
+    <div class="status-left" id="status-add-game"
+         data-tooltip="Add a new game">
+      <span>＋</span>
+      <span class="status-add-game">Add a Game</span>
+    </div>
+    <div class="status-center" id="status-center">
+      <span id="status-text">Ready — 15 games in library</span>
+    </div>
+    <div class="status-right">
+      <span class="lockdown-indicator locked" id="status-lockdown"
+            data-tooltip="Click to open network settings">
+        🔒 Lockdown
+      </span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SETTINGS MODAL
+       ═══════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal wide">
+      <div class="modal-header">
+        <h2>⚙ Settings</h2>
+        <button class="modal-close" data-close-modal="settings-modal">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div class="settings-layout">
+          <div class="settings-tabs">
+            <div class="settings-tab active" data-settings-tab="general">General</div>
+            <div class="settings-tab" data-settings-tab="network">Network</div>
+            <div class="settings-tab" data-settings-tab="appearance">Appearance</div>
+            <div class="settings-tab" data-settings-tab="archives">Archives</div>
+            <div class="settings-tab" data-settings-tab="about">About</div>
+          </div>
+
+          <!-- General Settings -->
+          <div class="settings-panel active" id="settings-general">
+            <div class="setting-group">
+              <h4>Library</h4>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Library Directory</span>
+                  <small>Root folder containing your visual novels</small>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <input class="setting-input font-mono" type="text" value="D:\Games\Visual Novels"
+                         data-dev-tooltip="*Path picker via file_picker package. Hot-reloads library on change.*"
+                         style="width: 220px;">
+                  <button class="btn-action secondary">Browse</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Slideshow Interval</span>
+                  <small>Auto-advance time for screenshot carousel</small>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input class="setting-slider" type="range" min="0.5" max="30" step="0.5" value="5">
+                  <span class="text-sm" style="min-width: 35px; text-align: right;">5.0s</span>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Auto-Backup</span>
+                  <small>Automatically backup library data on startup</small>
+                </div>
+                <div class="toggle-switch active"
+                     data-dev-tooltip="*Copies ~/.vn_pathfinder/data.json → data.json.bak on launch.*"></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Orphaned File Scanner</span>
+                  <small>Scan your library root for unrecognised files and folders</small>
+                </div>
+                <button class="btn-action primary" id="trigger-orphan-modal-btn">🔍 Scan Now</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Archives Settings -->
+          <div class="settings-panel" id="settings-archives">
+            <div class="setting-group">
+              <h4>Archive Manager Requirements</h4>
+              <p class="text-muted" style="margin-bottom: 16px; font-size: 13px;">RAR extraction support requires 7-Zip installation. By default VN Pathfinder uses the bundled extraction tools to unpack ZIP archives.</p>
+              
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>7-Zip Status</span>
+                  <small>Required for .rar and .rpa formats</small>
+                </div>
+                <div style="font-weight: 500; color: var(--accent);">
+                  ✓ Installed (v24.09)
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Active Extractions Limit</span>
+                  <small>Number of simultaneous extractions allowed</small>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input class="setting-slider" type="range" min="1" max="4" step="1" value="1">
+                  <span class="text-sm" style="min-width: 30px; text-align: right;">1</span>
+                </div>
+              </div>
+              
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Delete original after extractions</span>
+                  <small>Auto-delete `.zip` archives following a successful extraction</small>
+                </div>
+                <div class="toggle-switch" data-tooltip="Disabled by default for safety"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Network Settings -->
+          <div class="settings-panel" id="settings-network">
+            <div class="setting-group">
+              <h4>⚠ Network Access Control</h4>
+              <div class="setting-row" style="background: rgba(201, 64, 64, 0.05); padding: 12px; border-radius: var(--radius-md); margin-bottom: 12px; border: 1px solid rgba(201, 64, 64, 0.2);">
+                <div class="setting-label">
+                  <span style="color: var(--danger); font-weight: 700;">LOCKDOWN MODE</span>
+                  <small>Master kill-switch for all network access. OFF by default.</small>
+                </div>
+                <div class="toggle-switch lockdown-toggle" id="lockdown-master-toggle"
+                     data-tooltip="Toggle network lockdown"
+                     data-dev-tooltip="*Master switch — disables ALL sub-toggles when active.*"></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Update Checks</span>
+                  <small>Check for VN Pathfinder updates on startup</small>
+                </div>
+                <div class="toggle-switch" data-tooltip="Requires lockdown OFF"></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Metadata Scraping</span>
+                  <small>Allow fetching game info from F95Zone, LewdCorner, itch.io</small>
+                </div>
+                <div class="toggle-switch" data-tooltip="Requires lockdown OFF"></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Site Logins</span>
+                  <small>Enable authentication to access restricted content</small>
+                </div>
+                <div class="toggle-switch" data-tooltip="Requires lockdown OFF"></div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Download Page Links</span>
+                  <small>Show links to game source pages</small>
+                </div>
+                <div class="toggle-switch" data-tooltip="Requires lockdown OFF"></div>
+              </div>
+            </div>
+            <div class="setting-group">
+              <h4>Site Logins</h4>
+              <div class="login-card">
+                <div class="login-card-header">
+                  <span class="login-card-name">F95Zone</span>
+                  <span class="login-status connected">✓ Connected</span>
+                </div>
+                <div class="login-fields">
+                  <div class="login-field"><label>Username</label><input type="text" value="NikoCloud"></div>
+                  <div class="login-field"><label>Password</label><input type="password" value="••••••••"></div>
+                  <button class="btn-action secondary" style="margin-top: 4px;">Test Connection</button>
+                </div>
+              </div>
+              <div class="login-card">
+                <div class="login-card-header">
+                  <span class="login-card-name">Lewd Corner</span>
+                  <span class="login-status disconnected">✕ Not connected</span>
+                </div>
+                <div class="login-fields">
+                  <div class="login-field"><label>Username</label><input type="text" placeholder="Username"></div>
+                  <div class="login-field"><label>Password</label><input type="password" placeholder="Password"></div>
+                  <button class="btn-action secondary" style="margin-top: 4px;">Test Connection</button>
+                </div>
+              </div>
+              <div class="login-card">
+                <div class="login-card-header">
+                  <span class="login-card-name">itch.io</span>
+                  <span class="login-status connected">✓ Connected</span>
+                </div>
+                <button class="btn-action primary" style="width: 100%;">🌐 Log in with Browser</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Appearance Settings -->
+          <div class="settings-panel" id="settings-appearance">
+            <div class="setting-group">
+              <h4>Theme</h4>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Color Theme</span>
+                  <small>Choose your preferred color scheme</small>
+                </div>
+                <select class="version-select" style="width: 140px;">
+                  <option>Dark</option><option>Light</option><option>System</option>
+                </select>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Accent Color</span>
+                  <small>Primary accent for highlights and buttons</small>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <div style="width:24px; height:24px; border-radius:50%; background:#4a9e6e; border:2px solid var(--accent-light); cursor:pointer;" data-tooltip="Emerald (Default)"></div>
+                  <div style="width:24px; height:24px; border-radius:50%; background:#4a90d9; border:2px solid transparent; cursor:pointer;" data-tooltip="Ocean Blue"></div>
+                  <div style="width:24px; height:24px; border-radius:50%; background:#9b59b6; border:2px solid transparent; cursor:pointer;" data-tooltip="Amethyst"></div>
+                  <div style="width:24px; height:24px; border-radius:50%; background:#e67e22; border:2px solid transparent; cursor:pointer;" data-tooltip="Amber"></div>
+                  <div style="width:24px; height:24px; border-radius:50%; background:#c94040; border:2px solid transparent; cursor:pointer;" data-tooltip="Ruby"></div>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Font Size</span>
+                  <small>Adjust the base interface font size</small>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input class="setting-slider" type="range" min="11" max="16" step="1" value="13">
+                  <span class="text-sm" style="min-width: 30px; text-align: right;">13px</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- About Settings -->
+          <div class="settings-panel" id="settings-about">
+            <div class="setting-group" style="text-align: center; padding-top: 24px;">
+              <div class="nav-brand-icon" style="width: 64px; height: 64px; font-size: 28px; margin: 0 auto 16px; border-radius: 12px;">VP</div>
+              <h4 style="font-size: 20px; margin-bottom: 4px;">VN Pathfinder</h4>
+              <p class="text-secondary" style="margin-bottom: 20px;">Version 2.0.0-alpha (Flutter Rewrite)</p>
+              <p class="text-muted" style="margin-bottom: 16px; line-height: 1.6;">
+                Your complete visual novel library manager.<br>
+                Track, organise, launch, and maintain your RenPy collection.
+              </p>
+              <div style="display: flex; gap: 12px; justify-content: center;">
+                <a href="#" class="btn-action secondary">📋 GitHub (1.0)</a>
+                <a href="#" class="btn-action secondary">🚀 GitHub (2.0)</a>
+                <a href="#" class="btn-action secondary">📝 License</a>
+              </div>
+              <p class="text-muted" style="margin-top: 24px; font-size: 11px;">
+                Made with ❤ by NikoCloud<br>
+                Apache License 2.0 — No telemetry. No accounts. Zero network by default.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       METADATA FETCH MODAL
+       ═══════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="fetch-modal">
+    <div class="modal wide">
+      <div class="modal-header">
+        <h2>⬇ Fetch Metadata</h2>
+        <button class="modal-close" data-close-modal="fetch-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="fetch-search-bar">
+          <input class="fetch-search-input" type="text" id="fetch-search" value="Ethereal Academy">
+          <button class="btn-action primary" id="fetch-search-btn">🔍 Search</button>
+        </div>
+        <div class="source-checks">
+          <label class="source-check"><input type="checkbox" checked> F95Zone</label>
+          <label class="source-check"><input type="checkbox" checked> Lewd Corner</label>
+          <label class="source-check"><input type="checkbox" checked> itch.io</label>
+          <label class="source-check"><input type="checkbox" checked> VNDB</label>
+        </div>
+        <div class="fetch-layout">
+          <div class="fetch-results" id="fetch-results">
+            <div class="fetch-result-item selected">
+              <div class="fetch-result-thumb"><img src="assets/cover_2.png" alt=""></div>
+              <div class="fetch-result-info">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="fetch-result-title">Ethereal Academy</span>
+                  <span class="fetch-result-source">F95Zone</span>
+                </div>
+                <div class="fetch-result-dev">by StardustGames</div>
+                <div class="fetch-result-snippet">A slice-of-life visual novel set in a prestigious academy where students discover hidden talents...</div>
+              </div>
+            </div>
+            <div class="fetch-result-item">
+              <div class="fetch-result-thumb" style="background: linear-gradient(135deg, #2a3040, #3a4555);"></div>
+              <div class="fetch-result-info">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="fetch-result-title">Ethereal Academy - Extended</span>
+                  <span class="fetch-result-source">LewdCorner</span>
+                </div>
+                <div class="fetch-result-dev">by StardustGames</div>
+                <div class="fetch-result-snippet">Extended edition with bonus storylines and additional character routes...</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="fetch-field-picker">
+            <h4 style="font-size: 12px; color: var(--accent-silver); margin-bottom: 14px;">Field Sources</h4>
+            <div class="field-picker-item">
+              <label>Title</label>
+              <select><option>F95Zone</option><option>LewdCorner</option></select>
+            </div>
+            <div class="field-picker-item">
+              <label>Developer</label>
+              <select><option>F95Zone</option><option>itch.io</option></select>
+            </div>
+            <div class="field-picker-item">
+              <label>Synopsis</label>
+              <select><option>itch.io</option><option>F95Zone</option></select>
+            </div>
+            <div class="field-picker-item">
+              <label>Cover Art</label>
+              <select><option>F95Zone</option><option>itch.io</option></select>
+            </div>
+            <div class="field-picker-item">
+              <label>Tags</label>
+              <select><option>F95Zone</option><option>LewdCorner</option></select>
+            </div>
+            <div class="image-manager">
+              <h5>Images (3)</h5>
+              <div class="img-mgr-item">
+                <span class="img-mgr-num">1</span>
+                <div class="img-mgr-thumb"><img src="assets/cover_2.png" alt=""></div>
+                <span class="text-sm" style="color: var(--warning);">★ Cover</span>
+                <div class="img-mgr-actions">
+                  <button class="img-mgr-btn" data-tooltip="Move up">▲</button>
+                  <button class="img-mgr-btn" data-tooltip="Move down">▼</button>
+                  <button class="img-mgr-btn remove" data-tooltip="Remove">✕</button>
+                </div>
+              </div>
+              <div class="img-mgr-item">
+                <span class="img-mgr-num">2</span>
+                <div class="img-mgr-thumb" style="background: linear-gradient(135deg, #2a3545, #3a4550);"></div>
+                <span class="text-sm text-muted">Screenshot</span>
+                <div class="img-mgr-actions">
+                  <button class="img-mgr-btn star" data-tooltip="Promote to cover">★</button>
+                  <button class="img-mgr-btn" data-tooltip="Move up">▲</button>
+                  <button class="img-mgr-btn" data-tooltip="Move down">▼</button>
+                  <button class="img-mgr-btn remove" data-tooltip="Remove">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" data-close-modal="fetch-modal">Cancel</button>
+        <button class="btn-action primary">💾 Save Metadata</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       GAME PROPERTIES MODAL (Updated)
+       ═══════════════════════════════════════════════════════════════ -->
+  <div class="modal-overlay" id="properties-modal">
+    <div class="modal wide">
+      <div class="modal-header">
+        <h2 id="properties-title">⚙ Game Properties</h2>
+        <button class="modal-close" data-close-modal="properties-modal">✕</button>
+      </div>
+      <div class="modal-body" style="padding: 0;">
+        <div class="settings-layout">
+          <div class="settings-tabs">
+            <div class="settings-tab active" data-props-tab="prop-general">General</div>
+            <div class="settings-tab" data-props-tab="prop-versions">Versions</div>
+            <div class="settings-tab" data-props-tab="prop-patches">Patches</div>
+            <div class="settings-tab" data-props-tab="prop-launch">Launch Options</div>
+          </div>
+
+          <!-- General Tab (updated: + path, folder, saves) -->
+          <div class="settings-panel active" id="prop-general">
+            <div class="setting-group">
+              <h4>Display Info</h4>
+              <div class="setting-row">
+                <div class="setting-label"><span>Display Name</span></div>
+                <input class="setting-input" type="text" id="prop-name" value="Ethereal Academy">
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Developer</span></div>
+                <input class="setting-input" type="text" id="prop-dev" value="StardustGames">
+              </div>
+            </div>
+            <div class="setting-group">
+              <h4>File Info</h4>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>File Path</span>
+                  <small>Physical location of the active version</small>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <span class="font-mono text-sm text-muted" id="prop-path" style="max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">D:\Games\VNs\EtherealAcademy-v0.9.1</span>
+                  <button class="btn-action secondary" style="padding:6px 10px; font-size:11px;" id="prop-copy-path" data-tooltip="Copy path to clipboard">📋</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span>Actions</span></div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-action secondary" id="prop-open-folder"
+                          data-tooltip="Open game folder in file explorer"
+                          data-dev-tooltip="*Process.run('explorer.exe', [path]) on Windows.*">
+                    📂 Open Folder
+                  </button>
+                  <button class="btn-action secondary" id="prop-open-saves"
+                          data-tooltip="Opens the save directory"
+                          data-dev-tooltip="*Checks game/saves/ and %APPDATA%/RenPy/ for save files.*">
+                    💾 Open Saves
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="setting-group">
+              <h4>Notes</h4>
+              <textarea class="notes-area" id="prop-notes" placeholder="Add personal notes..."
+                        data-dev-tooltip="*Same as detail panel notes — synced via shared state.*">Great routes, especially the Mika path. Need to replay for completionist ending.</textarea>
+            </div>
+          </div>
+
+          <!-- Versions Tab (purely informational table) -->
+          <div class="settings-panel" id="prop-versions">
+            <div class="setting-group">
+              <h4>Detected Versions</h4>
+              <p class="text-muted text-sm" style="margin-bottom: 12px;">Read-only overview of all detected game versions and their filesystem info.</p>
+              <table class="version-info-table" id="prop-version-table">
+                <thead>
+                  <tr>
+                    <th>Version</th>
+                    <th>Path</th>
+                    <th>Modified</th>
+                    <th>Saves</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Patches Tab (with independent version dropdown) -->
+          <div class="settings-panel" id="prop-patches">
+            <div class="setting-group">
+              <h4>Manage Patches</h4>
+              <div class="patches-header">
+                <select class="version-select" id="prop-patch-version"
+                        data-tooltip="Select version to view patches"
+                        data-dev-tooltip="*Independent from Versions tab. Scoped patch listing.*">
+                </select>
+                <button class="btn-action secondary"
+                        data-tooltip="Assign a patch file to this version"
+                        data-dev-tooltip="*Moves patch from library root → game/.patches/ folder.*">
+                  ＋ Assign Patch
+                </button>
+                <button class="btn-action secondary"
+                        data-tooltip="Sync patch list with filesystem">
+                  ⟳ Sync
+                </button>
+              </div>
+              <div class="patch-list" id="prop-patch-list">
+                <!-- Populated by JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Launch Options Tab (unchanged) -->
+          <div class="settings-panel" id="prop-launch">
+            <div class="setting-group">
+              <h4>Launch Configuration</h4>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Executable Path</span>
+                  <small>Override auto-detected executable</small>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <input class="setting-input font-mono" type="text" value="EtherealAcademy.exe"
+                         data-dev-tooltip="*Auto-detected from game root. User can override.*"
+                         style="width: 220px;">
+                  <button class="btn-action secondary">Browse</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>Launch Arguments</span>
+                  <small>Command-line arguments passed to the executable</small>
+                </div>
+                <input class="setting-input font-mono" type="text" placeholder="e.g., --windowed --skip-intro"
+                       style="width: 280px;">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action secondary" data-close-modal="properties-modal">Cancel</button>
+        <button class="btn-action primary">💾 Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox-close" id="lightbox-close">✕</button>
+    <button class="lightbox-nav prev" id="lightbox-prev">❮</button>
+    <button class="lightbox-nav next" id="lightbox-next">❯</button>
+    <img id="lightbox-img" src="" alt="Full-size preview">
+  </div>
+
+  <!-- CONTEXT MENU -->
+  <div class="context-menu" id="context-menu">
+    <div class="context-menu-item" data-action="launch">▶ Launch</div>
+    <div class="context-menu-item" data-action="folder">📂 Open Folder</div>
+    <div class="context-menu-item" data-action="copy-path">📋 Copy Path</div>
+    <div class="context-menu-separator"></div>
+    <div class="context-menu-item" data-action="properties">⚙ Properties</div>
+    <div class="context-menu-item" data-action="fetch">⬇ Fetch Metadata</div>
+    <div class="context-menu-separator"></div>
+    <div class="context-menu-item danger" data-action="remove">🗑 Remove from Library</div>
+  </div>
+
+  <!-- Orphaned Files Modal (Secondary Modal) -->
+  <div class="modal-overlay" id="orphan-modal" style="display: none; z-index: 2000;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🔍 Orphaned Files Scanner</h2>
+        <button class="modal-close" data-close-modal="orphan-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" style="margin-bottom: 12px; font-size: 13px;">Found unrecognised files and folders in your Library directory that are not linked to any game.</p>
+        
+        <div style="background: var(--bg-hover); border-radius: var(--radius-md); padding: 12px; margin-bottom: 12px; max-height: 200px; overflow-y: auto;">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="checkbox" checked>
+              <span style="font-weight: 500; font-size: 13px;">Unknown_Game_Folder_v2</span>
+            </div>
+            <span class="text-muted font-mono" style="font-size: 12px;">2.4 GB</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border);">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="checkbox" checked>
+              <span style="font-weight: 500; font-size: 13px;">temp_download_cache</span>
+            </div>
+            <span class="text-muted font-mono" style="font-size: 12px;">856 MB</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="checkbox">
+              <span style="font-weight: 500; font-size: 13px;">old_saves_backup</span>
+            </div>
+            <span class="text-muted font-mono" style="font-size: 12px;">12 MB</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+          <span style="font-weight: 600; font-size: 14px; color: var(--accent);">Total selected: 3.26 GB</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-action secondary" data-close-modal="orphan-modal">Cancel</button>
+            <button class="btn-action danger">🗑 Delete Selected</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
