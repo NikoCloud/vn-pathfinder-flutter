@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import '../theme.dart';
 
 // ── Settings Model ────────────────────────────────────────────────────────────
 
@@ -26,10 +28,10 @@ class AppSettings {
   const AppSettings({
     this.libraryDir = '',
     this.lockdown = true,
-    this.checkUpdates = true,
-    this.fetchMetadata = true,
-    this.allowProviderLogin = true,
-    this.allowDownloadLinks = true,
+    this.checkUpdates = false,
+    this.fetchMetadata = false,
+    this.allowProviderLogin = false,
+    this.allowDownloadLinks = false,
     this.autoBackup = true,
     this.slideshowInterval = 5.0,
     this.concurrentExtractions = 1,
@@ -176,3 +178,28 @@ final lockdownProvider = Provider<bool>(
 final libraryDirProvider = Provider<String>(
   (ref) => ref.watch(settingsProvider).libraryDir,
 );
+
+// Reactive ThemeData derived from persisted settings
+final appThemeDataProvider = Provider<ThemeData>((ref) {
+  final s = ref.watch(settingsProvider);
+  return AppTheme.build(
+    accent: _hexToColor(s.accentColor),
+    fontSize: s.fontSize,
+    dark: s.theme != 'light',
+  );
+});
+
+// Reactive ThemeMode derived from persisted settings
+final appThemeModeProvider = Provider<ThemeMode>((ref) {
+  return switch (ref.watch(settingsProvider).theme) {
+    'light'  => ThemeMode.light,
+    'system' => ThemeMode.system,
+    _        => ThemeMode.dark,
+  };
+});
+
+Color _hexToColor(String hex) {
+  final clean = hex.replaceFirst('#', '');
+  if (clean.length != 6) return AppColors.accent;
+  return Color(int.parse('FF$clean', radix: 16));
+}

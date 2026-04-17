@@ -44,21 +44,26 @@ class HeroBanner extends ConsumerWidget {
           // Gradient overlay (bottom-heavy)
           const _GradientOverlay(),
 
-          // Screenshot carousel (centered, 65% width, 16:9)
+          // Screenshot carousel — height-primary, capped at 300px tall / 65% wide
           Positioned(
             top: 12,
             left: 0,
             right: 0,
             child: Center(
-              child: FractionallySizedBox(
-                widthFactor: 0.65,
-                child: AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: ScreenshotCarousel(
-                    images: images,
-                    intervalSeconds: interval,
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const maxH = 300.0;
+                  const ratio = 16.0 / 9.0;
+                  final maxW = (constraints.maxWidth * 0.65).clamp(0.0, maxH * ratio);
+                  return SizedBox(
+                    width: maxW,
+                    height: maxW / ratio,
+                    child: ScreenshotCarousel(
+                      images: images,
+                      intervalSeconds: interval,
+                    ),
+                  );
+                },
               ),
             ),
           ),

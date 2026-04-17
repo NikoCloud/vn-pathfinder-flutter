@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'theme.dart';
+import 'providers/settings_provider.dart';
 import 'widgets/app_shell.dart';
 
 class VNPathfinderApp extends ConsumerWidget {
@@ -8,10 +8,15 @@ class VNPathfinderApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final themeData = ref.watch(appThemeDataProvider);
+    final themeMode = ref.watch(appThemeModeProvider);
+
     return MaterialApp(
       title: 'VN Pathfinder',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
+      theme: themeData,
+      darkTheme: themeData,
+      themeMode: themeMode,
       home: const AppShell(),
     );
   }
