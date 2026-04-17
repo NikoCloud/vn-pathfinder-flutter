@@ -939,7 +939,11 @@ class _CredField extends StatelessWidget {
               style: GoogleFonts.inter(
                   fontSize: 12, color: AppColors.textPrimary),
               decoration: const InputDecoration(
+                filled: false,
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
               ),

@@ -66,55 +66,41 @@ class AppRadius {
 // ── ThemeData ─────────────────────────────────────────────────────────────────
 
 class AppTheme {
-  static ThemeData get dark {
-    final base = ThemeData.dark();
+  // Build a ThemeData from persisted settings values
+  static ThemeData build({
+    Color accent = AppColors.accent,
+    double fontSize = 13.0,
+    bool dark = true,
+  }) {
+    final base = dark ? ThemeData.dark() : ThemeData.light();
+    final bg = dark ? AppColors.bgCard : const Color(0xFFF2F4F7);
     final textTheme = GoogleFonts.interTextTheme(base.textTheme).copyWith(
-      bodyMedium: GoogleFonts.inter(
-        fontSize: 13,
-        color: AppColors.textPrimary,
-      ),
-      bodySmall: GoogleFonts.inter(
-        fontSize: 11,
-        color: AppColors.textSecondary,
-      ),
-      labelSmall: GoogleFonts.inter(
-        fontSize: 10,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.8,
-        color: AppColors.textMuted,
-      ),
-      titleMedium: GoogleFonts.inter(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: AppColors.textPrimary,
-      ),
-      titleLarge: GoogleFonts.inter(
-        fontSize: 32,
-        fontWeight: FontWeight.w800,
-        color: Colors.white,
-        letterSpacing: -0.5,
-      ),
+      bodyMedium: GoogleFonts.inter(fontSize: fontSize,
+          color: dark ? AppColors.textPrimary : const Color(0xFF1A1D23)),
+      bodySmall: GoogleFonts.inter(fontSize: fontSize - 2,
+          color: dark ? AppColors.textSecondary : const Color(0xFF525A65)),
     );
-
     return base.copyWith(
-      scaffoldBackgroundColor: AppColors.bgPrimary,
-      colorScheme: const ColorScheme.dark(
-        primary: AppColors.accent,
-        secondary: AppColors.accentLight,
-        surface: AppColors.bgCard,
+      scaffoldBackgroundColor: dark ? AppColors.bgPrimary : const Color(0xFFEEF0F5),
+      colorScheme: ColorScheme(
+        brightness: dark ? Brightness.dark : Brightness.light,
+        primary: accent,
+        secondary: Color.fromARGB(255,
+          (accent.r * 1.1).clamp(0, 255).round(),
+          (accent.g * 1.1).clamp(0, 255).round(),
+          (accent.b * 1.1).clamp(0, 255).round(),
+        ),
+        surface: bg,
         error: AppColors.danger,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
-        onSurface: AppColors.textPrimary,
+        onSurface: dark ? AppColors.textPrimary : const Color(0xFF1A1D23),
         onError: Colors.white,
       ),
       textTheme: textTheme,
       dividerColor: AppColors.border,
       dividerTheme: const DividerThemeData(
-        color: AppColors.border,
-        thickness: 1,
-        space: 0,
-      ),
+          color: AppColors.border, thickness: 1, space: 0),
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.all(AppColors.border),
         trackColor: WidgetStateProperty.all(Colors.transparent),
@@ -127,10 +113,7 @@ class AppTheme {
           border: Border.all(color: AppColors.borderLight),
           borderRadius: AppRadius.borderSm,
         ),
-        textStyle: GoogleFonts.inter(
-          fontSize: 11,
-          color: AppColors.textPrimary,
-        ),
+        textStyle: GoogleFonts.inter(fontSize: 11, color: AppColors.textPrimary),
         waitDuration: const Duration(milliseconds: 600),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -147,19 +130,16 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: AppRadius.borderSm,
-          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+          borderSide: BorderSide(color: accent, width: 1.5),
         ),
-        hintStyle: GoogleFonts.inter(
-          fontSize: 12,
-          color: AppColors.textMuted,
-        ),
-        labelStyle: GoogleFonts.inter(
-          fontSize: 12,
-          color: AppColors.textSecondary,
-        ),
+        hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+        labelStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
       ),
     );
   }
+
+  // Convenience getter for the default dark theme
+  static ThemeData get dark => build();
 
   // Mono text style for paths, stats, etc.
   static TextStyle get mono => GoogleFonts.jetBrainsMono(

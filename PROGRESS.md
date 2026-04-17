@@ -13,7 +13,7 @@
 |---|-------|--------|--------|
 | 1 | Project scaffold — shell, theme, models, providers | ✅ Done | `76b9d4a` |
 | 2 | Library screen — sidebar + detail panel | ✅ Done | `34f13ac` |
-| 3 | Settings modal | ✅ Done | `pending` |
+| 3 | Settings modal | ✅ Done | `master` |
 | 4 | Launch + playtime tracking | ⏳ Pending | — |
 | 5 | Library — grid mode | ⏳ Pending | — |
 | 6 | Game Properties modal | ⏳ Pending | — |
