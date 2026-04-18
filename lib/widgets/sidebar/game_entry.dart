@@ -12,7 +12,7 @@ class GameEntry extends ConsumerStatefulWidget {
   final UserData userData;
   final bool selected;
   final VoidCallback onTap;
-  final VoidCallback? onRightClick;
+  final void Function(Offset)? onRightClick;
 
   const GameEntry({
     super.key,
@@ -52,7 +52,7 @@ class _GameEntryState extends ConsumerState<GameEntry> {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onTap,
-        onSecondaryTap: widget.onRightClick,
+        onSecondaryTapDown: (details) => widget.onRightClick?.call(details.globalPosition),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 100),
           decoration: BoxDecoration(
@@ -75,10 +75,10 @@ class _GameEntryState extends ConsumerState<GameEntry> {
                       widget.group.effectiveTitle,
                       style: GoogleFonts.inter(
                         fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w500,
                         color: widget.selected
-                            ? AppColors.accentLight
-                            : AppColors.textPrimary,
+                            ? AppColors.textBright
+                            : _hovered ? AppColors.textBright : AppColors.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

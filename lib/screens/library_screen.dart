@@ -1,16 +1,20 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../theme.dart';
 import '../models/game_group.dart';
-import '../models/game_version.dart';
 import '../models/user_data.dart';
 import '../providers/library_provider.dart';
+import '../providers/play_tracker_provider.dart';
 import '../providers/settings_provider.dart';
+import '../widgets/modals/properties_modal.dart';
 import '../widgets/sidebar/sidebar.dart';
+import '../widgets/sidebar/game_grid.dart';
+import '../widgets/library/horizontal_filter_bar.dart';
 import '../widgets/detail/hero_banner.dart';
 import '../widgets/detail/meta_bar.dart';
 import '../widgets/detail/detail_content.dart';
+import '../widgets/modals/add_game_modal.dart';
+import '../widgets/modals/metadata_fetch_modal.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
@@ -20,6 +24,7 @@ class LibraryScreen extends ConsumerWidget {
     final libState = ref.watch(libraryProvider);
     final ud = ref.watch(userDataProvider);
     final selectedKey = libState.selectedBaseKey;
+    final isGrid = ref.watch(gridViewProvider);
 
     GameGroup? selected;
     if (selectedKey != null) {
@@ -29,11 +34,23 @@ class LibraryScreen extends ConsumerWidget {
       } catch (_) {}
     }
 
+    if (isGrid) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const HorizontalFilterBar(),
+          const Expanded(
+            child: GameGrid(),
+          ),
+        ],
+      );
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         LibrarySidebar(
-          onAddGame: () {/* TODO: Phase 9 add-game flow */},
+          onAddGame: () => showAddGameModal(context),
         ),
         Expanded(
           child: selected != null
@@ -150,26 +167,21 @@ class _DetailPaneState extends ConsumerState<_DetailPane> {
     );
   }
 
-  void _play() {
+  Future<void> _play() async {
     final v = _effectiveGroup.latestVersion;
-    if (v?.exePath == null) return;
-    _launchGame(v!);
-  }
-
-  void _launchGame(GameVersion gameVersion) async {
-    try {
-      await Process.start(
-        gameVersion.exePath!.path,
-        [],
-        workingDirectory: gameVersion.folderPath.path,
-        runInShell: false,
+    if (v == null) return;
+    final error = await ref
+        .read(playTrackerProvider.notifier)
+        .launch(v, widget.group.baseKey);
+    if (error != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.danger,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
       );
-      ref.read(userDataProvider.notifier).recordPlaySession(
-            widget.group.baseKey,
-            0,
-          );
-    } catch (e) {
-      // TODO: show error snackbar in Phase 10
     }
   }
 
@@ -188,14 +200,14 @@ class _DetailPaneState extends ConsumerState<_DetailPane> {
               group: g,
               userData: ud,
               onPlay: _play,
-              onProperties: () {/* TODO: Phase 6 properties modal */},
+              onProperties: () => showPropertiesModal(context, g),
               onVersionChanged: (v) => setState(() => _selectedVersion = v),
             ),
             MetaBar(group: g, userData: ud),
             DetailContent(
               group: g,
               userData: ud,
-              onFetchMetadata: () {/* TODO: Phase 7 metadata fetch modal */},
+              onFetchMetadata: () => showMetadataFetchModal(context, g),
             ),
           ],
         ),

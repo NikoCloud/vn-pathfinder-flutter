@@ -470,7 +470,9 @@ class _TagDropdownState extends State<_TagDropdown> {
 
   @override
   void dispose() {
-    _close();
+    // Remove overlay without calling setState — widget is already being unmounted
+    _overlay?.remove();
+    _overlay = null;
     super.dispose();
   }
 

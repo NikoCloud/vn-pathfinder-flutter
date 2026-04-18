@@ -21,12 +21,14 @@ class ScreenshotCarousel extends StatefulWidget {
 
 class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
   int _current = 0;
+  int _page = 0;
   Timer? _timer;
   bool _hovering = false;
 
   @override
   void initState() {
     super.initState();
+    _page = widget.images.length * 10000; // Prevent negative wrap issues
     _startTimer();
   }
 
@@ -34,6 +36,7 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
   void didUpdateWidget(ScreenshotCarousel old) {
     super.didUpdateWidget(old);
     if (old.images != widget.images) {
+      _page = widget.images.length * 10000;
       _current = 0;
       _restartTimer();
     }
@@ -51,7 +54,10 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
       Duration(milliseconds: (widget.intervalSeconds * 1000).round()),
       (_) {
         if (!_hovering && mounted) {
-          setState(() => _current = (_current + 1) % widget.images.length);
+          setState(() {
+            _page++;
+            _current = _page % widget.images.length;
+          });
         }
       },
     );
@@ -64,19 +70,29 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
 
   void _prev() {
     setState(() {
-      _current =
-          (_current - 1 + widget.images.length) % widget.images.length;
+      _page--;
+      _current = _page % widget.images.length;
     });
     _restartTimer();
   }
 
   void _next() {
-    setState(() => _current = (_current + 1) % widget.images.length);
+    setState(() {
+      _page++;
+      _current = _page % widget.images.length;
+    });
     _restartTimer();
   }
 
   void _goTo(int i) {
-    setState(() => _current = i);
+    setState(() {
+      int diff = i - _current;
+      final half = widget.images.length ~/ 2;
+      if (diff > half) { diff -= widget.images.length; }
+      else if (diff < -half) { diff += widget.images.length; }
+      _page += diff;
+      _current = _page % widget.images.length;
+    });
     _restartTimer();
   }
 
@@ -96,7 +112,7 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
           // Slides
           _CarouselSlides(
             images: widget.images,
-            current: _current,
+            page: _page,
             onTap: widget.onImageTap != null
                 ? () => widget.onImageTap!(widget.images[_current])
                 : null,
@@ -144,97 +160,149 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
 
 class _CarouselSlides extends StatelessWidget {
   final List<File> images;
-  final int current;
+  final int page;
   final VoidCallback? onTap;
 
   const _CarouselSlides({
     required this.images,
-    required this.current,
+    required this.page,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Stack(
-        alignment: Alignment.center,
-        children: List.generate(images.length, (i) {
-          final isPrev = i == (current - 1 + images.length) % images.length;
-          final isNext = i == (current + 1) % images.length;
-          final isActive = i == current;
+    // Single image — no peek, just render it centered
+    if (images.length == 1) {
+      return SizedBox.expand(
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.bgCard,
+              borderRadius: AppRadius.borderMd,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 40,
+                  spreadRadius: 8,
+                ),
+              ],
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: Image.file(
+              images[0],
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (context, error, stack) => Container(
+                color: AppColors.bgCard,
+                child: const Icon(Icons.broken_image_outlined,
+                    color: AppColors.textMuted, size: 32),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
-          double scale;
-          double translateX;
-          double opacity;
+    // We strictly render a 5-wide sliding window keyed by absolute virtual index
+    final elements = List.generate(5, (index) {
+      final absoluteIndex = page - 2 + index;
+      final diff = index - 2;
 
-          if (isActive) {
-            scale = 1.0;
-            translateX = 0;
-            opacity = 1.0;
-          } else if (isPrev) {
-            scale = 0.78;
-            translateX = -0.75;
-            opacity = 0.4;
-          } else if (isNext) {
-            scale = 0.78;
-            translateX = 0.75;
-            opacity = 0.4;
-          } else {
-            scale = 0.85;
-            translateX = 0;
-            opacity = 0.0;
-          }
+      double scale;
+      double translateX;
+      double opacity;
+      int zIndex;
 
-          return AnimatedPositioned(
+      if (diff == 0) {
+        scale = 1.0;
+        translateX = 0;
+        opacity = 1.0;
+        zIndex = 2;
+      } else if (diff == -1) {
+        scale = 0.78;
+        translateX = -0.75;
+        opacity = 0.4;
+        zIndex = 1;
+      } else if (diff == 1) {
+        scale = 0.78;
+        translateX = 0.75;
+        opacity = 0.4;
+        zIndex = 1;
+      } else {
+        scale = 0.65;
+        translateX = diff < 0 ? -1.0 : 1.0;
+        opacity = 0.0;
+        zIndex = 0;
+      }
+
+      final isActive = diff == 0;
+      final fileIndex = absoluteIndex % images.length;
+      final file = images[fileIndex];
+
+      final widget = AnimatedPositioned(
+        key: ValueKey(absoluteIndex),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 400),
+          opacity: opacity,
+          child: AnimatedScale(
+            scale: scale,
             duration: const Duration(milliseconds: 400),
             curve: Curves.easeInOut,
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: AnimatedOpacity(
+            child: AnimatedSlide(
+              offset: Offset(translateX, 0),
               duration: const Duration(milliseconds: 400),
-              opacity: opacity,
-              child: AnimatedScale(
-                scale: scale,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeInOut,
-                child: FractionalTranslation(
-                  translation: Offset(translateX, 0),
-                  child: GestureDetector(
-                    onTap: isActive ? onTap : null,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: AppRadius.borderMd,
-                        boxShadow: isActive
-                            ? [
-                                BoxShadow(
-                                    color:
-                                        Colors.black.withValues(alpha: 0.6),
-                                    blurRadius: 40,
-                                    spreadRadius: 8)
-                              ]
-                            : null,
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: Image.file(
-                        images[i],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        errorBuilder: (context, error, stack) => Container(
-                          color: AppColors.bgCard,
-                          child: const Icon(Icons.broken_image_outlined,
-                              color: AppColors.textMuted, size: 32),
-                        ),
-                      ),
+              curve: Curves.easeInOut,
+              child: GestureDetector(
+                onTap: isActive ? onTap : null,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.bgCard, // Solid opaque background
+                    borderRadius: AppRadius.borderMd,
+                    boxShadow: isActive
+                        ? [
+                            BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                blurRadius: 40,
+                                spreadRadius: 8)
+                          ]
+                        : null,
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: Image.file(
+                    file,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (context, error, stack) => Container(
+                      color: AppColors.bgCard,
+                      child: const Icon(Icons.broken_image_outlined,
+                          color: AppColors.textMuted, size: 32),
                     ),
                   ),
                 ),
               ),
             ),
-          );
-        }),
+          ),
+        ),
+      );
+
+      return MapEntry(zIndex, widget);
+    });
+
+    elements.sort((a, b) => a.key.compareTo(b.key));
+
+    return SizedBox.expand(
+      child: Stack(
+        alignment: Alignment.center,
+        children: elements.map((e) => e.value).toList(),
       ),
     );
   }

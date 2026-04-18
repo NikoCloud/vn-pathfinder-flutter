@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'common/toast_overlay.dart';
+import 'common/scraping_webview.dart';
 import '../theme.dart';
 import '../providers/library_provider.dart';
 import '../screens/library_screen.dart';
 import '../screens/archive_screen.dart';
 import 'modals/settings_modal.dart';
+import 'modals/add_game_modal.dart';
 import 'navbar.dart';
 import 'status_bar.dart';
 
@@ -39,27 +42,36 @@ class AppShell extends ConsumerWidget {
           autofocus: true,
           child: Scaffold(
             backgroundColor: AppColors.bgPrimary,
-            body: Column(
+            body: Stack(
               children: [
-                AppNavbar(
-                  selectedTab: tab,
-                  onTabChanged: (i) =>
-                      ref.read(activeTabProvider.notifier).state = i,
+                Column(
+                  children: [
+                    AppNavbar(
+                      selectedTab: tab,
+                      onTabChanged: (i) =>
+                          ref.read(activeTabProvider.notifier).state = i,
+                    ),
+                    Expanded(
+                      child: IndexedStack(
+                        index: tab,
+                        children: const [
+                          LibraryScreen(),
+                          ArchiveScreen(),
+                        ],
+                      ),
+                    ),
+                    AppStatusBar(
+                      onAddGame: () {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => const AddGameModal(),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: IndexedStack(
-                    index: tab,
-                    children: const [
-                      LibraryScreen(),
-                      ArchiveScreen(),
-                    ],
-                  ),
-                ),
-                AppStatusBar(
-                  onAddGame: () {
-                    // TODO: Phase 9 add-game flow
-                  },
-                ),
+                const ToastOverlay(),
+                const ScrapingWebView(),
               ],
             ),
           ),

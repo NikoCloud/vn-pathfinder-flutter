@@ -27,9 +27,12 @@ class LibrarySidebar extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Header always present (never remounted) to avoid dropdown dispose crash
           _SidebarHeader(isGrid: isGrid, ref: ref),
           const Divider(height: 1, color: AppColors.border),
-          const Expanded(child: GameList()),
+          // Game list only in list mode; grid fills the main content area
+          if (!isGrid) const Expanded(child: GameList()),
+          if (isGrid) const Spacer(),
           const Divider(height: 1, color: AppColors.border),
           _AddGameButton(onTap: onAddGame),
         ],

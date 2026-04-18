@@ -22,6 +22,10 @@ class UserData {
   final Map<String, Map<String, bool>> appliedPatches;
   final List<String> customPresets;              // user-promoted preset tags
 
+  // Play status per game: 'playing' | 'completed' | 'on-hold' | 'abandoned'
+  // Missing key = derived from playtime (has playtime → 'playing', else 'unplayed')
+  final Map<String, String> status;             // base_key → status string
+
   const UserData({
     this.notes = const {},
     this.hidden = const {},
@@ -36,6 +40,7 @@ class UserData {
     this.patchAssignments = const {},
     this.appliedPatches = const {},
     this.customPresets = const [],
+    this.status = const {},
   });
 
   factory UserData.empty() => const UserData(
@@ -68,6 +73,7 @@ class UserData {
                   Map<String, bool>.from(v as Map? ?? {})))
           : {},
       customPresets: List<String>.from(json['custom_presets'] as List? ?? []),
+      status: Map<String, String>.from(json['status'] as Map? ?? {}),
     );
   }
 
@@ -86,6 +92,7 @@ class UserData {
     'patch_assignments': patchAssignments,
     'applied_patches': appliedPatches,
     'custom_presets': customPresets,
+    'status': status,
   };
 
   UserData copyWith({
@@ -102,6 +109,7 @@ class UserData {
     Map<String, String>? patchAssignments,
     Map<String, Map<String, bool>>? appliedPatches,
     List<String>? customPresets,
+    Map<String, String>? status,
   }) => UserData(
     notes: notes ?? this.notes,
     hidden: hidden ?? this.hidden,
@@ -116,5 +124,6 @@ class UserData {
     patchAssignments: patchAssignments ?? this.patchAssignments,
     appliedPatches: appliedPatches ?? this.appliedPatches,
     customPresets: customPresets ?? this.customPresets,
+    status: status ?? this.status,
   );
 }

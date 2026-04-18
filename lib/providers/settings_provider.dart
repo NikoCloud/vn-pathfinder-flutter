@@ -160,6 +160,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setTheme(String v) => update((s) => s.copyWith(theme: v));
   void setAccentColor(String v) => update((s) => s.copyWith(accentColor: v));
   void setFontSize(double v) => update((s) => s.copyWith(fontSize: v));
+
+  /// Merge new key-value pairs into the credentials for [site].
+  /// E.g. setSiteCredentials('f95zone', {'xf_user': '...', 'xf_session': '...'})
+  void setSiteCredentials(String site, Map<String, String> creds) =>
+      update((s) => s.copyWith(siteCredentials: {
+            ...s.siteCredentials,
+            site: {...(s.siteCredentials[site] ?? {}), ...creds},
+          }));
+
+  /// Clear all credentials for [site].
+  void clearSiteCredentials(String site) =>
+      update((s) => s.copyWith(siteCredentials: {
+            ...s.siteCredentials,
+            site: const {},
+          }));
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────

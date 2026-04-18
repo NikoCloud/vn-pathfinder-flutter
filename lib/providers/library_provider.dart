@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
 import '../models/user_data.dart';
 import '../services/scanner_service.dart';
+import 'notification_provider.dart';
 import 'settings_provider.dart';
 
 // ── UserData Provider ─────────────────────────────────────────────────────────
@@ -15,7 +17,9 @@ File _userdataFile() {
 }
 
 class UserDataNotifier extends StateNotifier<UserData> {
-  UserDataNotifier() : super(UserData.empty()) {
+  final Ref _ref;
+
+  UserDataNotifier(this._ref) : super(UserData.empty()) {
     _load();
   }
 
@@ -26,6 +30,45 @@ class UserDataNotifier extends StateNotifier<UserData> {
       final raw = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
       state = UserData.fromJson(raw);
     } catch (_) {}
+
+    // Perform background backup on startup
+    _performBackup();
+  }
+
+  Future<void> _performBackup() async {
+    try {
+      final settings = _ref.read(settingsProvider);
+      if (!settings.autoBackup) return;
+
+      final f = _userdataFile();
+      if (!f.existsSync()) return;
+
+      final backupDir = Directory(p.join(f.parent.path, 'backups'));
+      if (!backupDir.existsSync()) {
+        backupDir.createSync(recursive: true);
+      }
+
+      // Format: userdata_20231027_153045.json
+      final timestamp = DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.\-]'), '');
+      final backupFile = File(p.join(backupDir.path, 'userdata_$timestamp.json'));
+      
+      await f.copy(backupFile.path);
+
+      // Keep only last 5 backups
+      final backups = backupDir.listSync()
+          .whereType<File>()
+          .where((f) => p.basename(f.path).startsWith('userdata_'))
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path)); // Newest first
+
+      if (backups.length > 5) {
+        for (final old in backups.sublist(5)) {
+          await old.delete();
+        }
+      }
+    } catch (e) {
+      debugPrint('Backup failed: $e');
+    }
   }
 
   Future<void> save() async {
@@ -81,17 +124,37 @@ class UserDataNotifier extends StateNotifier<UserData> {
   }
 
   void setHidden(String baseKey, bool hidden) {
-    update((ud) {
-      final h = Set<String>.from(ud.hidden);
-      hidden ? h.add(baseKey) : h.remove(baseKey);
-      return ud.copyWith(hidden: h);
-    });
+    final newHidden = {...state.hidden};
+    if (hidden) {
+      newHidden.add(baseKey);
+    } else {
+      newHidden.remove(baseKey);
+    }
+    state = state.copyWith(hidden: newHidden);
+    save();
+
+    if (hidden) {
+      _ref.read(notificationProvider.notifier).info('Game hidden from library');
+    } else {
+      _ref.read(notificationProvider.notifier).success('Game restored to library');
+    }
+  }
+
+  void setStatus(String baseKey, String status) {
+    state = state.copyWith(
+      status: {...state.status, baseKey: status},
+    );
+    save();
+    
+    // Notify user
+    final label = status.substring(0, 1).toUpperCase() + status.substring(1);
+    _ref.read(notificationProvider.notifier).success('Status updated to $label');
   }
 }
 
 final userDataProvider =
     StateNotifierProvider<UserDataNotifier, UserData>(
-  (ref) => UserDataNotifier(),
+  (ref) => UserDataNotifier(ref),
 );
 
 // ── Library State ─────────────────────────────────────────────────────────────

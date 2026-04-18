@@ -5,6 +5,8 @@ import '../models/archive_item.dart';
 import '../models/game_group.dart';
 import '../models/game_version.dart';
 import '../models/user_data.dart';
+import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 
 // Ported from 1.0 Python logic.
 
@@ -339,7 +341,11 @@ class ScannerService {
         if (v != null) versions.add(v);
       } else if (e is File) {
         final ext = p.extension(e.path).toLowerCase();
-        if (['.zip', '.rar', '.py', '.rpa'].contains(ext)) {
+        // Archive types shown in the Archives tab.
+        // .rpa/.rpy/.py = Ren'Py assets/scripts loose in library root
+        // .zip/.rar/.7z = game download archives
+        // Anything else at library root that isn't a game folder → orphan
+        if (['.zip', '.rar', '.7z', '.rpa', '.rpy', '.py'].contains(ext)) {
           archives.add(scanArchive(e));
         }
       }
@@ -411,9 +417,75 @@ class ScannerService {
       for (final v in g.versions) {
         final patchesDir = Directory(p.join(v.folderPath.path, 'game', '.patches'));
         if (!patchesDir.existsSync()) continue;
-        // Patch registration happens in UserDataNotifier.setPatchState;
-        // this call surface-checks that the directory exists.
+        // Patch registration logic could go here or in UserData
       }
     }
+  }
+
+  /// Extracts an archive into the target directory.
+  static Future<void> extractArchive(File archiveFile, Directory targetDir) async {
+    final bytes = await archiveFile.readAsBytes();
+    final Archive archive;
+    
+    final ext = p.extension(archiveFile.path).toLowerCase();
+    if (ext == '.zip') {
+      archive = ZipDecoder().decodeBytes(bytes);
+    } else if (ext == '.tar' || ext == '.gz') {
+      archive = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+    } else {
+      throw Exception('Unsupported archive format: $ext');
+    }
+
+    for (final file in archive) {
+      final filename = file.name;
+      if (file.isFile) {
+        final data = file.content as List<int>;
+        final f = File(p.join(targetDir.path, filename));
+        f.parent.createSync(recursive: true);
+        await f.writeAsBytes(data);
+      } else {
+        Directory(p.join(targetDir.path, filename)).createSync(recursive: true);
+      }
+    }
+  }
+
+  /// Finds files and folders in the library root that are not recognized as games or archives.
+  static List<FileSystemEntity> findOrphans(Directory libraryDir, List<GameGroup> existingGroups) {
+    if (!libraryDir.existsSync()) return [];
+
+    final allEntries = libraryDir.listSync();
+    final orphans = <FileSystemEntity>[];
+
+    // Build a set of paths that are already known
+    final knownPaths = <String>{};
+    for (final group in existingGroups) {
+      for (final version in group.versions) {
+        knownPaths.add(p.canonicalize(version.folderPath.path));
+      }
+      for (final archive in group.archives) {
+        knownPaths.add(p.canonicalize(archive.archivePath.path));
+      }
+    }
+
+    // Also ignore hidden files/folders and common system files
+    final ignoreNames = {
+      '.vnpf',
+      '\$RECYCLE.BIN',
+      'System Volume Information',
+      'desktop.ini',
+      'thumbs.db'
+    };
+
+    for (final entry in allEntries) {
+      final name = p.basename(entry.path);
+      if (name.startsWith('.') || ignoreNames.contains(name)) continue;
+
+      final canonicalPath = p.canonicalize(entry.path);
+      if (!knownPaths.contains(canonicalPath)) {
+        orphans.add(entry);
+      }
+    }
+
+    return orphans;
   }
 }

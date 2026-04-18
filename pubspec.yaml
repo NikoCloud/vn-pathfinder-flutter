@@ -42,6 +42,9 @@ dependencies:
   # URL launcher (open browser, open folder in Explorer)
   url_launcher: ^6.3.1
 
+  # Embedded WebView2 browser (itch.io authenticated login — Windows only)
+  webview_windows: ^0.4.0
+
   # Archive extraction (zip)
   archive: ^4.0.4
 

@@ -37,6 +37,21 @@ class GameVersion {
   String get metaItchUrl     => metadata['itch_url'] as String? ?? '';
   String get metaLcUrl       => metadata['lc_url'] as String? ?? '';
   String get metaEngine      => metadata['engine'] as String? ?? '';
+  String get metaLaunchArgs  => metadata['launch_arguments'] as String? ?? '';
+
+  /// Tags fetched from metadata providers (stored in .vnpf/metadata.json).
+  /// Reads both 'tags_fetched' (2.0 format) and 'tags' (1.0 legacy format).
+  List<String> get metaTags {
+    final fromFetched = (metadata['tags_fetched'] as List?)
+        ?.map((e) => e.toString()).toList() ?? [];
+    final fromTags = (metadata['tags'] as List?)
+        ?.map((e) => e.toString()).toList() ?? [];
+    // Merge: prefer tags_fetched, append any tags not already present
+    final seen = <String>{};
+    return [...fromFetched, ...fromTags]
+        .where((t) => t.isNotEmpty && seen.add(t))
+        .toList();
+  }
 
   // Effective display name: custom metadata title > parsed display name
   String get effectiveTitle => metaTitle.isNotEmpty ? metaTitle : displayName;
