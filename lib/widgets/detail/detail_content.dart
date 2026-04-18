@@ -57,7 +57,10 @@ class _DetailContentState extends ConsumerState<DetailContent> {
     final g = widget.group;
     final v = g.latestVersion;
     final synopsis = v?.metaSynopsis ?? '';
-    final tags = widget.userData.tags[g.baseKey] ?? [];
+    final userTags = widget.userData.tags[g.baseKey] ?? [];
+    final fetchedTags = v?.metaTags ?? [];
+    // Deduplicate: user tags that are already in fetchedTags are shown only once (as fetched)
+    final userOnlyTags = userTags.where((t) => !fetchedTags.contains(t)).toList();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 24, 32, 32),
@@ -83,11 +86,12 @@ class _DetailContentState extends ConsumerState<DetailContent> {
           _SectionLabel('TAGS'),
           const SizedBox(height: 8),
           _TagsRow(
-            tags: tags,
+            fetchedTags: fetchedTags,
+            userTags: userOnlyTags,
             onRemove: (t) => ref
                 .read(userDataProvider.notifier)
-                .setTags(g.baseKey, tags.where((x) => x != t).toList()),
-            onAdd: () => _showAddTagDialog(context, g.baseKey, tags),
+                .setTags(g.baseKey, userTags.where((x) => x != t).toList()),
+            onAdd: () => _showAddTagDialog(context, g.baseKey, userTags),
           ),
           const SizedBox(height: 24),
 
@@ -179,12 +183,16 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _TagsRow extends StatelessWidget {
-  final List<String> tags;
+  /// Tags from metadata.json (provider-fetched) — displayed read-only.
+  final List<String> fetchedTags;
+  /// Tags from userdata.json (manually added) — can be removed.
+  final List<String> userTags;
   final ValueChanged<String> onRemove;
   final VoidCallback onAdd;
 
   const _TagsRow({
-    required this.tags,
+    required this.fetchedTags,
+    required this.userTags,
     required this.onRemove,
     required this.onAdd,
   });
@@ -195,9 +203,34 @@ class _TagsRow extends StatelessWidget {
       spacing: 6,
       runSpacing: 6,
       children: [
-        ...tags.map((t) => _TagChip(label: t, onRemove: () => onRemove(t))),
+        // Provider-fetched tags: no remove button
+        ...fetchedTags.map((t) => _ReadOnlyTagChip(label: t)),
+        // User-added tags: removable
+        ...userTags.map((t) => _TagChip(label: t, onRemove: () => onRemove(t))),
         _AddTagButton(onTap: onAdd),
       ],
+    );
+  }
+}
+
+/// Non-removable tag chip (for provider-fetched tags).
+class _ReadOnlyTagChip extends StatelessWidget {
+  final String label;
+  const _ReadOnlyTagChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.bgSecondary,
+        border: Border.all(color: AppColors.borderLight),
+        borderRadius: AppRadius.borderSm,
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
+      ),
     );
   }
 }

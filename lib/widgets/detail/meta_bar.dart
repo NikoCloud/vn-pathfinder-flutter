@@ -92,7 +92,11 @@ class _MetaBarState extends State<MetaBar> {
           _Divider(),
           _MetaStat(
             label: 'VERSION',
-            value: v?.versionStr.isNotEmpty == true ? 'v${v!.versionStr}' : '—',
+            value: v?.versionStr.isNotEmpty == true
+                ? (v!.versionStr.startsWith('v')
+                    ? v.versionStr
+                    : 'v${v.versionStr}')
+                : '—',
           ),
         ],
       ),

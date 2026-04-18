@@ -85,10 +85,11 @@ class AppTheme {
       colorScheme: ColorScheme(
         brightness: dark ? Brightness.dark : Brightness.light,
         primary: accent,
+        // Color.r/g/b are 0.0–1.0 in Flutter 3.27+; scale to 0–255 first
         secondary: Color.fromARGB(255,
-          (accent.r * 1.1).clamp(0, 255).round(),
-          (accent.g * 1.1).clamp(0, 255).round(),
-          (accent.b * 1.1).clamp(0, 255).round(),
+          (accent.r * 255 * 1.1).clamp(0.0, 255.0).round(),
+          (accent.g * 255 * 1.1).clamp(0.0, 255.0).round(),
+          (accent.b * 255 * 1.1).clamp(0.0, 255.0).round(),
         ),
         surface: bg,
         error: AppColors.danger,
@@ -102,10 +103,17 @@ class AppTheme {
       dividerTheme: const DividerThemeData(
           color: AppColors.border, thickness: 1, space: 0),
       scrollbarTheme: ScrollbarThemeData(
-        thumbColor: WidgetStateProperty.all(AppColors.border),
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.hovered) || states.contains(WidgetState.dragged)) {
+            return accent.withValues(alpha: 0.5);
+          }
+          return AppColors.border.withValues(alpha: 0.5);
+        }),
         trackColor: WidgetStateProperty.all(Colors.transparent),
-        radius: const Radius.circular(3),
+        radius: const Radius.circular(4),
         thickness: WidgetStateProperty.all(6),
+        thumbVisibility: WidgetStateProperty.all(false),
+        interactive: true,
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(

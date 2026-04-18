@@ -5,6 +5,7 @@ import '../../providers/library_provider.dart';
 import '../../providers/filter_provider.dart';
 import '../../providers/settings_provider.dart';
 import 'game_entry.dart';
+import '../library/game_context_menu.dart';
 
 class GameList extends ConsumerWidget {
   const GameList({super.key});
@@ -56,7 +57,7 @@ class GameList extends ConsumerWidget {
 
     return ListView.builder(
       itemCount: groups.length,
-      itemExtent: 62, // fixed height for perf (40px thumb + 11px padding each side)
+      itemExtent: 62,
       itemBuilder: (context, i) {
         final g = groups[i];
         return GameEntry(
@@ -64,8 +65,14 @@ class GameList extends ConsumerWidget {
           group: g,
           userData: ud,
           selected: g.baseKey == selectedKey,
-          onTap: () {
-            ref.read(libraryProvider.notifier).select(g.baseKey);
+          onTap: () => ref.read(libraryProvider.notifier).select(g.baseKey),
+          onRightClick: (pos) {
+            showGameContextMenu(
+              context: context,
+              ref: ref,
+              globalPosition: pos,
+              group: g,
+            );
           },
         );
       },

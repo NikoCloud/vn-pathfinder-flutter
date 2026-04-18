@@ -107,7 +107,10 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   final filter = ref.watch(filterProvider);
   final ud = ref.watch(userDataProvider);
 
-  var result = groups.where((g) => !ud.hidden.contains(g.baseKey)).toList();
+  // Exclude archive-only groups (no installed game versions) from the library.
+  var result = groups
+      .where((g) => g.versions.isNotEmpty && !ud.hidden.contains(g.baseKey))
+      .toList();
 
   // Text search
   if (filter.query.isNotEmpty) {
@@ -124,7 +127,7 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   // Tag include filter
   if (filter.includeTags.isNotEmpty) {
     result = result.where((g) {
-      final gameTags = ud.tags[g.baseKey] ?? [];
+      final gameTags = _allTagsForGroup(g, ud);
       if (filter.tagMatchMode == TagMatchMode.any) {
         return filter.includeTags.any((t) => gameTags.contains(t));
       } else {
@@ -136,8 +139,43 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   // Tag exclude filter
   if (filter.excludeTags.isNotEmpty) {
     result = result.where((g) {
-      final gameTags = ud.tags[g.baseKey] ?? [];
+      final gameTags = _allTagsForGroup(g, ud);
       return !filter.excludeTags.any((t) => gameTags.contains(t));
+    }).toList();
+  }
+
+  // Engine filter (only when not all engines selected)
+  const allEngines = {'renpy', 'rpgm', 'unity', 'html', 'unreal', 'other'};
+  if (!filter.engines.containsAll(allEngines)) {
+    result = result.where((g) {
+      final v = g.latestVersion;
+      if (v == null) return filter.engines.contains('other');
+      final meta = v.metaEngine.toLowerCase();
+      if (v.isRenpy || meta == 'renpy') return filter.engines.contains('renpy');
+      if (meta == 'rpgm' || meta == 'rpg maker') return filter.engines.contains('rpgm');
+      if (meta == 'unity') return filter.engines.contains('unity');
+      if (meta == 'html' || meta == 'web') return filter.engines.contains('html');
+      if (meta == 'unreal') return filter.engines.contains('unreal');
+      return filter.engines.contains('other');
+    }).toList();
+  }
+
+  // Status filter (only when not all statuses selected)
+  const allStatuses = {'playing', 'completed', 'on-hold', 'unplayed', 'abandoned'};
+  if (!filter.statuses.containsAll(allStatuses)) {
+    result = result.where((g) {
+      final explicit = ud.status[g.baseKey];
+      final String gameStatus;
+      if (explicit != null && explicit.isNotEmpty) {
+        gameStatus = explicit;
+      } else {
+        // Derive: any playtime → playing, otherwise → unplayed
+        final hasPlay = g.versions.any((v) =>
+            (ud.playtime[v.folderName] ?? 0) > 0 ||
+            ud.manualPlayed.contains(v.folderName));
+        gameStatus = hasPlay ? 'playing' : 'unplayed';
+      }
+      return filter.statuses.contains(gameStatus);
     }).toList();
   }
 
@@ -167,6 +205,18 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   return result;
 });
 
+/// Returns the merged tag set for a group:
+///   • user-assigned tags stored in UserData (from 1.0 or the Properties modal)
+///   • tags from every version's .vnpf/metadata.json via GameVersion.metaTags
+///     (covers both 'tags_fetched' from 2.0 Fetch Metadata AND 'tags' from 1.0)
+Set<String> _allTagsForGroup(GameGroup g, UserData ud) {
+  final tags = <String>{...?ud.tags[g.baseKey]};
+  for (final v in g.versions) {
+    tags.addAll(v.metaTags);
+  }
+  return tags;
+}
+
 DateTime? _latestPlay(GameGroup g, UserData ud) {
   DateTime? latest;
   for (final v in g.versions) {
@@ -188,12 +238,22 @@ DateTime _folderMtime(GameGroup g) {
   }
 }
 
-// All tags in use across the library (for the filter dropdowns)
+/// All tags in use across the library (for the filter dropdowns).
+/// Merges user-assigned tags (UserData.tags) with tags_fetched from
+/// each installed game version's .vnpf/metadata.json.
 final allTagsProvider = Provider<List<String>>((ref) {
   final ud = ref.watch(userDataProvider);
+  final groups = ref.watch(libraryProvider).groups;
   final all = <String>{};
+  // 1.0 user-assigned tags stored in UserData
   for (final tags in ud.tags.values) {
     all.addAll(tags);
+  }
+  // Tags from metadata.json (tags_fetched 2.0 + tags 1.0 legacy) via metaTags getter
+  for (final g in groups) {
+    for (final v in g.versions) {
+      all.addAll(v.metaTags);
+    }
   }
   return all.toList()..sort();
 });

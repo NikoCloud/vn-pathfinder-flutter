@@ -1,11 +1,16 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:webview_windows/webview_windows.dart';
 import '../../theme.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/library_provider.dart';
+import '../../services/metadata_service.dart';
+import '../../services/scraping_service.dart';
+import 'orphan_scanner_modal.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -574,7 +579,7 @@ class _GeneralPanel extends ConsumerWidget {
           trailing: _SmallButton(
             '🔍  Scan Now',
             onTap: () {
-              // TODO: Phase 9 — orphan scanner modal
+              showOrphanScannerModal(context);
             },
           ),
         ),
@@ -763,26 +768,27 @@ class _NetworkPanel extends ConsumerWidget {
         ),
       ]),
       _SettingGroup(title: 'SITE LOGINS', children: [
-        _LoginCard(
+        const _VndbInfoCard(),
+        _XenforoLoginCard(
           site: 'F95Zone',
+          baseUrl: 'https://f95zone.to',
           credentials: settings.siteCredentials['f95zone'] ?? {},
-          onSave: (u, p) => notifier.update(
-            (s) => s.copyWith(siteCredentials: {
-              ...s.siteCredentials,
-              'f95zone': {'username': u, 'password': p},
-            }),
-          ),
+          onLogin: (cookies) => notifier.setSiteCredentials('f95zone', cookies),
+          onDisconnect: () => notifier.clearSiteCredentials('f95zone'),
           disabled: locked,
         ),
-        _LoginCard(
+        _XenforoLoginCard(
           site: 'Lewd Corner',
+          baseUrl: 'https://lewdcorner.com',
           credentials: settings.siteCredentials['lewdcorner'] ?? {},
-          onSave: (u, p) => notifier.update(
-            (s) => s.copyWith(siteCredentials: {
-              ...s.siteCredentials,
-              'lewdcorner': {'username': u, 'password': p},
-            }),
-          ),
+          onLogin: (cookies) => notifier.setSiteCredentials('lewdcorner', cookies),
+          onDisconnect: () => notifier.clearSiteCredentials('lewdcorner'),
+          disabled: locked,
+        ),
+        _ItchioLoginCard(
+          cookies: settings.siteCredentials['itchio'] ?? {},
+          onUpdateCookies: (ck) => notifier.setSiteCredentials('itchio', ck),
+          onClearCookies: () => notifier.clearSiteCredentials('itchio'),
           disabled: locked,
         ),
       ]),
@@ -790,46 +796,42 @@ class _NetworkPanel extends ConsumerWidget {
   }
 }
 
-class _LoginCard extends StatefulWidget {
+// ── XenForo browser login card (F95Zone / LewdCorner) ─────────────────────────
+// Uses WebView2 instead of plain HTTP so Cloudflare / bot-protection is bypassed.
+
+class _XenforoLoginCard extends ConsumerStatefulWidget {
   final String site;
+  final String baseUrl;
   final Map<String, String> credentials;
-  final void Function(String user, String pass) onSave;
+  final void Function(Map<String, String> cookies) onLogin;
+  final VoidCallback onDisconnect;
   final bool disabled;
 
-  const _LoginCard({
+  const _XenforoLoginCard({
     required this.site,
+    required this.baseUrl,
     required this.credentials,
-    required this.onSave,
+    required this.onLogin,
+    required this.onDisconnect,
     required this.disabled,
   });
 
   @override
-  State<_LoginCard> createState() => _LoginCardState();
+  ConsumerState<_XenforoLoginCard> createState() => _XenforoLoginCardState();
 }
 
-class _LoginCardState extends State<_LoginCard> {
-  late final TextEditingController _user;
-  late final TextEditingController _pass;
-
-  @override
-  void initState() {
-    super.initState();
-    _user = TextEditingController(
-        text: widget.credentials['username'] ?? '');
-    _pass = TextEditingController(
-        text: widget.credentials['password'] ?? '');
-  }
-
-  @override
-  void dispose() {
-    _user.dispose();
-    _pass.dispose();
-    super.dispose();
-  }
+class _XenforoLoginCardState extends ConsumerState<_XenforoLoginCard> {
+  bool _refreshing = false;
 
   bool get _connected =>
-      (widget.credentials['username'] ?? '').isNotEmpty &&
-      (widget.credentials['password'] ?? '').isNotEmpty;
+      widget.credentials['connected'] == 'true' ||
+      (widget.credentials['xf_session'] ?? '').isNotEmpty ||
+      (widget.credentials['xf_user'] ?? '').isNotEmpty;
+
+  String get _displayName {
+    final u = widget.credentials['username'] ?? '';
+    return u.isNotEmpty ? u : 'Connected';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -848,10 +850,235 @@ class _LoginCardState extends State<_LoginCard> {
                   color: AppColors.textPrimary,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x1A4A9E6E),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Browser Login',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    color: AppColors.accentSilver,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (!_connected || _refreshing)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: _refreshing
+                        ? const CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.accent,
+                          )
+                        : IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.refresh,
+                                size: 16, color: AppColors.textMuted),
+                            onPressed: widget.disabled ? null : _refreshSession,
+                            tooltip: 'Refresh session',
+                          ),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _connected
+                      ? const Color(0x1A4A9E6E)
+                      : const Color(0x1AC94040),
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: Text(
+                   _connected ? '✓ $_displayName' : '✕ Not connected',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: _connected ? AppColors.accent : AppColors.danger,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${widget.site} requires a logged-in browser session. '
+            'Click "Login with browser" to open an in-app login window.',
+            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _SmallButton(
+                'Login with browser',
+                primary: !_connected,
+                onTap: widget.disabled ? null : () => _openLogin(context),
+              ),
+              if (_connected) ...[
+                const SizedBox(width: 8),
+                _SmallButton(
+                  'Disconnect',
+                  onTap: widget.disabled ? null : widget.onDisconnect,
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _refreshSession() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+
+    try {
+      final scraper = ref.read(scrapingServiceProvider);
+      // Wait for it to be ready
+      await scraper.ready;
+
+      // Extract cookies and check login state
+      final js = """
+        (() => {
+          const loggedIn = !!(
+            document.querySelector('a[href*="/logout/"]') || 
+            document.querySelector('.p-navgroup-link--user') ||
+            document.documentElement.getAttribute('data-logged-in') === 'true'
+          );
+          if (!loggedIn) return null;
+          
+          let username = null;
+          const userEl = document.querySelector('.p-navgroup-link--user .p-navgroup-linkText') || 
+                         document.querySelector('.p-account .p-navgroup-linkText');
+          if (userEl) username = userEl.innerText.trim();
+          
+          return { loggedIn, username };
+        })()
+      """;
+
+      final result = await scraper.evalOnPage('${widget.baseUrl}/', js);
+      
+      if (result != null && result['loggedIn'] == true) {
+        widget.onLogin(<String, String>{
+          'connected': 'true',
+          if (result['username'] != null) 'username': result['username'] as String,
+        });
+      } else {
+        // Not logged in or detection failed
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not detect an active session.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Refresh failed: $e');
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  void _openLogin(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _XenforoLoginDialog(
+        site: widget.site,
+        baseUrl: widget.baseUrl,
+        onSuccess: widget.onLogin,
+      ),
+    );
+  }
+}
+
+/// itch.io uses a browser-based login flow (adult content is gated behind
+/// an authenticated session — a public API key is not sufficient).
+/// Cookies extracted from the embedded WebView2 session are stored here.
+/// The user opens the itch.io login page in a dialog, logs in, and the app
+/// captures the session cookies automatically on successful navigation to /my-feed.
+class _ItchioLoginCard extends ConsumerStatefulWidget {
+  final Map<String, String> cookies;
+  final void Function(Map<String, String> cookies) onUpdateCookies;
+  final VoidCallback onClearCookies;
+  final bool disabled;
+
+  const _ItchioLoginCard({
+    required this.cookies,
+    required this.onUpdateCookies,
+    required this.onClearCookies,
+    required this.disabled,
+  });
+
+  @override
+  ConsumerState<_ItchioLoginCard> createState() => _ItchioLoginCardState();
+}
+
+class _ItchioLoginCardState extends ConsumerState<_ItchioLoginCard> {
+  bool _refreshing = false;
+
+  bool get _connected => widget.cookies.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'itch.io',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x1A4A9E6E),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Browser Login',
+                  style: GoogleFonts.inter(
+                      fontSize: 9,
+                      color: AppColors.accentSilver,
+                      fontWeight: FontWeight.w600),
+                ),
+              ),
+              const Spacer(),
+              if (!_connected || _refreshing)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: _refreshing
+                        ? const CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.accent,
+                          )
+                        : IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(Icons.refresh,
+                                size: 16, color: AppColors.textMuted),
+                            onPressed: widget.disabled ? null : _refreshSession,
+                            tooltip: 'Refresh session',
+                          ),
+                  ),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: _connected
                       ? const Color(0x1A4A9E6E)
@@ -863,94 +1090,751 @@ class _LoginCardState extends State<_LoginCard> {
                   style: GoogleFonts.inter(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: _connected
-                        ? AppColors.accent
-                        : AppColors.danger,
+                    color:
+                        _connected ? AppColors.accent : AppColors.danger,
                   ),
                 ),
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Text(
+            'itch.io requires a logged-in browser session to access adult content. '
+            'Click "Login with browser" to open an in-app login window.',
+            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+          ),
           const SizedBox(height: 8),
-          _CredField(
-              label: 'Username',
-              controller: _user,
-              obscure: false,
-              disabled: widget.disabled),
-          const SizedBox(height: 4),
-          _CredField(
-              label: 'Password',
-              controller: _pass,
-              obscure: true,
-              disabled: widget.disabled),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _SmallButton(
-              'Save',
-              primary: true,
-              onTap: widget.disabled
-                  ? null
-                  : () => widget.onSave(_user.text, _pass.text),
-            ),
+          Row(
+            children: [
+              _SmallButton(
+                'Login with browser',
+                primary: !_connected,
+                onTap: widget.disabled ? null : () => _openLogin(context),
+              ),
+              if (_connected) ...[
+                const SizedBox(width: 8),
+                _SmallButton(
+                  'Disconnect',
+                  onTap: widget.disabled ? null : widget.onClearCookies,
+                ),
+              ],
+            ],
           ),
         ],
       ),
     );
   }
+
+  Future<void> _refreshSession() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+
+    try {
+      final scraper = ref.read(scrapingServiceProvider);
+      await scraper.ready;
+
+      const js = """
+        (() => {
+          return !!(document.querySelector('.user_menu') || document.querySelector('a[href*="/logout"]'));
+        })()
+      """;
+
+      final result = await scraper.evalOnPage('https://itch.io/', js);
+      
+      if (result == true) {
+        final cookies = await scraper.getCookies('https://itch.io/');
+        if (cookies.isNotEmpty) {
+          widget.onUpdateCookies(cookies);
+        }
+      } else {
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not detect an active itch.io session.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Itch.io refresh failed: $e');
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  void _openLogin(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ItchioLoginDialog(
+        onSuccess: widget.onUpdateCookies,
+      ),
+    );
+  }
 }
 
-class _CredField extends StatelessWidget {
-  final String label;
-  final TextEditingController controller;
-  final bool obscure;
-  final bool disabled;
+/// Dialog that hosts an embedded WebView2 window for itch.io login.
+/// Uses webview_windows (Windows-only, requires WebView2 Runtime — ships
+/// with Windows 11 / Microsoft Edge).
+///
+/// Flow: open https://itch.io/login → user logs in → URL changes to /my-feed
+/// → extract document.cookie → save to settings → dialog closes automatically.
+///
+/// Note: document.cookie returns only non-HTTP-only cookies.
+/// The itchio_token cookie (non-HTTP-only) is sufficient for adult content access.
+class _ItchioLoginDialog extends StatefulWidget {
+  final void Function(Map<String, String> cookies) onSuccess;
+  const _ItchioLoginDialog({required this.onSuccess});
 
-  const _CredField({
-    required this.label,
-    required this.controller,
-    required this.obscure,
-    required this.disabled,
-  });
+  @override
+  State<_ItchioLoginDialog> createState() => _ItchioLoginDialogState();
+}
+
+class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
+  final _controller = WebviewController();
+  StreamSubscription<String>? _urlSub;
+  bool _ready = false;
+  bool _extracting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _controller.initialize();
+      if (mounted) setState(() => _ready = true);
+      _urlSub = _controller.url.listen(_onUrlChanged);
+      await _controller.loadUrl('https://itch.io/login');
+      // Catch existing sessions immediately
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) _verifyAndFinish();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error =
+            'Could not start embedded browser.\n\n'
+            'WebView2 Runtime is required — it ships with Windows 11\n'
+            'and Microsoft Edge. Make sure Edge is up to date.\n\n'
+            'Error: $e');
+      }
+    }
+  }
+
+  void _onUrlChanged(String url) {
+    if (_extracting) return;
+    if (url.contains('itch.io/my-feed') || url.contains('itch.io/dashboard') || url == 'https://itch.io/') {
+      _verifyAndFinish();
+    }
+  }
+
+  Future<void> _verifyAndFinish() async {
+    if (_extracting) return;
+    setState(() => _extracting = true);
+    _urlSub?.cancel();
+    try {
+      final raw = await _controller.executeScript('document.cookie') as String? ?? '';
+      final cookies = <String, String>{};
+      cookies['connected'] = 'true';
+      cookies['last_login'] = DateTime.now().toIso8601String();
+
+      for (final part in raw.split(';')) {
+        final kv = part.trim().split('=');
+        if (kv.length >= 2) {
+          final key = kv[0].trim();
+          final value = kv.sublist(1).join('=').trim();
+          if (key.isNotEmpty) cookies[key] = value;
+        }
+      }
+
+      // Try to get username from profile/nav
+      try {
+        final userJs = await _controller.executeScript(
+          "document.querySelector('.user_menu .username')?.textContent?.trim() || ''"
+        ) as String? ?? '';
+        final cleaned = userJs.replaceAll('"', '').trim();
+        if (cleaned.isNotEmpty) cookies['username'] = cleaned;
+      } catch (_) {}
+
+      if (mounted) {
+        widget.onSuccess(cookies);
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _extracting = false;
+          _error = 'Failed to read session: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _urlSub?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 72,
-          child: Text(label,
-              style: GoogleFonts.inter(
-                  fontSize: 12, color: AppColors.textMuted)),
-        ),
-        Expanded(
-          child: Container(
-            height: 28,
-            decoration: BoxDecoration(
-              color: disabled ? AppColors.bgCard : AppColors.bgInput,
-              border: Border.all(color: AppColors.border),
-              borderRadius: AppRadius.borderSm,
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: TextField(
-              controller: controller,
-              obscureText: obscure,
-              enabled: !disabled,
-              style: GoogleFonts.inter(
-                  fontSize: 12, color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                filled: false,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 660),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.bgSecondary,
+            borderRadius: AppRadius.borderLg,
+            border: Border.all(color: AppColors.borderLight),
+          ),
+          child: ClipRRect(
+            borderRadius: AppRadius.borderLg,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                        bottom: BorderSide(color: AppColors.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.open_in_browser_outlined,
+                          size: 16, color: AppColors.accent),
+                      const SizedBox(width: 10),
+                      Text(
+                        'itch.io — Login',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_extracting)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Saving session…',
+                                style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (_ready && _error == null)
+                        IconButton(
+                          icon: const Icon(Icons.check_circle_outline, size: 18),
+                          color: AppColors.accent,
+                          tooltip: 'Confirm Connection',
+                          onPressed: _verifyAndFinish,
+                          splashRadius: 14,
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16),
+                        color: AppColors.textSecondary,
+                        onPressed: () => Navigator.of(context).pop(),
+                        splashRadius: 14,
+                        tooltip: 'Cancel',
+                      ),
+                    ],
+                  ),
+                ),
+                // Info bar shown once webview is loaded
+                if (_ready && !_extracting && _error == null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 6),
+                    color: AppColors.accent.withValues(alpha: 0.08),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline,
+                            size: 13, color: AppColors.accent),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Log in to your itch.io account. Click the checkmark icon above once you are connected.',
+                          style: GoogleFonts.inter(
+                              fontSize: 11, color: AppColors.accentSilver),
+                        ),
+                      ],
+                    ),
+                  ),
+                // Content area
+                Expanded(
+                  child: _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    size: 36, color: Colors.orange),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _error!,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                    height: 1.6,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _SmallButton(
+                                      "I'm logged in — confirm connection",
+                                      primary: true,
+                                      onTap: () {
+                                        setState(() => _error = null);
+                                        _verifyAndFinish();
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _SmallButton(
+                                      'Close',
+                                      onTap: () => Navigator.of(context).pop(),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : !_ready
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.accent,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Webview(_controller),
+                ),
+              ],
             ),
           ),
         ),
-      ],
+      ),
+    );
+  }
+}
+
+// ── XenForo browser login dialog (F95Zone / LewdCorner) ──────────────────────
+//
+// Hosts a full WebView2 window so Cloudflare/bot checks are bypassed.
+// Detects a successful login when the URL leaves /login* on the target domain.
+
+class _XenforoLoginDialog extends StatefulWidget {
+  final String site;
+  final String baseUrl;
+  final void Function(Map<String, String> cookies) onSuccess;
+
+  const _XenforoLoginDialog({
+    required this.site,
+    required this.baseUrl,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_XenforoLoginDialog> createState() => _XenforoLoginDialogState();
+}
+
+class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
+  final _controller = WebviewController();
+  StreamSubscription<String>? _urlSub;
+  bool _ready = false;
+  bool _extracting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _controller.initialize();
+      if (mounted) setState(() => _ready = true);
+      _urlSub = _controller.url.listen(_onUrlChanged);
+      await _controller.loadUrl('${widget.baseUrl}/login/');
+      // Catch existing sessions immediately
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) _verifyLogin();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error =
+            'Could not start embedded browser.\n\n'
+            'WebView2 Runtime is required — it ships with Windows 11\n'
+            'and Microsoft Edge. Make sure Edge is up to date.\n\n'
+            'Error: $e');
+      }
+    }
+  }
+
+  void _onUrlChanged(String url) {
+    if (_extracting) return;
+    // Allow user to navigate freely. We'll wait for them to be logged in.
+    // We check for login success if they are on a non-login page on the site.
+    final isLoginPath = url.contains('/login') || url.contains('/register');
+    final isOnSite = url.startsWith(widget.baseUrl);
+    
+    if (_ready && isOnSite && !isLoginPath) {
+      _verifyLogin();
+    }
+  }
+
+  Future<void> _verifyLogin() async {
+    if (_extracting) return;
+    
+    // Check if we are logged in by looking for user navigation elements
+    try {
+      final isLoggedIn = await _controller.executeScript(
+        "!!(document.querySelector('.p-navgroup-link--user') || "
+        "document.querySelector('.p-nav-avatar') || "
+        "document.querySelector('[data-xf-click=\"logout\"]') || "
+        "document.documentElement.getAttribute('data-logged-in') === 'true')"
+      ) as bool? ?? false;
+
+      if (isLoggedIn) {
+        _extractAndFinish();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _extractAndFinish() async {
+    if (_extracting) return;
+    setState(() => _extracting = true);
+    _urlSub?.cancel();
+    
+    try {
+      final cookies = <String, String>{};
+      cookies['connected'] = 'true';
+      cookies['last_login'] = DateTime.now().toIso8601String();
+
+      // Attempt to extract the displayed username for UI
+      try {
+        final usernameJs = await _controller.executeScript(
+          "document.querySelector('.p-navgroup-link--user .p-navgroup-linkText')?.textContent?.trim()"
+          " || document.querySelector('.p-nav-avatar')?.getAttribute('aria-label')?.trim()"
+          " || ''",
+        ) as String? ?? '';
+        final cleaned = usernameJs.replaceAll('"', '').trim();
+        if (cleaned.isNotEmpty) cookies['username'] = cleaned;
+      } catch (_) {}
+
+      // Try to get non-HttpOnly cookies just in case any are useful (e.g. xf_user)
+      try {
+        final raw = await _controller.executeScript('document.cookie') as String? ?? '';
+        for (final part in raw.split(';')) {
+          final kv = part.trim().split('=');
+          if (kv.length >= 2) {
+            final key = kv[0].trim();
+            final value = kv.sublist(1).join('=').trim();
+            if (key == 'xf_user') cookies[key] = value;
+          }
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        widget.onSuccess(cookies);
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _extracting = false;
+          _error = 'Failed to verify session: $e';
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _urlSub?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 60, vertical: 40),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 660),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.bgSecondary,
+            borderRadius: AppRadius.borderLg,
+            border: Border.all(color: AppColors.borderLight),
+          ),
+          child: ClipRRect(
+            borderRadius: AppRadius.borderLg,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: const BoxDecoration(
+                    border:
+                        Border(bottom: BorderSide(color: AppColors.border)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.open_in_browser_outlined,
+                          size: 16, color: AppColors.accent),
+                      const SizedBox(width: 10),
+                      Text(
+                        '${widget.site} — Login',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (_extracting)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Saving session…',
+                                style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (_ready && _error == null)
+                        IconButton(
+                          icon: const Icon(Icons.check_circle_outline, size: 18),
+                          color: AppColors.accent,
+                          tooltip: 'Confirm Connection',
+                          onPressed: _extractAndFinish,
+                          splashRadius: 14,
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16),
+                        color: AppColors.textSecondary,
+                        onPressed: () => Navigator.of(context).pop(),
+                        splashRadius: 14,
+                        tooltip: 'Cancel',
+                      ),
+                    ],
+                  ),
+                ),
+                // Info bar
+                if (_ready && !_extracting && _error == null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 6),
+                    color: AppColors.accent.withValues(alpha: 0.08),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline,
+                            size: 13, color: AppColors.accent),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Log in to your ${widget.site} account. The app will detect it automatically, or you can click the checkmark icon above to finish.',
+                          style: GoogleFonts.inter(
+                              fontSize: 11, color: AppColors.accentSilver),
+                        ),
+                      ],
+                    ),
+                  ),
+                // Content
+                Expanded(
+                  child: _error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    size: 36, color: Colors.orange),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _error!,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                    height: 1.6,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _SmallButton(
+                                      "I'm logged in — confirm connection",
+                                      primary: true,
+                                      onTap: () {
+                                        setState(() => _error = null);
+                                        _verifyLogin();
+                                      },
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _SmallButton(
+                                      'Close',
+                                      onTap: () =>
+                                          Navigator.of(context).pop(),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : !_ready
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.accent,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Webview(_controller),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── VNDB info card ─────────────────────────────────────────────────────────────
+// VNDB uses a free, public JSON API — no account or login is required.
+
+class _VndbInfoCard extends StatefulWidget {
+  const _VndbInfoCard();
+
+  @override
+  State<_VndbInfoCard> createState() => _VndbInfoCardState();
+}
+
+class _VndbInfoCardState extends State<_VndbInfoCard> {
+  bool _testing = false;
+  bool? _ok;
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _ok = null;
+    });
+    try {
+      final results = await MetadataService.searchVndb('Steins Gate');
+      if (mounted) setState(() { _testing = false; _ok = results.isNotEmpty; });
+    } catch (_) {
+      if (mounted) setState(() { _testing = false; _ok = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text(
+                'VNDB',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x1A4A9E6E),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Public API',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    color: AppColors.accentSilver,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (_ok != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: _ok!
+                        ? const Color(0x1A4A9E6E)
+                        : const Color(0x1AC94040),
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: Text(
+                    _ok! ? '✓ Reachable' : '✕ Unreachable',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _ok! ? AppColors.accent : AppColors.danger,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'VNDB (Visual Novel Database) is a free public API — '
+            'no account or login required.',
+            style:
+                GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 8),
+          _SmallButton(
+            _testing ? 'Testing…' : 'Test Connection',
+            onTap: _testing ? null : _test,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1020,10 +1904,11 @@ class _AppearancePanel extends ConsumerWidget {
     ]);
   }
 
+  // In Flutter 3.27+, Color.r/g/b return double in 0.0–1.0
   static String _colorHex(Color c) =>
-      '#${c.r.round().toRadixString(16).padLeft(2, '0')}'
-      '${c.g.round().toRadixString(16).padLeft(2, '0')}'
-      '${c.b.round().toRadixString(16).padLeft(2, '0')}';
+      '#${(c.r * 255).round().toRadixString(16).padLeft(2, '0')}'
+      '${(c.g * 255).round().toRadixString(16).padLeft(2, '0')}'
+      '${(c.b * 255).round().toRadixString(16).padLeft(2, '0')}';
 }
 
 class _ColorSwatch extends StatefulWidget {
