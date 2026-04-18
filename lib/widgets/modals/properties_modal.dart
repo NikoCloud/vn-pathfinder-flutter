@@ -374,9 +374,13 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
   @override
   void initState() {
     super.initState();
+    // Prefer metadata.json title (written by Save Name / Fetch Metadata),
+    // fall back to customDisplayNames (legacy), then the parsed folder name.
     _nameCtrl = TextEditingController(
-        text: widget.userData.customDisplayNames[widget.group.baseKey] ??
-            widget.group.effectiveTitle);
+        text: widget.group.latestVersion?.metaTitle.isNotEmpty == true
+            ? widget.group.latestVersion!.metaTitle
+            : widget.userData.customDisplayNames[widget.group.baseKey] ??
+                widget.group.displayName);
   }
 
   @override
@@ -454,12 +458,24 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
     ]);
   }
 
-  void _saveName() {
+  Future<void> _saveName() async {
     final name = _nameCtrl.text.trim();
+    if (name.isEmpty) return;
+
+    // 1) Persist to UserData (userdata.json) for legacy compat
     ref.read(userDataProvider.notifier).setCustomDisplayName(
-          widget.group.baseKey,
-          name.isNotEmpty ? name : widget.group.displayName,
-        );
+          widget.group.baseKey, name);
+
+    // 2) Write into .vnpf/metadata.json so effectiveTitle (metaTitle) picks
+    //    it up immediately — this is what every widget reads for display.
+    final v = widget.group.latestVersion;
+    if (v != null) {
+      final meta = Map<String, dynamic>.from(loadGameMetadata(v.folderPath));
+      meta['title'] = name;
+      await saveGameMetadata(v.folderPath, meta);
+      // Re-scan so the library list and detail panel update in real time.
+      ref.read(libraryProvider.notifier).scan();
+    }
   }
 }
 

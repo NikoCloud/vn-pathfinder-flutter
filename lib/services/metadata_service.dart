@@ -412,36 +412,78 @@ class MetadataService {
         doc.querySelector('article.message .bbWrapper');
     if (opEl == null) return result;
 
-    // Extract all images from the OP post, filter thumbnails / icons
-    final imgs = opEl.querySelectorAll('img');
+    // ── Extract full-size images from the OP post ────────────────────────
+    //
+    // XenForo 2 uses thumbnails in <img src> and puts the full-res URL in:
+    //   1. div.bbImageWrapper[data-lb-src]  — native attachment lightbox src
+    //   2. a[href] wrapping the <img>        — lightbox anchor href
+    //   3. img[data-url]                     — sometimes used for full-res
+    //
+    // For externally-hosted images (imgbox, postimages, etc.) the <img src>
+    // IS the full-res URL because they have no wrapper lightbox mechanism.
+    //
+    // Strategy: prefer wrapper/anchor full-res first; fall back to img src
+    // only for images that aren't wrapped in a lightbox container.
+
+    final siteBase = result.provider == 'f95zone'
+        ? 'https://f95zone.to'
+        : 'https://lewdcorner.com';
+
+    String absUrl(String url) {
+      if (url.startsWith('//')) return 'https:$url';
+      if (!url.startsWith('http')) return '$siteBase$url';
+      return url;
+    }
+
     final imageUrls = <String>[];
-    for (final img in imgs) {
-      var src = img.attributes['data-src'] ??
-          img.attributes['src'] ??
-          img.attributes['data-url'] ??
-          '';
-      // Skip tiny images (avatars, emoji, icons)
-      final w = int.tryParse(img.attributes['width'] ?? '0') ?? 0;
-      final h = int.tryParse(img.attributes['height'] ?? '0') ?? 0;
-      if ((w > 0 && w < 100) || (h > 0 && h < 100)) continue;
-      if (src.isEmpty) continue;
-      // Make absolute
-      if (src.startsWith('//')) {
-        src = 'https:$src';
-      } else if (!src.startsWith('http')) {
-        final base = result.provider == 'f95zone'
-            ? 'https://f95zone.to'
-            : 'https://lewdcorner.com';
-        src = '$base$src';
-      }
+
+    // Pass 1 — XenForo attachment wrappers: div.bbImageWrapper[data-lb-src]
+    for (final wrapper in opEl.querySelectorAll('div.bbImageWrapper[data-lb-src]')) {
+      final src = absUrl(wrapper.attributes['data-lb-src']!.trim());
+      if (src.isNotEmpty && !imageUrls.contains(src)) imageUrls.add(src);
+    }
+
+    // Pass 2 — lightbox anchors: <a href="…"> wrapping an <img>
+    //   Covers both XenForo native attachments and externally-linked images
+    //   where the poster linked to the full image.
+    for (final a in opEl.querySelectorAll('a[href]')) {
+      final href = (a.attributes['href'] ?? '').trim();
+      // Only follow anchors that point directly to an image file
+      if (!RegExp(r'\.(jpe?g|png|webp|gif|avif)(\?|$)', caseSensitive: false)
+          .hasMatch(href)) { continue; }
+      // Must contain at least one <img> child (confirm it's an image link)
+      if (a.querySelector('img') == null) { continue; }
+      final src = absUrl(href);
       if (!imageUrls.contains(src)) imageUrls.add(src);
     }
 
-    // Also look for bbImage containers which XenForo uses for attached images
-    final bbImages = opEl.querySelectorAll('div.bbImage img, .bbImageWrapper img');
-    for (final img in bbImages) {
-      final src = img.attributes['src'] ?? '';
-      if (src.isNotEmpty && !imageUrls.contains(src)) imageUrls.add(src);
+    // Pass 3 — fallback for imgs NOT inside a bbImageWrapper or lightbox <a>
+    //   These are usually externally-hosted images already at full resolution.
+    for (final img in opEl.querySelectorAll('img')) {
+      // Skip if already captured via a wrapper/anchor in passes 1–2
+      final parentA = img.parent;
+      final inLightboxAnchor = parentA?.localName == 'a' &&
+          (parentA?.attributes['href'] ?? '').isNotEmpty;
+      final inWrapper = img.parent?.classes.contains('bbImageWrapper') == true ||
+          img.parent?.parent?.classes.contains('bbImageWrapper') == true;
+      if (inLightboxAnchor || inWrapper) continue;
+
+      // Skip tiny images (emoji, avatars, icons)
+      final w = int.tryParse(img.attributes['width'] ?? '0') ?? 0;
+      final h = int.tryParse(img.attributes['height'] ?? '0') ?? 0;
+      if ((w > 0 && w < 100) || (h > 0 && h < 100)) continue;
+
+      var src = (img.attributes['data-url'] ??
+              img.attributes['src'] ??
+              img.attributes['data-src'] ?? '')
+          .trim();
+      if (src.isEmpty) continue;
+
+      // Skip obvious thumbnails by URL pattern (thumb_, _thumb., /thumb/)
+      if (RegExp(r'(^|[/_-])thumb[_./]', caseSensitive: false).hasMatch(src)) continue;
+
+      src = absUrl(src);
+      if (!imageUrls.contains(src)) imageUrls.add(src);
     }
 
     // Try to extract developer from the thread tags or title prefix
@@ -588,6 +630,21 @@ class MetadataService {
   }) async {
     final vnpfDir = Directory(p.join(gameFolder.path, '.vnpf'));
     vnpfDir.createSync(recursive: true);
+
+    // ── Clean slate ───────────────────────────────────────────────────────
+    // Delete ALL previously downloaded cover and screenshot files so a new
+    // download from a different provider doesn't leave stale images behind.
+    // (metadata.json is deliberately left untouched.)
+    try {
+      for (final f in vnpfDir.listSync().whereType<File>()) {
+        final name = p.basename(f.path);
+        if (name.startsWith('cover.') || name.startsWith('screenshot_')) {
+          f.deleteSync();
+        }
+      }
+    } catch (e) {
+      debugPrint('Image cleanup failed: $e');
+    }
 
     int done = 0;
     final shots = screenshotUrls.take(maxScreenshots).toList();
