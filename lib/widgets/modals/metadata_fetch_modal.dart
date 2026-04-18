@@ -32,8 +32,17 @@ extension _ProviderX on _Provider {
         _Provider.itchio     => 'itch.io',
       };
 
+  /// Key stored in AppSettings.siteCredentials (empty = no auth needed).
   String get credKey => switch (this) {
         _Provider.vndb       => '',
+        _Provider.f95zone    => 'f95zone',
+        _Provider.lewdcorner => 'lewdcorner',
+        _Provider.itchio     => 'itchio',
+      };
+
+  /// Matches MetadataResult.provider string returned by MetadataService.
+  String get resultKey => switch (this) {
+        _Provider.vndb       => 'vndb',
         _Provider.f95zone    => 'f95zone',
         _Provider.lewdcorner => 'lewdcorner',
         _Provider.itchio     => 'itchio',
@@ -55,11 +64,21 @@ class MetadataFetchModal extends ConsumerStatefulWidget {
 class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   late final TextEditingController _queryCtrl;
   _Provider _provider = _Provider.vndb;
-  List<MetadataResult> _results = [];
+
+  // ── Per-provider result cache ─────────────────────────────────────────────
+  // All four providers search in parallel. Results/loading/errors are stored
+  // per-provider so switching tabs is instant — no extra network round-trip.
+  final Map<_Provider, List<MetadataResult>> _resultsByProvider = {};
+  final Map<_Provider, bool> _loadingByProvider = {};
+  final Map<_Provider, String?> _errorByProvider = {};
+
+  // Convenience getters for the active tab
+  List<MetadataResult> get _results => _resultsByProvider[_provider] ?? [];
+  bool get _loading => _loadingByProvider[_provider] ?? false;
+  String? get _error => _errorByProvider[_provider];
+
   MetadataResult? _selected;
-  bool _loading = false;
   bool _enriching = false; // fetching thread details for F95/LC selection
-  String? _error;         // search/network error (shown in results panel)
   String? _applyError;    // apply-specific error (shown in footer)
   bool _applying = false;
   bool _downloadImages = true;
@@ -75,10 +94,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   @override
   void initState() {
     super.initState();
-    _queryCtrl = TextEditingController(
-      text: widget.group.effectiveTitle,
-    );
-    // Auto-search on open
+    _queryCtrl = TextEditingController(text: widget.group.effectiveTitle);
+    // Auto-search all providers on open
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
   }
 
@@ -88,48 +105,71 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
     super.dispose();
   }
 
+  /// Fires all four providers simultaneously. Each updates its own slice of
+  /// state as it completes, so the UI reflects results as they arrive.
   Future<void> _search() async {
     final query = _queryCtrl.text.trim();
     if (query.isEmpty) return;
 
     final settings = ref.read(settingsProvider);
     if (settings.lockdown) {
-      setState(() => _error = 'Network is locked down. Enable it in Settings → Network.');
+      setState(() {
+        for (final p in _Provider.values) {
+          _errorByProvider[p] =
+              'Network is locked down. Enable it in Settings → Network.';
+          _loadingByProvider[p] = false;
+        }
+      });
       return;
     }
 
+    // Mark all providers as loading and clear previous results.
     setState(() {
-      _loading = true;
-      _error = null;
-      _results = [];
+      for (final p in _Provider.values) {
+        _loadingByProvider[p] = true;
+        _errorByProvider[p] = null;
+        _resultsByProvider[p] = [];
+      }
       _selected = null;
+      _enriching = false;
+      _applyError = null;
     });
 
+    final scrapingService = ref.read(scrapingServiceProvider);
+
+    // Launch all four searches in parallel. ScrapingService queues WebView
+    // requests internally, so F95/LC/itch will process sequentially through
+    // the hidden browser while VNDB (plain HTTP) resolves immediately.
+    await Future.wait(_Provider.values.map((prov) => _searchOne(prov, query, scrapingService)));
+  }
+
+  Future<void> _searchOne(
+      _Provider prov, String query, ScrapingService scrapingService) async {
     try {
-      final scrapingService = ref.read(scrapingServiceProvider);
-      final results = switch (_provider) {
+      final results = switch (prov) {
         _Provider.vndb       => await MetadataService.searchVndb(query),
         _Provider.f95zone    => await MetadataService.searchF95Zone(query, scrapingService),
         _Provider.lewdcorner => await MetadataService.searchLewdCorner(query, scrapingService),
         _Provider.itchio     => await MetadataService.searchItchio(query, scrapingService),
       };
 
-      if (mounted) {
-        setState(() {
-          _results = results;
-          _loading = false;
-          if (results.isEmpty) _error = 'No results found.';
-        });
-        // Auto-select first result (triggers enrichment for F95/LC)
-        if (results.isNotEmpty) _selectResult(results.first);
+      if (!mounted) return;
+      setState(() {
+        _resultsByProvider[prov] = results;
+        _loadingByProvider[prov] = false;
+        if (results.isEmpty) _errorByProvider[prov] = 'No results found.';
+      });
+
+      // Auto-select the first result of the active tab when it arrives.
+      if (mounted && prov == _provider && results.isNotEmpty && _selected == null) {
+        _selectResult(results.first);
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = 'Search failed: $e';
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _loadingByProvider[prov] = false;
+        _errorByProvider[prov] = 'Search failed: $e';
+      });
     }
   }
 
@@ -303,7 +343,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                                   const SizedBox(width: 8),
                                   _SearchButton(
                                     onTap: locked ? null : _search,
-                                    loading: _loading,
+                                    // Spinner while any provider is still searching
+                                    loading: _loadingByProvider.values.any((v) => v),
                                   ),
                                 ],
                               ),
@@ -316,11 +357,18 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                                 if (_provider == p) return;
                                 setState(() {
                                   _provider = p;
-                                  _results = [];
-                                  _selected = null;
-                                  _error = null;
+                                  // Clear selected if it belongs to a different provider
+                                  if (_selected != null &&
+                                      _selected!.provider != p.resultKey) {
+                                    _selected = null;
+                                    _enriching = false;
+                                  }
                                 });
-                                if (!locked) _search();
+                                // Auto-select first cached result for this tab
+                                final cached = _resultsByProvider[p] ?? [];
+                                if (cached.isNotEmpty && _selected == null) {
+                                  _selectResult(cached.first);
+                                }
                               },
                             ),
                             const Divider(height: 1, color: AppColors.border),
