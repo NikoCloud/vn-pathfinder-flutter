@@ -283,6 +283,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
             onTypeFilter: (t) => setState(() => _typeFilter = t),
             onUnmatchedOnly: (v) => setState(() => _unmatchedOnly = v),
             onClearAllExtracted: () => _clearAllExtracted(all),
+            onClearAllAndDelete: () => _clearAllExtractedAndDeleteArchives(all),
           ),
 
           // ── Extraction Hero Panel ────────────────────────────────────────────
@@ -303,6 +304,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                     onAssignPatch: (item) => _showAssignDialog(item),
                     onDelete: (item) => _deleteArchive(item),
                     onClearExtracted: (item) => _clearExtracted(item),
+                    onClearAndDelete: (item) => _clearAndDeleteArchive(item),
                   ),
           ),
         ],
@@ -484,6 +486,64 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     setState(() {}); // Refresh to update extracted count
   }
 
+  Future<void> _clearAllExtractedAndDeleteArchives(List<ArchiveItem> items) async {
+    final count = items.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: Text('Clear All Extracted & Delete Archives?',
+            style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary)),
+        content: Text(
+            'This will delete $count extracted folders and their archive files. This cannot be undone.',
+            style: GoogleFonts.inter(
+                fontSize: 12, color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Clear & Delete All',
+                style: GoogleFonts.inter(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    for (final item in items) {
+      // Delete extracted folder
+      final extracted = Directory(p.join(
+        p.dirname(item.archivePath.path),
+        p.basenameWithoutExtension(item.archivePath.path),
+      ));
+      if (extracted.existsSync()) {
+        try {
+          extracted.deleteSync(recursive: true);
+        } catch (e) {
+          debugPrint('Failed to delete extracted folder: $e');
+        }
+      }
+
+      // Delete archive file
+      try {
+        item.archivePath.deleteSync();
+      } catch (e) {
+        debugPrint('Failed to delete archive: $e');
+      }
+    }
+
+    ref.read(libraryProvider.notifier).scan();
+    setState(() {}); // Refresh to update extracted count
+  }
+
   Future<void> _clearExtracted(ArchiveItem item) async {
     final extracted = Directory(p.join(
       p.dirname(item.archivePath.path),
@@ -536,6 +596,57 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
       debugPrint('Failed to delete archive: $e');
     }
   }
+
+  Future<void> _clearAndDeleteArchive(ArchiveItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.bgCard,
+        title: Text('Clear & Delete?',
+            style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary)),
+        content: Text(
+            'This will delete both the extracted folder and the archive file "${item.name}". This cannot be undone.',
+            style: GoogleFonts.inter(
+                fontSize: 12, color: AppColors.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: GoogleFonts.inter(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Clear & Delete',
+                style: GoogleFonts.inter(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Delete extracted folder
+      final extracted = Directory(p.join(
+        p.dirname(item.archivePath.path),
+        p.basenameWithoutExtension(item.archivePath.path),
+      ));
+      if (extracted.existsSync()) {
+        extracted.deleteSync(recursive: true);
+      }
+
+      // Delete archive file
+      item.archivePath.deleteSync();
+
+      ref.read(libraryProvider.notifier).scan();
+      setState(() {});
+    } catch (e) {
+      debugPrint('Failed to clear and delete: $e');
+    }
+  }
 }
 
 // ── Top bar ───────────────────────────────────────────────────────────────────
@@ -551,6 +662,7 @@ class _ArchiveTopBar extends StatelessWidget {
   final ValueChanged<ArchiveType?> onTypeFilter;
   final ValueChanged<bool> onUnmatchedOnly;
   final VoidCallback onClearAllExtracted;
+  final VoidCallback onClearAllAndDelete;
 
   const _ArchiveTopBar({
     required this.count,
@@ -563,6 +675,7 @@ class _ArchiveTopBar extends StatelessWidget {
     required this.onTypeFilter,
     required this.onUnmatchedOnly,
     required this.onClearAllExtracted,
+    required this.onClearAllAndDelete,
   });
 
   @override
@@ -603,10 +716,21 @@ class _ArchiveTopBar extends StatelessWidget {
           // Clear All Extracted button
           if (extractedCount > 0)
             Padding(
-              padding: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.only(right: 6),
               child: _ActionBtnTopBar(
                 label: '🗑 Clear All Extracted ($extractedCount)',
                 onTap: onClearAllExtracted,
+              ),
+            ),
+
+          // Clear All & Delete Archives button
+          if (extractedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: _ActionBtnTopBar(
+                label: '⚡ Clear All & Delete ($extractedCount)',
+                isDanger: true,
+                onTap: onClearAllAndDelete,
               ),
             ),
 
@@ -674,7 +798,12 @@ class _ArchiveTopBar extends StatelessWidget {
 class _ActionBtnTopBar extends StatefulWidget {
   final String label;
   final VoidCallback onTap;
-  const _ActionBtnTopBar({required this.label, required this.onTap});
+  final bool isDanger;
+  const _ActionBtnTopBar({
+    required this.label,
+    required this.onTap,
+    this.isDanger = false,
+  });
   @override
   State<_ActionBtnTopBar> createState() => _ActionBtnTopBarState();
 }
@@ -693,9 +822,15 @@ class _ActionBtnTopBarState extends State<_ActionBtnTopBar> {
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: _hovered ? AppColors.danger.withValues(alpha: 0.15) : AppColors.bgCard,
+            color: _hovered
+                ? (widget.isDanger
+                    ? AppColors.danger.withValues(alpha: 0.15)
+                    : AppColors.bgActive)
+                : AppColors.bgCard,
             border: Border.all(
-              color: _hovered ? AppColors.danger : AppColors.border,
+              color: _hovered
+                  ? (widget.isDanger ? AppColors.danger : AppColors.borderLight)
+                  : AppColors.border,
             ),
             borderRadius: AppRadius.borderSm,
           ),
@@ -703,7 +838,9 @@ class _ActionBtnTopBarState extends State<_ActionBtnTopBar> {
             widget.label,
             style: GoogleFonts.inter(
               fontSize: 11,
-              color: _hovered ? AppColors.danger : AppColors.textSecondary,
+              color: _hovered
+                  ? (widget.isDanger ? AppColors.danger : AppColors.accent)
+                  : AppColors.textSecondary,
             ),
           ),
         ),
@@ -774,6 +911,7 @@ class _ArchiveTable extends StatelessWidget {
   final ValueChanged<ArchiveItem> onAssignPatch;
   final ValueChanged<ArchiveItem> onDelete;
   final ValueChanged<ArchiveItem> onClearExtracted;
+  final ValueChanged<ArchiveItem> onClearAndDelete;
 
   const _ArchiveTable({
     required this.items,
@@ -784,6 +922,7 @@ class _ArchiveTable extends StatelessWidget {
     required this.onAssignPatch,
     required this.onDelete,
     required this.onClearExtracted,
+    required this.onClearAndDelete,
   });
 
   @override
@@ -801,7 +940,7 @@ class _ArchiveTable extends StatelessWidget {
             children: [
               _ColHdr('TYPE', width: 52),
               _ColHdr('FILE NAME', flex: 3),
-              _ColHdr('MATCHED GAME', flex: 2),
+              _ColHdr('EXTRACTED', flex: 2),
               _ColHdr('SIZE', width: 80),
               _ColHdr('DATE', width: 90),
               _ColHdr('ACTIONS', width: 180),
@@ -825,6 +964,7 @@ class _ArchiveTable extends StatelessWidget {
                 onAssignPatch: () => onAssignPatch(item),
                 onDelete: () => onDelete(item),
                 onClearExtracted: () => onClearExtracted(item),
+                onClearAndDelete: () => onClearAndDelete(item),
               );
             },
           ),
@@ -884,6 +1024,7 @@ class _ArchiveRow extends StatefulWidget {
   final VoidCallback onAssignPatch;
   final VoidCallback onDelete;
   final VoidCallback onClearExtracted;
+  final VoidCallback onClearAndDelete;
 
   const _ArchiveRow({
     required this.item,
@@ -892,6 +1033,7 @@ class _ArchiveRow extends StatefulWidget {
     required this.onAssignPatch,
     required this.onDelete,
     required this.onClearExtracted,
+    required this.onClearAndDelete,
   });
 
   @override
@@ -945,6 +1087,14 @@ class _ArchiveRowState extends State<_ArchiveRow> {
             label: 'Clear Extracted',
           ),
         ),
+      if (isExtracted)
+        PopupMenuItem<String>(
+          value: 'clear_and_delete',
+          child: const PopupMenuItemLabel(
+            icon: Icons.delete_forever_outlined,
+            label: 'Clear & Delete Archive',
+          ),
+        ),
     ];
 
     if (items.isEmpty) return;
@@ -963,6 +1113,8 @@ class _ArchiveRowState extends State<_ArchiveRow> {
         widget.onExtract();
       } else if (value == 'clear_extracted') {
         widget.onClearExtracted();
+      } else if (value == 'clear_and_delete') {
+        widget.onClearAndDelete();
       }
     });
   }
@@ -973,6 +1125,13 @@ class _ArchiveRowState extends State<_ArchiveRow> {
     final ex = widget.exState;
     final canExtract =
         item.type == ArchiveType.zip || item.type == ArchiveType.rar;
+
+    // Check if extracted folder exists
+    final extractedDir = Directory(p.join(
+      p.dirname(item.archivePath.path),
+      p.basenameWithoutExtension(item.archivePath.path),
+    ));
+    final isExtracted = extractedDir.existsSync();
 
     return GestureDetector(
       onSecondaryTapDown: (details) => _showContextMenu(context, details.globalPosition),
@@ -1055,20 +1214,55 @@ class _ArchiveRowState extends State<_ArchiveRow> {
                 ),
               ),
 
-              // Matched game
+              // Extracted indicator
               Expanded(
                 flex: 2,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    item.matchedFolder ?? '—',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: item.matchedFolder != null
-                        ? AppColors.textSecondary
-                        : AppColors.textMuted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+                  child: Row(
+                    children: [
+                      if (isExtracted)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentGlow,
+                            borderRadius: AppRadius.borderXs,
+                            border: Border.all(
+                              color: AppColors.accentDim,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.check_circle,
+                                size: 12,
+                                color: AppColors.accent,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Extracted',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  color: AppColors.accentLight,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Text(
+                          '—',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
