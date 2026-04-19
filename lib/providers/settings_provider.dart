@@ -25,6 +25,17 @@ class AppSettings {
   // Persisted site cookies (separate file, but held here for convenience)
   final Map<String, Map<String, String>> siteCredentials;
 
+  // ── Feed settings ─────────────────────────────────────────────────────────
+  final bool feedEnabled;
+  final int feedRefreshHours;    // 6 | 12 | 0 = manual only
+  final bool feedSourceF95;      // poll F95Zone forum RSS
+  final bool feedSourceLC;       // poll LewdCorner forum RSS
+  final String discordBotToken;  // Bot token for Discord REST API
+  /// List of Discord channel entries.
+  /// Format per entry: "channelId:ServerName:#channelName"
+  /// e.g. "123456789:Patreon Devs:#announcements"
+  final List<String> discordChannelIds;
+
   const AppSettings({
     this.libraryDir = '',
     this.lockdown = true,
@@ -40,6 +51,12 @@ class AppSettings {
     this.accentColor = '#4a9e6e',
     this.fontSize = 13.0,
     this.siteCredentials = const {},
+    this.feedEnabled = false,
+    this.feedRefreshHours = 12,
+    this.feedSourceF95 = true,
+    this.feedSourceLC = true,
+    this.discordBotToken = '',
+    this.discordChannelIds = const [],
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -59,6 +76,13 @@ class AppSettings {
     siteCredentials: (json['site_credentials'] as Map? ?? {}).map(
       (k, v) => MapEntry(k as String,
           Map<String, String>.from(v as Map? ?? {}))),
+    feedEnabled: json['feed_enabled'] as bool? ?? false,
+    feedRefreshHours: json['feed_refresh_hours'] as int? ?? 12,
+    feedSourceF95: json['feed_source_f95'] as bool? ?? true,
+    feedSourceLC: json['feed_source_lc'] as bool? ?? true,
+    discordBotToken: json['discord_bot_token'] as String? ?? '',
+    discordChannelIds: (json['discord_channel_ids'] as List?)
+        ?.map((e) => e.toString()).toList() ?? [],
   );
 
   Map<String, dynamic> toJson() => {
@@ -76,6 +100,12 @@ class AppSettings {
     'accent_color': accentColor,
     'font_size': fontSize,
     'site_credentials': siteCredentials,
+    'feed_enabled': feedEnabled,
+    'feed_refresh_hours': feedRefreshHours,
+    'feed_source_f95': feedSourceF95,
+    'feed_source_lc': feedSourceLC,
+    'discord_bot_token': discordBotToken,
+    'discord_channel_ids': discordChannelIds,
   };
 
   AppSettings copyWith({
@@ -93,6 +123,12 @@ class AppSettings {
     String? accentColor,
     double? fontSize,
     Map<String, Map<String, String>>? siteCredentials,
+    bool? feedEnabled,
+    int? feedRefreshHours,
+    bool? feedSourceF95,
+    bool? feedSourceLC,
+    String? discordBotToken,
+    List<String>? discordChannelIds,
   }) => AppSettings(
     libraryDir: libraryDir ?? this.libraryDir,
     lockdown: lockdown ?? this.lockdown,
@@ -108,6 +144,12 @@ class AppSettings {
     accentColor: accentColor ?? this.accentColor,
     fontSize: fontSize ?? this.fontSize,
     siteCredentials: siteCredentials ?? this.siteCredentials,
+    feedEnabled: feedEnabled ?? this.feedEnabled,
+    feedRefreshHours: feedRefreshHours ?? this.feedRefreshHours,
+    feedSourceF95: feedSourceF95 ?? this.feedSourceF95,
+    feedSourceLC: feedSourceLC ?? this.feedSourceLC,
+    discordBotToken: discordBotToken ?? this.discordBotToken,
+    discordChannelIds: discordChannelIds ?? this.discordChannelIds,
   );
 }
 
@@ -160,6 +202,13 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setTheme(String v) => update((s) => s.copyWith(theme: v));
   void setAccentColor(String v) => update((s) => s.copyWith(accentColor: v));
   void setFontSize(double v) => update((s) => s.copyWith(fontSize: v));
+
+  void setFeedEnabled(bool v) => update((s) => s.copyWith(feedEnabled: v));
+  void setFeedRefreshHours(int v) => update((s) => s.copyWith(feedRefreshHours: v));
+  void setFeedSourceF95(bool v) => update((s) => s.copyWith(feedSourceF95: v));
+  void setFeedSourceLC(bool v) => update((s) => s.copyWith(feedSourceLC: v));
+  void setDiscordBotToken(String v) => update((s) => s.copyWith(discordBotToken: v));
+  void setDiscordChannelIds(List<String> v) => update((s) => s.copyWith(discordChannelIds: v));
 
   /// Merge new key-value pairs into the credentials for [site].
   /// E.g. setSiteCredentials('f95zone', {'xf_user': '...', 'xf_session': '...'})

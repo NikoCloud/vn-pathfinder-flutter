@@ -193,6 +193,11 @@ class MetadataService {
       final titleEl = el.querySelector('h3.contentRow-title a');
       if (titleEl == null) continue;
 
+      // Strip XenForo thread-prefix label spans rendered inline with the title
+      // e.g. <span class="label label--green">VN</span><span ...>Ren'Py</span>
+      for (final label in titleEl.querySelectorAll('span')) {
+        label.remove();
+      }
       final title = _cleanXenforoTitle(titleEl.text.trim());
       final href = titleEl.attributes['href'] ?? '';
       final url = href.startsWith('http') ? href : 'https://f95zone.to$href';
@@ -218,6 +223,10 @@ class MetadataService {
                         el.querySelector('div.structItem-title a');
         if (titleEl == null) continue;
 
+        // Strip XenForo thread-prefix label spans
+        for (final label in titleEl.querySelectorAll('span')) {
+          label.remove();
+        }
         final title = _cleanXenforoTitle(titleEl.text.trim());
         final href = titleEl.attributes['href'] ?? '';
         final url = href.startsWith('http') ? href : 'https://f95zone.to$href';
@@ -283,10 +292,14 @@ class MetadataService {
       final titleEl = el.querySelector('h3.contentRow-title a');
       if (titleEl == null) continue;
 
+      // Strip XenForo thread-prefix label spans
+      for (final label in titleEl.querySelectorAll('span')) {
+        label.remove();
+      }
       final title = _cleanXenforoTitle(titleEl.text.trim());
       final href = titleEl.attributes['href'] ?? '';
       final url = href.startsWith('http') ? href : 'https://lewdcorner.com$href';
-      
+
       results.add(MetadataResult(
         provider: 'lewdcorner',
         id: href,
@@ -304,6 +317,10 @@ class MetadataService {
                         el.querySelector('div.structItem-title a');
         if (titleEl == null) continue;
 
+        // Strip XenForo thread-prefix label spans
+        for (final label in titleEl.querySelectorAll('span')) {
+          label.remove();
+        }
         final title = _cleanXenforoTitle(titleEl.text.trim());
         final href = titleEl.attributes['href'] ?? '';
         final url = href.startsWith('http') ? href : 'https://lewdcorner.com$href';
@@ -383,6 +400,22 @@ class MetadataService {
       );
     }).where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
   }
+
+  /// F95Zone/XenForo meta-classification tags that should NOT be stored as
+  /// genre/content tags. These duplicate the app's own engine-detection and
+  /// status fields, or are too generic to be useful in a VN library context.
+  static const _xfMetaTags = <String>{
+    // Engine names — redundant with scanner's isRenpy / metaEngine detection
+    "ren'py", 'renpy', 'rpgm', 'rpg maker', 'unity', 'html', 'unreal',
+    'flash', 'others', 'godot', 'java', 'twine', 'construct', 'wolf rpg',
+    'tyranobuilder', 'webgl',
+    // Broad type classifiers — the whole library is VNs
+    'vn', 'visual novel',
+    // Status terms — duplicated by the app's own status field
+    'abandoned', 'completed', 'onhold', 'on hold', 'paused',
+    // F95Zone moderation/release labels
+    'demo', 'patch', 'fixed',
+  };
 
   // ── Thread Detail Enrichment (F95Zone / LewdCorner) ───────────────────────
 
@@ -526,7 +559,10 @@ class MetadataService {
         'ul.listPlain--tagList a');
     final tags = tagEls
         .map((el) => el.text.trim())
-        .where((t) => t.isNotEmpty && t.length < 60)
+        .where((t) =>
+            t.isNotEmpty &&
+            t.length < 60 &&
+            !_xfMetaTags.contains(t.toLowerCase()))
         .toSet()
         .take(25)
         .toList();
