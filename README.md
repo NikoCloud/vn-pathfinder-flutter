@@ -1,6 +1,6 @@
 # VN Pathfinder 2.0 — Flutter Rewrite
 
-> **Status:** 🚧 In Development | **Target:** Feature Parity with 1.0 | **ETA:** Valve Time™
+> **Status:** 🎯 Feature-Complete (Phase 12) | **Target:** Polish & Cross-Platform Testing | **ETA:** Early 2026
 
 VN Pathfinder 2.0 is a complete rewrite of the popular visual novel library management tool, built with **Flutter** for true cross-platform compatibility, modern UI/UX, and superior performance.
 
@@ -57,6 +57,17 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
 - ✅ Fetch game banners, cover art, and in-game screenshots
 - ✅ Auto-populate tags from scraping sources
 - ✅ Manual metadata editing with local persistence
+
+### Feed & Discovery
+- ✅ RSS feed aggregator (dedicated **Feed** tab)
+- ✅ Multi-source feed integration:
+  - **F95Zone** latest game updates (via SAM API)
+  - **LewdCorner** RSS feed
+  - **Discord** bot integration (read from configured announcement channels)
+- ✅ Cross-source deduplication (first-published wins)
+- ✅ Configurable refresh schedule (6-24 hours)
+- ✅ Local caching for instant launch
+- ✅ Source filtering (view All or filter by source)
 
 ### Gallery & Preview
 - ✅ Image carousel for game banners and screenshots
@@ -124,29 +135,26 @@ The same binary codebase compiles to native executables for each platform with *
 
 ## 🚀 Development Roadmap
 
-### Phase 1: Foundation (Current)
-- [ ] Core library management (games, metadata, versioning)
-- [ ] Archive detection and patch system
-- [ ] Local data persistence and migration
-- [ ] Multi-source scraping infrastructure
-- [ ] Basic UI (dark mode, responsive layout)
+### Current Status (Phase 12)
+✅ **Core library management** — fully functional
+✅ **Archive & patch system** — complete
+✅ **Multi-source metadata scraping** — F95Zone, LewdCorner, itch.io
+✅ **Feed aggregator** — F95Zone, LewdCorner, Discord integration
+✅ **Gallery & image management** — carousel, lightbox, drag-to-reorder
+✅ **Settings panel** — complete UI with all configuration options
+✅ **Search, filter, sort** — full-featured
+✅ **Dark mode & responsive layout** — system preference detection
 
-### Phase 2: Feature Parity
-- [ ] All metadata fields from 1.0
-- [ ] Complete gallery and image management
-- [ ] Orphan cleanup tool
-- [ ] Settings and configuration panel
-- [ ] Search, filter, sort (full-featured)
-- [ ] RAR extraction support
+### Phase 13+: Next Priorities
+- [ ] Cross-platform testing (macOS, Linux)
+- [ ] Performance optimization and profiling
+- [ ] User documentation and help system
+- [ ] Beta testing with community feedback
+- [ ] Accessibility audit
 
-### Phase 3: Polish & Stability
-- [ ] Cross-platform testing (Windows, macOS, Linux)
-- [ ] Performance optimization
-- [ ] Accessibility improvements
-- [ ] User documentation
-- [ ] Beta release
-
-### Phase 4+: New Features
+### Phase 4+: Future Features (Post-Launch)
+- Feed normalization (standardized game title/version/tags)
+- Backend API infrastructure (Supabase + VNDB mirror for fallback)
 - Playtime tracking and statistics
 - Advanced filtering (by release date, rating, etc.)
 - Mod manager integration (ModDB, Nexus)
