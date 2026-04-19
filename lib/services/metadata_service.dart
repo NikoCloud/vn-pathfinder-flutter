@@ -202,15 +202,14 @@ class MetadataService {
       final href = titleEl.attributes['href'] ?? '';
       final url = href.startsWith('http') ? href : 'https://f95zone.to$href';
       
-      // Developer might be in a contentRow-minor or excerpt
-      final metaEl = el.querySelector('ul.listInline');
-      final developer = metaEl?.text.trim() ?? '';
-      
+      // Developer is NOT reliably available in search result cards —
+      // ul.listInline contains the thread poster (not the developer).
+      // Leave it blank; fetchThreadDetails() will fill it from the OP body.
       results.add(MetadataResult(
         provider: 'f95zone',
         id: href,
         title: title,
-        developer: developer,
+        developer: '',
         sourceUrl: url,
       ));
     }
@@ -231,14 +230,12 @@ class MetadataService {
         final href = titleEl.attributes['href'] ?? '';
         final url = href.startsWith('http') ? href : 'https://f95zone.to$href';
 
-        final metaInfo = el.querySelector('ul.structItem-metaInfo');
-        final developer = metaInfo?.querySelector('li')?.text.trim() ?? '';
-
+        // Leave developer blank — structItem-metaInfo shows the poster, not the dev.
         results.add(MetadataResult(
           provider: 'f95zone',
           id: href,
           title: title,
-          developer: developer,
+          developer: '',
           sourceUrl: url,
         ));
       }
@@ -479,6 +476,23 @@ class MetadataService {
       if (src.isNotEmpty && !imageUrls.contains(src)) imageUrls.add(src);
     }
 
+    // Pass 1b — LewdCorner / some XenForo installs use [data-lb-src] on <a>
+    //   instead of on a div wrapper.  Also catch class="js-lbImage".
+    for (final a in opEl.querySelectorAll(
+        'a[data-lb-src], a.js-lbImage, a[data-fancybox]')) {
+      final src = absUrl(
+        (a.attributes['data-lb-src'] ??
+                a.attributes['data-fancybox-src'] ??
+                a.attributes['href'] ??
+                '')
+            .trim(),
+      );
+      if (src.isEmpty) { continue; }
+      if (!RegExp(r'\.(jpe?g|png|webp|gif|avif)(\?|$)', caseSensitive: false)
+          .hasMatch(src)) { continue; }
+      if (!imageUrls.contains(src)) { imageUrls.add(src); }
+    }
+
     // Pass 2 — lightbox anchors: <a href="…"> wrapping an <img>
     //   Covers both XenForo native attachments and externally-linked images
     //   where the poster linked to the full image.
@@ -510,8 +524,9 @@ class MetadataService {
       if ((w > 0 && w < 100) || (h > 0 && h < 100)) continue;
 
       var src = (img.attributes['data-url'] ??
-              img.attributes['src'] ??
-              img.attributes['data-src'] ?? '')
+              img.attributes['data-src'] ??
+              img.attributes['data-lazy-src'] ??
+              img.attributes['src'] ?? '')
           .trim();
       if (src.isEmpty) continue;
 
@@ -522,27 +537,52 @@ class MetadataService {
       if (!imageUrls.contains(src)) imageUrls.add(src);
     }
 
-    // Try to extract developer from the thread tags or title prefix
+    // ── Extract developer and synopsis from labeled fields in OP text ────────
+    //
+    // XenForo game threads follow a structured template with bold labels:
+    //   <b>Developer:</b> SomeDev<br>
+    //   <b>Overview:</b><br>Synopsis text...<br>
+    //
+    // When we call opEl.text we get the plain-text version with labels intact.
+    // Regex on that text is more reliable than DOM walking because thread
+    // authors don't always use the same HTML structure.
+    final opText = opEl.text;
+
+    // Developer: look for "Developer:" label anywhere in the OP text.
     String developer = result.developer;
     if (developer.isEmpty) {
-      // F95Zone titles usually have format: "Game Title [v1.0] [DevName]"
+      final devMatch = RegExp(
+        r'^Developer[:\s]+(.+)$',
+        multiLine: true,
+        caseSensitive: false,
+      ).firstMatch(opText);
+      if (devMatch != null) {
+        developer = devMatch.group(1)?.trim() ?? '';
+      }
+    }
+    // Fallback: last bracketed segment of the h1 title (e.g. "[DevName]").
+    // This is a weak signal — only use it if the OP text gave us nothing.
+    if (developer.isEmpty) {
       final titleEl = doc.querySelector('h1.p-title-value');
       final rawTitle = titleEl?.text.trim() ?? '';
-      final devMatch =
-          RegExp(r'\[([^\[\]]+)\]\s*$').firstMatch(rawTitle);
-      if (devMatch != null) developer = devMatch.group(1) ?? '';
+      final devMatch = RegExp(r'\[([^\[\]]+)\]\s*$').firstMatch(rawTitle);
+      if (devMatch != null) developer = devMatch.group(1)?.trim() ?? '';
     }
 
-    // Try to extract synopsis from the first text paragraph
+    // Synopsis: look for "Overview:" or "Synopsis:" labeled section.
+    // Capture everything after the label until the next "Label:" header, a
+    // XenForo BBCode tag line, or end-of-string.  Trim whitespace.
     String synopsis = result.synopsis;
     if (synopsis.isEmpty) {
-      final paras = opEl.querySelectorAll('p, div.bbWrapper > span');
-      for (final p in paras) {
-        final text = p.text.trim();
-        if (text.length > 80) {
-          synopsis = text.substring(0, text.length.clamp(0, 800));
-          break;
-        }
+      final synopsisMatch = RegExp(
+        r'(?:Overview|Synopsis)[:\s]*\n?([\s\S]+?)(?=\n[A-Z][^\n:]{0,30}:|\n\[|\Z)',
+        multiLine: true,
+        caseSensitive: false,
+      ).firstMatch(opText);
+      if (synopsisMatch != null) {
+        synopsis = synopsisMatch.group(1)?.trim() ?? '';
+        // Cap to 1 200 chars so the UI doesn't overflow
+        if (synopsis.length > 1200) synopsis = synopsis.substring(0, 1200).trimRight();
       }
     }
 
