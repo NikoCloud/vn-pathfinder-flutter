@@ -469,21 +469,14 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
 
     if (confirmed != true) return;
 
-    for (final item in items) {
-      final extracted = Directory(p.join(
-        p.dirname(item.archivePath.path),
-        p.basenameWithoutExtension(item.archivePath.path),
-      ));
-      if (extracted.existsSync()) {
-        try {
-          extracted.deleteSync(recursive: true);
-        } catch (e) {
-          debugPrint('Failed to delete extracted folder: $e');
-        }
-      }
-    }
+    // Run all deletes in background isolate to avoid UI freeze
+    final paths = items.map((item) => p.join(
+      p.dirname(item.archivePath.path),
+      p.basenameWithoutExtension(item.archivePath.path),
+    )).toList();
+    await compute(_deleteDirectoriesInBackground, paths);
 
-    setState(() {}); // Refresh to update extracted count
+    if (mounted) setState(() {});
   }
 
   Future<void> _clearAllExtractedAndDeleteArchives(List<ArchiveItem> items) async {
@@ -518,30 +511,24 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
 
     if (confirmed != true) return;
 
+    // Collect all paths to delete
+    final dirPaths = <String>[];
+    final filePaths = <String>[];
     for (final item in items) {
-      // Delete extracted folder
-      final extracted = Directory(p.join(
+      dirPaths.add(p.join(
         p.dirname(item.archivePath.path),
         p.basenameWithoutExtension(item.archivePath.path),
       ));
-      if (extracted.existsSync()) {
-        try {
-          extracted.deleteSync(recursive: true);
-        } catch (e) {
-          debugPrint('Failed to delete extracted folder: $e');
-        }
-      }
-
-      // Delete archive file
-      try {
-        item.archivePath.deleteSync();
-      } catch (e) {
-        debugPrint('Failed to delete archive: $e');
-      }
+      filePaths.add(item.archivePath.path);
     }
 
-    ref.read(libraryProvider.notifier).scan();
-    setState(() {}); // Refresh to update extracted count
+    // Run in background isolate — no UI freeze
+    await compute(_deleteDirsAndFilesInBackground, (dirPaths, filePaths));
+
+    if (mounted) {
+      ref.read(libraryProvider.notifier).scan();
+      setState(() {});
+    }
   }
 
   Future<void> _clearExtracted(ArchiveItem item) async {
@@ -590,7 +577,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     if (confirmed != true) return;
 
     try {
-      item.archivePath.deleteSync();
+      await item.archivePath.delete();
       ref.read(libraryProvider.notifier).scan();
     } catch (e) {
       debugPrint('Failed to delete archive: $e');
@@ -629,22 +616,50 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     if (confirmed != true) return;
 
     try {
-      // Delete extracted folder
-      final extracted = Directory(p.join(
+      // Run both deletes in background to avoid UI freeze
+      final dirPath = p.join(
         p.dirname(item.archivePath.path),
         p.basenameWithoutExtension(item.archivePath.path),
-      ));
-      if (extracted.existsSync()) {
-        extracted.deleteSync(recursive: true);
+      );
+      await compute(
+        _deleteDirsAndFilesInBackground,
+        ([dirPath], [item.archivePath.path]),
+      );
+
+      if (mounted) {
+        ref.read(libraryProvider.notifier).scan();
+        setState(() {});
       }
-
-      // Delete archive file
-      item.archivePath.deleteSync();
-
-      ref.read(libraryProvider.notifier).scan();
-      setState(() {});
     } catch (e) {
       debugPrint('Failed to clear and delete: $e');
+    }
+  }
+
+  // ── Background isolate helpers ────────────────────────────────────────────
+
+  static Future<void> _deleteDirectoriesInBackground(List<String> paths) async {
+    for (final path in paths) {
+      final dir = Directory(path);
+      if (dir.existsSync()) {
+        try { dir.deleteSync(recursive: true); } catch (_) {}
+      }
+    }
+  }
+
+  static Future<void> _deleteDirsAndFilesInBackground(
+      (List<String>, List<String>) args) async {
+    final (dirs, files) = args;
+    for (final path in dirs) {
+      final dir = Directory(path);
+      if (dir.existsSync()) {
+        try { dir.deleteSync(recursive: true); } catch (_) {}
+      }
+    }
+    for (final path in files) {
+      final file = File(path);
+      if (file.existsSync()) {
+        try { file.deleteSync(); } catch (_) {}
+      }
     }
   }
 }
