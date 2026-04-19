@@ -727,30 +727,38 @@ class _PatchesPanel extends ConsumerWidget {
     final items = <Widget>[];
 
     for (final v in versions.reversed) {
-      final metaKey = '${group.baseKey}::${v.versionStr.isEmpty ? '_' : v.versionStr}';
-      final patchDir = Directory(p.join(v.folderPath.path, 'game', '.patches'));
-      final gameDir = Directory(p.join(v.folderPath.path, 'game'));
+      final metaKey   = '${group.baseKey}::${v.versionStr.isEmpty ? '_' : v.versionStr}';
+      // .patches/ lives at the ROOT of the game dir (sibling of game/), NOT inside game/.
+      // Inactive patches sit here — outside RenPy's load path so they're not loaded.
+      final patchDir  = Directory(p.join(v.folderPath.path, '.patches'));
+      // game/ is where RenPy loads resources. Active patches are moved here.
+      final gameDir   = Directory(p.join(v.folderPath.path, 'game'));
 
-      // Collect all known patch files: active (in game/) + inactive (in .patches/)
-      final Map<String, bool> patchStates = {
-        ...userData.appliedPatches[metaKey] ?? {},
-      };
+      // Build patch list purely from the filesystem — userdata is only used as a
+      // fallback manifest for patches that are currently ACTIVE (in game/ so they
+      // won't appear in the .patches/ scan).
+      final Map<String, bool> patchStates = {};
 
-      // Discover .rpyc/.rpy/.py patches on disk
+      // Step 1 — everything in .patches/ is an INACTIVE patch.
       if (patchDir.existsSync()) {
-        for (final f in patchDir.listSync().whereType<File>()) {
-          final name = p.basename(f.path);
-          patchStates.putIfAbsent(name, () => false);
+        for (final entry in patchDir.listSync()) {
+          final name = p.basename(entry.path);
+          patchStates[name] = false;
         }
       }
-      if (gameDir.existsSync()) {
-        for (final f in gameDir.listSync().whereType<File>()) {
-          final name = p.basename(f.path);
-          if (name.endsWith('.rpyc') || name.endsWith('.rpy') || name.endsWith('.py')) {
-            if (userData.appliedPatches[metaKey]?.containsKey(name) == true) {
-              patchStates[name] = true;
-            }
-          }
+
+      // Step 2 — check userdata for patches that are currently ACTIVE (in game/).
+      // Only trust a patch as active if the file/dir actually exists in game/.
+      final knownPatches = userData.appliedPatches[metaKey] ?? {};
+      for (final patchName in knownPatches.keys) {
+        final inGame = File(p.join(gameDir.path, patchName)).existsSync() ||
+            Directory(p.join(gameDir.path, patchName)).existsSync();
+        if (inGame) {
+          patchStates[patchName] = true; // confirmed active on disk
+        } else if (!patchStates.containsKey(patchName)) {
+          // Known to userdata but not found anywhere — show as inactive
+          // so the user can see it (it might be missing/corrupt).
+          patchStates[patchName] = false;
         }
       }
 
@@ -789,20 +797,107 @@ class _PatchesPanel extends ConsumerWidget {
       items.add(const SizedBox(height: 8));
     }
 
-    if (items.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'No patches found.\nPlace .rpyc/.rpy/.py files in\ngame/.patches/ to manage them here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12, height: 1.7),
-          ),
+    // Build the scan callback: one closure that covers all versions for this group.
+    // We pass the per-version scan data as a list so the button can iterate.
+    final scanTargets = [
+      for (final v in versions)
+        (
+          version: v,
+          metaKey: '${group.baseKey}::${v.versionStr.isEmpty ? '_' : v.versionStr}',
         ),
+    ];
+
+    if (items.isEmpty) {
+      return Column(
+        children: [
+          _ScanBar(
+            versions: scanTargets,
+            onScan: (targets) => _runScan(targets, ref),
+          ),
+          const Expanded(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No patches found.\nUse the Archives tab → Assign Patch\nto add patches for this game.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: AppColors.textMuted, fontSize: 12, height: 1.7),
+                ),
+              ),
+            ),
+          ),
+        ],
       );
     }
 
-    return _PanelScroll(children: items);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ScanBar(
+          versions: scanTargets,
+          onScan: (targets) => _runScan(targets, ref),
+        ),
+        Expanded(child: _PanelScroll(children: items)),
+      ],
+    );
+  }
+
+  /// Walks disk for every version in [targets], reconciles with userdata, returns summary.
+  Future<String> _runScan(
+    List<({GameVersion version, String metaKey})> targets,
+    WidgetRef ref,
+  ) async {
+    int removed = 0;
+    int fixed = 0;
+
+    for (final t in targets) {
+      final rootPath  = t.version.folderPath.path;
+      final patchesDir = Directory(p.join(rootPath, '.patches'));
+      final gameDir    = Directory(p.join(rootPath, 'game'));
+
+      // Build ground-truth map from disk.
+      final Map<String, bool> synced = {};
+
+      // Everything physically in .patches/ is an inactive patch.
+      if (patchesDir.existsSync()) {
+        for (final entry in patchesDir.listSync()) {
+          synced[p.basename(entry.path)] = false;
+        }
+      }
+
+      // For every patch recorded in userdata, check where it actually lives.
+      final recorded = ref.read(userDataProvider).appliedPatches[t.metaKey] ?? {};
+      for (final entry in recorded.entries) {
+        final name     = entry.key;
+        final wasActive = entry.value;
+
+        if (synced.containsKey(name)) {
+          // It's in .patches/ (inactive). Fix state if userdata thought it was active.
+          if (wasActive) fixed++;
+          // synced already has it as false — no change needed.
+        } else {
+          // Not in .patches/ — check game/.
+          final inGame = File(p.join(gameDir.path, name)).existsSync() ||
+              Directory(p.join(gameDir.path, name)).existsSync();
+          if (inGame) {
+            synced[name] = true;
+            if (!wasActive) fixed++; // userdata said inactive but it's in game/
+          } else {
+            // Not found anywhere — ghost entry, drop it.
+            removed++;
+          }
+        }
+      }
+
+      ref.read(userDataProvider.notifier).syncPatchStates(t.metaKey, synced);
+    }
+
+    if (removed == 0 && fixed == 0) return 'All patches verified — no issues found.';
+    final parts = <String>[];
+    if (removed > 0) parts.add('$removed ghost${removed == 1 ? '' : 's'} removed');
+    if (fixed > 0)   parts.add('$fixed state${fixed == 1 ? '' : 's'} corrected');
+    return parts.join(' · ');
   }
 
   Future<String?> _togglePatch(
@@ -812,31 +907,136 @@ class _PatchesPanel extends ConsumerWidget {
     bool activate,
     WidgetRef ref,
   ) async {
-    final gameDir = p.join(v.folderPath.path, 'game');
-    final patchesDir = p.join(gameDir, '.patches');
-    final activeFile = File(p.join(gameDir, patchName));
-    final inactiveFile = File(p.join(patchesDir, patchName));
+    // .patches/ is at ROOT level (sibling of game/) — invisible to RenPy.
+    // game/     is where RenPy loads patches from.
+    final rootDir    = v.folderPath.path;
+    final patchesDir = p.join(rootDir, '.patches');
+    final activePath   = p.join(rootDir, 'game', patchName);   // inside game/ → RenPy sees it
+    final inactivePath = p.join(patchesDir, patchName);         // outside game/ → dormant
 
     try {
       Directory(patchesDir).createSync(recursive: true);
       if (activate) {
-        // Move from .patches/ → game/
-        if (inactiveFile.existsSync()) {
-          await inactiveFile.rename(activeFile.path);
-        }
+        // Dormant → active: move from root/.patches/ into root/game/
+        await _movePatch(src: inactivePath, dest: activePath);
       } else {
-        // Move from game/ → .patches/
-        if (activeFile.existsSync()) {
-          await activeFile.rename(inactiveFile.path);
-        }
+        // Active → dormant: move from root/game/ into root/.patches/
+        await _movePatch(src: activePath, dest: inactivePath);
       }
       ref.read(userDataProvider.notifier).setPatchState(metaKey, patchName, activate);
       return null;
     } catch (e) {
-      return 'Failed to toggle patch: $e';
+      return 'Failed to toggle patch "$patchName": $e';
+    }
+  }
+
+  /// Moves a patch entry (file or directory) from [src] to [dest].
+  /// Throws if the source doesn't exist — callers should surface this error.
+  Future<void> _movePatch({required String src, required String dest}) async {
+    final srcFile = File(src);
+    final srcDir  = Directory(src);
+    if (srcFile.existsSync()) {
+      await srcFile.rename(dest);
+    } else if (srcDir.existsSync()) {
+      await srcDir.rename(dest);
+    } else {
+      throw 'Patch not found at expected path:\n$src\n\nIt may have been moved or deleted outside the app.';
     }
   }
 }
+
+// ── Scan bar ──────────────────────────────────────────────────────────────────
+
+class _ScanBar extends StatefulWidget {
+  final List<({GameVersion version, String metaKey})> versions;
+  final Future<String> Function(
+      List<({GameVersion version, String metaKey})>) onScan;
+
+  const _ScanBar({required this.versions, required this.onScan});
+
+  @override
+  State<_ScanBar> createState() => _ScanBarState();
+}
+
+class _ScanBarState extends State<_ScanBar> {
+  bool    _scanning = false;
+  String? _result;
+  bool    _isError  = false;
+
+  Future<void> _run() async {
+    setState(() { _scanning = true; _result = null; _isError = false; });
+    try {
+      final msg = await widget.onScan(widget.versions);
+      if (mounted) setState(() { _scanning = false; _result = msg; _isError = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() { _scanning = false; _result = 'Scan error: $e'; _isError = true; });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.radar_outlined, size: 13, color: AppColors.textMuted),
+          const SizedBox(width: 6),
+          if (_result != null)
+            Expanded(
+              child: Text(
+                _result!,
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  color: _isError ? AppColors.danger : AppColors.textMuted,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: Text(
+                'Reconcile on-disk state with app database',
+                style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+              ),
+            ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: _scanning ? null : _run,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: AppRadius.borderSm,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: _scanning
+                  ? const SizedBox(
+                      width: 10, height: 10,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.5, color: AppColors.accent),
+                    )
+                  : Text(
+                      'Scan',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Patch row ─────────────────────────────────────────────────────────────────
 
 class _PatchRow extends StatelessWidget {
   final String patchName;

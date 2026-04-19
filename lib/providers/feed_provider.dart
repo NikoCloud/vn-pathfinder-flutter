@@ -114,20 +114,53 @@ class FeedNotifier extends StateNotifier<FeedState> {
   }
 
   /// Manually trigger a feed refresh.
+  ///
+  /// New items are **merged** into the existing cache rather than replacing it.
+  /// This means if one source (e.g. F95Zone) fails or returns nothing, the
+  /// previously cached items from that source are preserved for up to 10 days.
+  /// Items older than 10 days are pruned on each successful refresh.
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final scraping = _ref.read(scrapingServiceProvider);
       final settings = _ref.read(settingsProvider);
-      final items = await FeedService.fetchAll(scraping, settings);
+      final freshItems = await FeedService.fetchAll(scraping, settings);
       final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(days: 10));
+
+      // Build a map from existing cached items so we can merge by ID.
+      final merged = <String, RawFeedItem>{
+        for (final i in state.items) i.id: i,
+      };
+
+      // Overwrite/add fresh items (new data always wins over cached).
+      for (final item in freshItems) {
+        merged[item.id] = item;
+      }
+
+      // Prune items older than 10 days. Items with no date are kept.
+      final pruned = merged.values.where((i) {
+        final t = i.publishedAt;
+        return t == null || t.isAfter(cutoff);
+      }).toList();
+
+      // Sort newest-first.
+      pruned.sort((a, b) {
+        final ta = a.publishedAt;
+        final tb = b.publishedAt;
+        if (ta == null && tb == null) return 0;
+        if (ta == null) return 1;
+        if (tb == null) return -1;
+        return tb.compareTo(ta);
+      });
+
       state = state.copyWith(
-        items: items,
+        items: pruned,
         isLoading: false,
         lastRefreshed: now,
       );
-      // Persist to disk so the next launch shows data immediately.
-      await _saveCache(items, now);
+      // Persist merged result to disk.
+      await _saveCache(pruned, now);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -162,3 +195,46 @@ class FeedNotifier extends StateNotifier<FeedState> {
 final feedProvider = StateNotifierProvider<FeedNotifier, FeedState>(
   (ref) => FeedNotifier(ref),
 );
+
+// ── Feed version map ──────────────────────────────────────────────────────────
+//
+// Derived provider: maps a normalised game title to the version string seen
+// in the most-recent feed item for that title. No version comparison is done —
+// the UI shows whatever the feed reported and lets the user interpret it.
+//
+// Matching is purely by normalised title (bracket/paren content stripped,
+// lowercased, whitespace-trimmed). Feed items are already sorted newest-first,
+// so the first match for each title is the most recent.
+
+/// One feed sighting: version string + which source posted it.
+class FeedVersionHint {
+  final String version;
+  final String source; // 'f95zone' | 'lewdcorner' | …
+  const FeedVersionHint({required this.version, required this.source});
+}
+
+String _normaliseTitle(String t) => t
+    .replaceAll(RegExp(r'\[.*?\]'), '')   // strip [bracketed] content
+    .replaceAll(RegExp(r'\(.*?\)'), '')   // strip (parenthesised) content
+    .trim()
+    .toLowerCase();
+
+String? _extractFeedVersion(RawFeedItem item) {
+  // F95Zone / LewdCorner SAM API puts version on its own line as "Version: …"
+  final m = RegExp(r'^Version:\s*(.+)$', multiLine: true).firstMatch(item.rawBody);
+  if (m != null) return m.group(1)?.trim();
+  return null;
+}
+
+final feedVersionMapProvider = Provider<Map<String, FeedVersionHint>>((ref) {
+  final items = ref.watch(feedProvider).items; // already sorted newest-first
+  final map = <String, FeedVersionHint>{};
+  for (final item in items) {
+    final version = _extractFeedVersion(item);
+    if (version == null || version.isEmpty) continue;
+    final key = _normaliseTitle(item.title);
+    if (key.isEmpty) continue;
+    map.putIfAbsent(key, () => FeedVersionHint(version: version, source: item.source));
+  }
+  return map;
+});

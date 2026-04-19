@@ -16,14 +16,13 @@ final statusTextProvider = StateProvider<String>((ref) {
 });
 
 class AppStatusBar extends ConsumerWidget {
-  final VoidCallback onAddGame;
-
-  const AppStatusBar({super.key, required this.onAddGame});
+  const AppStatusBar({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(statusTextProvider);
     final locked = ref.watch(lockdownProvider);
+    final isScanning = ref.watch(libraryProvider).loading;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -35,8 +34,11 @@ class AppStatusBar extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              // Left — Add a Game
-              _AddGameButton(onTap: onAddGame),
+              // Left — Rescan Library
+              _RescanButton(
+                isScanning: isScanning,
+                onTap: () => ref.read(libraryProvider.notifier).scan(),
+              ),
               // Center — status text
               Expanded(
                 child: Center(
@@ -58,15 +60,16 @@ class AppStatusBar extends ConsumerWidget {
   }
 }
 
-class _AddGameButton extends StatefulWidget {
+class _RescanButton extends StatefulWidget {
+  final bool isScanning;
   final VoidCallback onTap;
-  const _AddGameButton({required this.onTap});
+  const _RescanButton({required this.isScanning, required this.onTap});
 
   @override
-  State<_AddGameButton> createState() => _AddGameButtonState();
+  State<_RescanButton> createState() => _RescanButtonState();
 }
 
-class _AddGameButtonState extends State<_AddGameButton> {
+class _RescanButtonState extends State<_RescanButton> {
   bool _hovered = false;
 
   @override
@@ -74,19 +77,36 @@ class _AddGameButtonState extends State<_AddGameButton> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      cursor: SystemMouseCursors.click,
+      cursor: widget.isScanning
+          ? SystemMouseCursors.basic
+          : SystemMouseCursors.click,
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: widget.isScanning ? null : widget.onTap,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.add, size: 13, color: AppColors.textMuted),
+            widget.isScanning
+                ? const SizedBox(
+                    width: 11,
+                    height: 11,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: AppColors.accent,
+                    ),
+                  )
+                : Icon(
+                    Icons.refresh,
+                    size: 13,
+                    color: _hovered ? AppColors.accent : AppColors.textMuted,
+                  ),
             const SizedBox(width: 4),
             Text(
-              'Add a Game',
+              widget.isScanning ? 'Scanning…' : 'Rescan Library',
               style: GoogleFonts.inter(
                 fontSize: 11,
-                color: _hovered ? AppColors.accent : AppColors.textMuted,
+                color: _hovered && !widget.isScanning
+                    ? AppColors.accent
+                    : AppColors.textMuted,
               ),
             ),
           ],

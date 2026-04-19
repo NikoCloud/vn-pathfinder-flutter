@@ -9,7 +9,6 @@ import '../screens/library_screen.dart';
 import '../screens/archive_screen.dart';
 import '../screens/feed_screen.dart';
 import 'modals/settings_modal.dart';
-import 'modals/add_game_modal.dart';
 import 'navbar.dart';
 import 'status_bar.dart';
 
@@ -62,14 +61,7 @@ class AppShell extends ConsumerWidget {
                         ],
                       ),
                     ),
-                    AppStatusBar(
-                      onAddGame: () {
-                        showDialog(
-                          context: context,
-                          builder: (ctx) => const AddGameModal(),
-                        );
-                      },
-                    ),
+                    const AppStatusBar(),
                   ],
                 ),
                 const ToastOverlay(),

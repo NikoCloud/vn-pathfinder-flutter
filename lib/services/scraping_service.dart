@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_windows/webview_windows.dart';
 
-/// Provider for the ScrapingService
+/// Tracks the number of open scraping sessions.
+/// ScrapingWebView initializes the WebView when this > 0 and disposes when it
+/// drops back to 0, so Chromium is only alive while actually needed.
+final scrapingSessionProvider = StateProvider<int>((ref) => 0);
+
+/// Provider for the ScrapingService singleton.
 final scrapingServiceProvider = Provider<ScrapingService>((ref) => ScrapingService());
 
 class _ScrapingRequest {
@@ -13,15 +18,27 @@ class _ScrapingRequest {
   _ScrapingRequest(this.url, this.completer, {this.script});
 }
 
-/// A service that leverages a hidden WebviewController to perform 
+/// Thrown when a queued request is cancelled before it executes.
+class ScrapingCancelledException implements Exception {
+  const ScrapingCancelledException();
+  @override
+  String toString() => 'ScrapingCancelledException: request was cancelled';
+}
+
+/// A service that leverages a hidden WebviewController to perform
 /// network requests as a browser to bypass Cloudflare/TLS fingerprinting.
+///
+/// Lifecycle: the WebView is NOT initialized on construction. Call [initialize]
+/// (done by ScrapingWebView when a scraping session opens) and [dispose] (done
+/// when the session closes) to bracket each use.
 class ScrapingService {
-  final _controller = WebviewController();
+  WebviewController _controller = WebviewController();
   bool _isInitialized = false;
-  final _initCompleter = Completer<void>();
+  bool _isInitializing = false;
+  Completer<void> _initCompleter = Completer<void>();
 
   Future<void> get ready => _initCompleter.future;
-  
+
   // Queue synchronization
   final List<_ScrapingRequest> _queue = [];
   bool _isProcessing = false;
@@ -29,10 +46,12 @@ class ScrapingService {
   WebviewController get controller => _controller;
   bool get isInitialized => _isInitialized;
 
-  /// Initializes the WebviewController. 
-  /// This must be called from the UI thread (via ScrapingWebView widget).
+  /// Initializes the WebviewController.
+  /// Must be called from the UI thread (via ScrapingWebView widget).
+  /// Safe to call when already initialized — returns immediately.
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized || _isInitializing) return;
+    _isInitializing = true;
     try {
       await _controller.initialize();
       await _controller.setBackgroundColor(const Color(0x00000000));
@@ -42,7 +61,43 @@ class ScrapingService {
     } catch (e) {
       debugPrint('Failed to initialize ScrapingService: $e');
       if (!_initCompleter.isCompleted) _initCompleter.completeError(e);
+    } finally {
+      _isInitializing = false;
     }
+  }
+
+  /// Cancel all pending queued requests without touching the controller.
+  void cancelPending() {
+    final count = _queue.length;
+    for (final req in _queue) {
+      if (!req.completer.isCompleted) {
+        req.completer.completeError(const ScrapingCancelledException());
+      }
+    }
+    _queue.clear();
+    debugPrint('ScrapingService: cancelled $count pending requests.');
+  }
+
+  /// Cancel pending requests, dispose the native WebView2 controller, and
+  /// reset internal state so [initialize] can be called again next session.
+  Future<void> dispose() async {
+    cancelPending();
+    _isProcessing = false;
+
+    if (_isInitialized) {
+      try {
+        _controller.dispose();
+      } catch (e) {
+        debugPrint('ScrapingService: controller dispose error (ignored): $e');
+      }
+    }
+
+    // Fresh state for next session
+    _controller = WebviewController();
+    _isInitialized = false;
+    _isInitializing = false;
+    _initCompleter = Completer<void>();
+    debugPrint('ScrapingService disposed.');
   }
 
   /// Navigates to a URL and returns the page source (HTML).
@@ -95,7 +150,7 @@ class ScrapingService {
       // Wait for page to report as loaded
       bool loaded = false;
       final timeout = DateTime.now().add(const Duration(seconds: 25));
-      
+
       final subscription = _controller.loadingState.listen((state) {
         if (state == LoadingState.navigationCompleted) {
           loaded = true;
@@ -108,34 +163,43 @@ class ScrapingService {
       }
       subscription.cancel();
 
-      // Check for intermediate "Searching" pages common in XenForo
-      int retries = 5;
-      while (retries > 0) {
+      // XenForo shows an intermediate "Searching…" page before redirecting to
+      // results. Wait until either:
+      //   (a) the "Searching…" indicator is gone, OR
+      //   (b) a real page header (p-main-header) is visible.
+      // Cap at 5 retries × 2 s = 10 s max.
+      const maxRetries = 5;
+      for (var i = 0; i < maxRetries; i++) {
         await Future.delayed(const Duration(milliseconds: 2000));
-        final html = await _controller.executeScript('document.documentElement.outerHTML');
-        if (html is! String || (!html.contains('Searching...') && !html.contains('p-main-header'))) {
-          // If we see p-main-header, we're likely on a real page. 
-          // If we don't see "Searching...", we might be finished.
-          break;
-        }
-        debugPrint('Detected intermediate search page, waiting... ($retries)');
-        retries--;
+        final html =
+            await _controller.executeScript('document.documentElement.outerHTML');
+        if (html is! String) break;
+        final isSearching = html.contains('Searching...');
+        final hasPageHeader = html.contains('p-main-header');
+        // Ready when the search spinner is gone OR the real page structure exists
+        if (!isSearching || hasPageHeader) break;
+        debugPrint(
+            'Detected intermediate search page, waiting… (${maxRetries - i - 1} retries left)');
       }
 
-      // Extracts results
+      // Extract results
       if (request.script != null) {
         final result = await _controller.executeScript(request.script!);
-        request.completer.complete(result);
+        if (!request.completer.isCompleted) request.completer.complete(result);
       } else {
-        final html = await _controller.executeScript('document.documentElement.outerHTML');
-        request.completer.complete(html is String ? html : '');
+        final html =
+            await _controller.executeScript('document.documentElement.outerHTML');
+        if (!request.completer.isCompleted) {
+          request.completer.complete(html is String ? html : '');
+        }
       }
     } catch (e) {
       debugPrint('Scraping failed for ${request.url}: $e');
-      request.completer.completeError(e);
+      if (!request.completer.isCompleted) {
+        request.completer.completeError(e);
+      }
     } finally {
       _isProcessing = false;
-      // Cycle next item
       if (_queue.isNotEmpty) {
         _processQueue();
       }

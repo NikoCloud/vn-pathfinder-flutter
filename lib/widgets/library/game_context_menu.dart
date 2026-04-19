@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import '../../models/game_group.dart';
 import '../../providers/library_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/play_tracker_provider.dart';
 import '../modals/properties_modal.dart';
 import '../../theme.dart';
@@ -55,6 +57,11 @@ void showGameContextMenu({
         value: 'folder',
         height: 36,
         child: _MenuRow(icon: Icons.folder_open_outlined, label: 'Open Folder'),
+      ),
+      PopupMenuItem(
+        value: 'saves',
+        height: 36,
+        child: _MenuRow(icon: Icons.save_outlined, label: 'Open Saves Folder'),
       ),
       PopupMenuItem(
         value: 'copy_path',
@@ -109,6 +116,9 @@ void showGameContextMenu({
     case 'folder':
       Process.run('explorer', [v.folderPath.path]);
       break;
+    case 'saves':
+      _openSavesFolder(v.folderPath.path, ref);
+      break;
     case 'copy_path':
       Clipboard.setData(ClipboardData(text: v.folderPath.path));
       break;
@@ -138,6 +148,30 @@ void showGameContextMenu({
       }
       break;
   }
+}
+
+void _openSavesFolder(String gameFolderPath, WidgetRef ref) {
+  // RenPy games store saves in one of two places:
+  //   1. game/saves/ inside the game root (most modern games)
+  //   2. %APPDATA%\RenPy\<GameName>\ (older / default RenPy behaviour)
+  // Try (1) first; fall back to opening %APPDATA%\RenPy\ so the user can navigate.
+  final inGame = Directory(p.join(gameFolderPath, 'game', 'saves'));
+  if (inGame.existsSync()) {
+    Process.run('explorer', [inGame.path]);
+    return;
+  }
+
+  final appdata = Platform.environment['APPDATA'] ?? '';
+  final renPyRoot = Directory(p.join(appdata, 'RenPy'));
+  if (renPyRoot.existsSync()) {
+    Process.run('explorer', [renPyRoot.path]);
+    ref.read(notificationProvider.notifier).info(
+      'No saves folder in game/saves/ — opened %APPDATA%\\RenPy\\ instead',
+    );
+    return;
+  }
+
+  ref.read(notificationProvider.notifier).warning('No saves folder found for this game.');
 }
 
 PopupMenuItem<String> _statusItem(String value, String label, IconData icon, {Color? color}) {

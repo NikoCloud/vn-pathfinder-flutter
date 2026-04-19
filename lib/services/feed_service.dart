@@ -148,11 +148,15 @@ class FeedService {
       // when Chrome renders a bare JSON response).
       final raw = await scraping.evalOnPage(apiUrl, 'document.body.innerText');
       final body = raw is String ? raw.trim() : '';
-      if (body.isEmpty) return [];
+      debugPrint('FeedService F95Zone raw length: ${body.length}, preview: ${body.length > 200 ? body.substring(0, 200) : body}');
+      if (body.isEmpty) {
+        debugPrint('FeedService F95Zone: empty response — session may have expired');
+        return [];
+      }
 
       final json = jsonDecode(body) as Map<String, dynamic>;
       if (json['status'] != 'ok') {
-        debugPrint('FeedService F95Zone JSON status: ${json['status']}');
+        debugPrint('FeedService F95Zone JSON status: ${json['status']} — full: $json');
         return [];
       }
 

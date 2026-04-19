@@ -362,9 +362,29 @@ class _FeedCardState extends State<_FeedCard> {
     final item = widget.item;
     final body = item.rawBody.trim();
 
+    // For F95Zone SAM items the rawBody is plain-text structured data:
+    //   Version: v0.4.8
+    //   Developer: SRT
+    //   Tags: rpg, corruption, ...
+    //   [cover] https://...
+    // Parse version and strip the [cover] line before display.
+    String? parsedVersion;
+    String processedBody = body;
+    if (item.source == 'f95zone') {
+      final versionMatch = RegExp(r'^Version:\s*(.+)$', multiLine: true)
+          .firstMatch(body);
+      if (versionMatch != null) {
+        parsedVersion = versionMatch.group(1)?.trim();
+      }
+      // Strip [cover] lines from display
+      processedBody = body
+          .replaceAll(RegExp(r'^\[cover\]\s*\S+\s*$', multiLine: true), '')
+          .trim();
+    }
+
     // Strip obvious HTML tags for readability — this is RAW mode,
     // so we show the text content but skip rendering full HTML.
-    final plainBody = body
+    final plainBody = processedBody
         .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'<p[^>]*>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'<[^>]+>'), '')
@@ -424,15 +444,45 @@ class _FeedCardState extends State<_FeedCard> {
             ),
             const SizedBox(height: 8),
 
-            // ── Title ───────────────────────────────────────────────────────
+            // ── Title + version badge ────────────────────────────────────────
             if (item.title.isNotEmpty)
-              Text(
-                item.title,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.title,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (parsedVersion != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.15),
+                        borderRadius: AppRadius.borderSm,
+                        border: Border.all(
+                          color: AppColors.accent.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Text(
+                        parsedVersion,
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.accent,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
 
             // ── Author ──────────────────────────────────────────────────────
