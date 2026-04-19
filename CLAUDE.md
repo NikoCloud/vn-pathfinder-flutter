@@ -46,6 +46,15 @@ lib/
 - `applied_patches` — `Dict["{base_key}::{version_str}", Dict[str, bool]]`
 - Schema version: 4 (current in 1.0)
 
+## Bug Queue — CHECK THIS EVERY SESSION
+`BUGS.md` in the repo root is the active bug tracker. At the start of every session:
+1. Read `BUGS.md`
+2. If there are items in **Queue**, work through them top to bottom before doing anything else
+3. Move each item to **In Progress** while working on it, then to **Fixed** (with commit) when done
+4. If a bug can't be reproduced or needs more info, move it to **Won't Fix / Can't Reproduce** with a note
+
+The user adds bugs in plain language — don't wait for precise repro steps, just investigate.
+
 ## Developer Notes
 - User is NOT a Flutter/Dart developer — Claude writes all code
 - User IS the designer — they provide mockups, Claude implements
