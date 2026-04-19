@@ -8,6 +8,7 @@ import 'package:webview_windows/webview_windows.dart';
 import '../../theme.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/library_provider.dart';
+import '../../providers/feed_provider.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart';
 import 'orphan_scanner_modal.dart';
@@ -24,7 +25,7 @@ void showSettingsModal(BuildContext context) {
 
 // ── Tab enum ──────────────────────────────────────────────────────────────────
 
-enum _Tab { general, network, appearance, archives, about }
+enum _Tab { general, network, appearance, archives, feed, about }
 
 // ── Root modal widget ─────────────────────────────────────────────────────────
 
@@ -92,6 +93,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
       _Tab.network    => const _NetworkPanel(),
       _Tab.appearance => const _AppearancePanel(),
       _Tab.archives   => const _ArchivesPanel(),
+      _Tab.feed       => const _FeedPanel(),
       _Tab.about      => const _AboutPanel(),
     };
   }
@@ -183,6 +185,7 @@ class _TabSidebar extends StatelessWidget {
     (_Tab.network,    Icons.wifi_outlined,         'Network'),
     (_Tab.appearance, Icons.palette_outlined,      'Appearance'),
     (_Tab.archives,   Icons.folder_zip_outlined,   'Archives'),
+    (_Tab.feed,       Icons.rss_feed_outlined,     'Feed'),
     (_Tab.about,      Icons.info_outline,          'About'),
   ];
 
@@ -2082,6 +2085,217 @@ class _ArchivesPanel extends ConsumerWidget {
       if (File(path).existsSync()) return true;
     }
     return false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FEED PANEL
+// ══════════════════════════════════════════════════════════════════════════════
+
+class _FeedPanel extends ConsumerStatefulWidget {
+  const _FeedPanel();
+
+  @override
+  ConsumerState<_FeedPanel> createState() => _FeedPanelState();
+}
+
+class _FeedPanelState extends ConsumerState<_FeedPanel> {
+  late TextEditingController _tokenCtrl;
+  late TextEditingController _channelsCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = ref.read(settingsProvider);
+    _tokenCtrl = TextEditingController(text: s.discordBotToken);
+    _channelsCtrl = TextEditingController(text: s.discordChannelIds.join('\n'));
+  }
+
+  @override
+  void dispose() {
+    _tokenCtrl.dispose();
+    _channelsCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+
+    return _PanelScroll(children: [
+      _SettingGroup(title: 'FEED', children: [
+        _SettingRow(
+          label: 'Enable Feed',
+          subtitle: 'Show the Feed tab and allow background refresh.',
+          trailing: _ToggleSwitch(
+            value: s.feedEnabled,
+            onChanged: (v) {
+              notifier.setFeedEnabled(v);
+              ref.read(feedProvider.notifier).updateSchedule(v, s.feedRefreshHours);
+            },
+          ),
+        ),
+        _SettingRow(
+          label: 'Auto-Refresh Interval',
+          subtitle: 'How often to fetch new items in the background.',
+          trailing: DropdownButton<int>(
+            value: s.feedRefreshHours,
+            dropdownColor: AppColors.bgCard,
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+            underline: const SizedBox(),
+            items: const [
+              DropdownMenuItem(value: 0,  child: Text('Manual only')),
+              DropdownMenuItem(value: 6,  child: Text('Every 6 hours')),
+              DropdownMenuItem(value: 12, child: Text('Every 12 hours')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              notifier.setFeedRefreshHours(v);
+              ref.read(feedProvider.notifier).updateSchedule(s.feedEnabled, v);
+            },
+          ),
+        ),
+      ]),
+
+      _SettingGroup(title: 'RSS SOURCES', children: [
+        _SettingRow(
+          label: 'F95Zone',
+          subtitle: 'Adult Games forum (requires F95Zone login in Network tab).',
+          trailing: _ToggleSwitch(
+            value: s.feedSourceF95,
+            onChanged: notifier.setFeedSourceF95,
+          ),
+        ),
+        _SettingRow(
+          label: 'LewdCorner',
+          subtitle: 'Games forum (requires LewdCorner login in Network tab).',
+          trailing: _ToggleSwitch(
+            value: s.feedSourceLC,
+            onChanged: notifier.setFeedSourceLC,
+          ),
+        ),
+      ]),
+
+      _SettingGroup(title: 'DISCORD', children: [
+        // Info note
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Use a registered bot token to read messages from announcement channels. '
+            'The bot must already be invited to the target server.',
+            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, height: 1.5),
+          ),
+        ),
+        // Bot token
+        _SettingRow(
+          label: 'Bot Token',
+          subtitle: 'Stored locally in settings.json.',
+          trailing: const SizedBox(),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _FeedTextField(
+            controller: _tokenCtrl,
+            hint: 'Bot XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+            obscure: true,
+            onChanged: (v) => notifier.setDiscordBotToken(v.trim()),
+          ),
+        ),
+        // Channel IDs
+        _SettingRow(
+          label: 'Channel IDs',
+          subtitle: 'One per line — format: channelId:ServerName:#channelName',
+          trailing: const SizedBox(),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _FeedTextField(
+            controller: _channelsCtrl,
+            hint: '123456789012345678:ServerName:#announcements',
+            maxLines: 5,
+            onChanged: (v) {
+              final ids = v
+                  .split('\n')
+                  .map((l) => l.trim())
+                  .where((l) => l.isNotEmpty)
+                  .toList();
+              notifier.setDiscordChannelIds(ids);
+            },
+          ),
+        ),
+      ]),
+
+      // Normalization milestone note
+      _SettingGroup(title: 'NOTE', children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.accent.withValues(alpha: 0.08),
+            border: Border.all(color: AppColors.borderAccent),
+            borderRadius: AppRadius.borderMd,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline, size: 14, color: AppColors.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Feed normalization (uniform card format across all sources) '
+                  'is planned for a future milestone. '
+                  'Current output is raw — use it to see what the data looks like '
+                  'before deciding on the final card design.',
+                  style: GoogleFonts.inter(
+                    fontSize: 11, color: AppColors.accentLight, height: 1.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ]),
+    ]);
+  }
+}
+
+/// Simple text field for Feed panel inputs.
+class _FeedTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final bool obscure;
+  final int maxLines;
+  final ValueChanged<String> onChanged;
+
+  const _FeedTextField({
+    required this.controller,
+    required this.hint,
+    this.obscure = false,
+    this.maxLines = 1,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.bgPrimary,
+        border: Border.all(color: AppColors.border),
+        borderRadius: AppRadius.borderMd,
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        maxLines: maxLines,
+        onChanged: onChanged,
+        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          border: InputBorder.none,
+        ),
+      ),
+    );
   }
 }
 

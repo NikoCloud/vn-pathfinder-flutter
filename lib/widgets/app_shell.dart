@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../providers/library_provider.dart';
 import '../screens/library_screen.dart';
 import '../screens/archive_screen.dart';
+import '../screens/feed_screen.dart';
 import 'modals/settings_modal.dart';
 import 'modals/add_game_modal.dart';
 import 'navbar.dart';
@@ -57,6 +58,7 @@ class AppShell extends ConsumerWidget {
                         children: const [
                           LibraryScreen(),
                           ArchiveScreen(),
+                          FeedScreen(),
                         ],
                       ),
                     ),

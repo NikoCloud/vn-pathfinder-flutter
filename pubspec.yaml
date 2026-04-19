@@ -54,6 +54,9 @@ dependencies:
   # Intl (date formatting)
   intl: ^0.20.2
 
+  # XML parsing (RSS feed)
+  xml: ^6.5.0
+
   # Crypto (file hashing for dedup, if needed)
   crypto: ^3.0.6
 

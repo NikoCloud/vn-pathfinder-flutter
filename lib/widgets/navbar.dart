@@ -38,6 +38,8 @@ class AppNavbar extends ConsumerWidget implements PreferredSizeWidget {
                     onTap: () => onTabChanged(0)),
                 _NavTab(label: 'ARCHIVE', index: 1, selected: selectedTab == 1,
                     onTap: () => onTabChanged(1)),
+                _NavTab(label: 'FEED', index: 2, selected: selectedTab == 2,
+                    onTap: () => onTabChanged(2)),
                 const Spacer(),
                 _SettingsButton(),
                 const SizedBox(width: 6),
