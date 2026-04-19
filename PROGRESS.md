@@ -26,7 +26,10 @@
 | 10.5 | Login system overhaul + VNDB card in Settings | ✅ Done | — |
 | 11 | Search reliability — Cloudflare bypass for F95/LC searches | ✅ Done | — |
 | 11.5 | Tag system + library/archive separation fixes | ✅ Done | — |
-| 12 | Polish pass — missing wiring, edge cases | 🔲 Backlog | — |
+| 12 | RSS feed aggregator (F95Zone, LewdCorner, Discord) | ✅ Done | `d63189f` |
+| 13 | Archive overhaul — hero panel, extraction UI, deletion | ✅ Done | `cd7ba31` |
+| 13.5 | WebView2 lazy lifecycle + XenForo loop fix | ✅ Done | `643d8ab` |
+| 14 | Polish pass — missing wiring, edge cases | 🔲 Backlog | — |
 
 ---
 
@@ -368,19 +371,87 @@ webview_windows: ^0.4.0   # itch.io embedded browser login (Windows only)
 
 ---
 
-## Phase 12 — Backlog / Polish
+## Phase 12 — Done ✅  (RSS feed aggregator)
 
-- **Dynamic accent color** at runtime: settings provider + AppTheme wiring exists, but a
-  live hot-switch needs end-to-end testing (ThemeData rebuild path).
-- **Orphan scanner trigger** — `showOrphanScannerModal` exists but no permanent UI button
-  calls it (currently only wired via Settings → General → "Scan Now").
-- **`statusTextProvider` cleanup** — currently a `StateProvider` with `ref.watch()` in the
-  factory; semantically should be a `Provider<String>` for clarity. Non-breaking.
-- **Remove dead `xenforoLogin()`** from `metadata_service.dart` once Phase 11 confirms the
-  browser login path is the sole auth mechanism.
-- **macOS / Linux** — `webview_windows` is Windows-only. For cross-platform, swap to
-  `webview_flutter` or `flutter_inappwebview` behind a platform conditional.
-- **Tags UI** — add-tag dialog exists in `detail_content.dart`; needs testing with real library.
-- **Version prefix** — scanner strips `v`/`V` prefix cleanly; verify edge cases (e.g. `ver2.0`).
-- **Patch system end-to-end** — Properties modal Patches tab is wired; needs real `.patches/`
-  folder test to confirm toggle (File.rename) works correctly on Windows paths with spaces.
+**What was done:**
+- New `lib/services/feed_service.dart` — fetches and parses RSS/atom feeds from F95Zone, LewdCorner, and Discord webhook/feed URLs
+- New `lib/providers/feed_provider.dart` — `FeedNotifier` with `FeedEntry` model, auto-refresh, per-source toggles
+- New `lib/screens/feed_screen.dart` — feed UI (card list, source filter pills, refresh button, lockdown-aware)
+- `lib/widgets/app_shell.dart` — added FeedScreen to IndexedStack (3rd tab)
+- `lib/widgets/navbar.dart` — added Feed tab to top nav
+
+**Commit:** `d63189f`  
+**`flutter analyze` result: 0 issues.**
+
+---
+
+## Phase 13 — Done ✅  (Archive screen overhaul)
+
+**What was done:**
+
+### Archive hero panel + extraction UI (commit `bb2e2a2`)
+- `lib/screens/archive_screen.dart` — full rewrite with Steam-style split layout:
+  - Left: scrollable archive list with cover thumbs, file size, extraction status badges
+  - Right: hero panel with archive preview, extraction path picker, progress indicator
+  - Right-click context menu on archive rows (extract, assign as patch, reveal in Explorer, delete)
+- Extracted archives get an "Extracted" indicator badge in the list
+
+### Archive deletion + background isolate (commits `16e0238`, `cd7ba31`)
+- Added delete options to archive context menu (delete archive only, delete extracted folder, delete both)
+- All delete operations run in a background `Isolate.run()` call to prevent UI freeze on large archives
+- Confirmation dialog before destructive actions
+
+**Commits:** `bb2e2a2`, `16e0238`, `cd7ba31`  
+**`flutter analyze` result: 0 issues.**
+
+---
+
+## Phase 13.5 — Done ✅  (WebView2 lazy lifecycle + XenForo loop fix)
+
+**What was done:**
+
+### Problem
+`vn_pathfinder.exe` was consuming ~22 GB RAM at idle because the embedded Chromium (WebView2) instance was initialized at app startup and kept alive for the entire session, even during normal library browsing when no scraping was happening.
+
+A second bug caused all F95Zone/LewdCorner page loads to wait the full 10-second retry delay even when the page had already fully loaded, compounding the memory churn.
+
+### Changes
+
+**`lib/services/scraping_service.dart`:**
+- Added `scrapingSessionProvider = StateProvider<int>` — reference count of active scraping consumers
+- Added `ScrapingCancelledException` — thrown to queued requests when cancelled
+- `ScrapingService` no longer initializes on construction; `initialize()` is idempotent + guarded by `_isInitializing` flag
+- New `cancelPending()` — drains the queue immediately, completing all pending Completers with `ScrapingCancelledException`
+- New `dispose()` — calls `cancelPending()`, disposes the native WebView2 controller, creates fresh state; service is fully re-usable after `dispose()` + `initialize()`
+- **Fixed XenForo intermediate-page loop bug:** old condition `!html.contains('p-main-header')` was always `true` on real F95Zone/LC pages (the page header is always present), so all 5 × 2 s retries fired on every load. Fixed to `!isSearching || hasPageHeader` — exits as soon as the page is ready
+
+**`lib/widgets/common/scraping_webview.dart`:**
+- Now watches `scrapingSessionProvider` via `ref.listen`
+- Calls `service.initialize()` when count transitions 0 → positive (WebView spins up on demand)
+- Calls `service.dispose()` when count drops back to 0 (WebView torn down, Chromium process exits)
+- Renders `Webview(controller)` only while initialized; `SizedBox.shrink()` otherwise
+
+**`lib/widgets/modals/metadata_fetch_modal.dart`:**
+- `initState` — increments `scrapingSessionProvider` before starting search (acquires a session)
+- `dispose` — calls `service.cancelPending()` then decrements session count (releases session, triggers WebView disposal if count reaches 0)
+
+### Result
+- Idle RAM: ~20–50 MB (no Chromium)
+- During Fetch Metadata: ~200–400 MB (normal for a browser tab)
+- Closing the modal: RAM released within seconds
+- Pending searches cancelled immediately on modal close — no zombie scraping
+
+**Commit:** `643d8ab`  
+**`flutter analyze` result: 0 issues.**
+
+---
+
+## Phase 14 — Backlog / Polish
+
+- **WebView session management for FeedScreen** — feed refresh also uses ScrapingService; should acquire/release `scrapingSessionProvider` the same way MetadataFetchModal does
+- **Dynamic accent color** at runtime: settings provider + AppTheme wiring exists, needs end-to-end test
+- **Orphan scanner trigger** — wired via Settings → General → "Scan Now" only; consider a persistent toolbar button
+- **Remove dead `xenforoLogin()`** from `metadata_service.dart` (browser login is the only auth path now)
+- **macOS / Linux** — `webview_windows` is Windows-only; swap to `flutter_inappwebview` behind a platform conditional for cross-platform
+- **Patch system end-to-end** — toggle (File.rename) on Windows paths with spaces not yet tested
+- **Version prefix edge cases** — scanner strips `v`/`V`; verify `ver2.0`, `version1`, etc.
