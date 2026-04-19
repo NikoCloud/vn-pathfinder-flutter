@@ -46,14 +46,24 @@ lib/
 - `applied_patches` — `Dict["{base_key}::{version_str}", Dict[str, bool]]`
 - Schema version: 4 (current in 1.0)
 
-## Bug Queue — CHECK THIS EVERY SESSION
-`BUGS.md` in the repo root is the active bug tracker. At the start of every session:
-1. Read `BUGS.md`
-2. If there are items in **Queue**, work through them top to bottom before doing anything else
-3. Move each item to **In Progress** while working on it, then to **Fixed** (with commit) when done
-4. If a bug can't be reproduced or needs more info, move it to **Won't Fix / Can't Reproduce** with a note
+## Bug Tracker — CHECK THIS EVERY SESSION
+GitHub Issues is the canonical bug tracker: https://github.com/NikoCloud/vn-pathfinder-flutter/issues
 
-The user adds bugs in plain language — don't wait for precise repro steps, just investigate.
+At the start of every session:
+1. Run `gh issue list --repo NikoCloud/vn-pathfinder-flutter --label bug --state open`
+2. Also check `BUGS.md` in the repo root — if items exist in Queue, convert them to GitHub Issues
+   then clear them from BUGS.md (BUGS.md is a quick-dump scratch pad, Issues is the source of truth)
+3. Work through open issues top to bottom (lowest issue number first = oldest = highest priority)
+4. When fixing an issue, include `closes #N` in the commit message — GitHub auto-links and closes it
+5. Add a comment to the issue before closing explaining root cause and what changed
+
+**Labels to apply when creating issues:**
+- `bug` — always add this for defects
+- `regression` — if this was previously working (prevents re-introduction loops)
+- `scraping` / `ui` / `crash` / `patches` / `library` / `archive` / `settings` / `performance` — area label
+- `wontfix` — if closing without a code change, explain why in a comment first
+
+The user adds issues in plain language — don't wait for precise repro steps, just investigate.
 
 ## Developer Notes
 - User is NOT a Flutter/Dart developer — Claude writes all code
