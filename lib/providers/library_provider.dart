@@ -123,6 +123,20 @@ class UserDataNotifier extends StateNotifier<UserData> {
     });
   }
 
+  /// Atomically replace the entire patch map for [metaKey] with [states].
+  /// Used by the patch scanner to purge ghosts and correct state drift in one write.
+  void syncPatchStates(String metaKey, Map<String, bool> states) {
+    update((ud) {
+      final patches = Map<String, Map<String, bool>>.from(ud.appliedPatches);
+      if (states.isEmpty) {
+        patches.remove(metaKey);
+      } else {
+        patches[metaKey] = Map<String, bool>.from(states);
+      }
+      return ud.copyWith(appliedPatches: patches);
+    });
+  }
+
   void setHidden(String baseKey, bool hidden) {
     final newHidden = {...state.hidden};
     if (hidden) {

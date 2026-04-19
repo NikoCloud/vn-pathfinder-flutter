@@ -439,10 +439,13 @@ class MetadataService {
     final doc = html_parser.parse(body);
 
     // The first post in the thread contains the game description + images.
-    // XenForo selector for the OP post content:
-    final opEl = doc.querySelector('article.message--post .message-body') ??
-        doc.querySelector('div.bbWrapper') ??
-        doc.querySelector('article.message .bbWrapper');
+    // Strategy: grab the FIRST article.message--post (= OP), then dig into
+    // its div.bbWrapper where XenForo 2.x renders bbCode content.
+    final opArticle = doc.querySelector('article.message--post') ??
+        doc.querySelector('article.message');
+    final opEl = opArticle?.querySelector('div.bbWrapper') ??
+        opArticle?.querySelector('.message-body') ??
+        doc.querySelector('div.bbWrapper');
     if (opEl == null) return result;
 
     // ── Extract full-size images from the OP post ────────────────────────
@@ -667,31 +670,24 @@ class MetadataService {
     final vnpfDir = Directory(p.join(gameFolder.path, '.vnpf'));
     vnpfDir.createSync(recursive: true);
 
-    // ── Clean slate ───────────────────────────────────────────────────────
-    // Delete ALL previously downloaded cover and screenshot files so a new
-    // download from a different provider doesn't leave stale images behind.
-    // (metadata.json is deliberately left untouched.)
-    try {
-      for (final f in vnpfDir.listSync().whereType<File>()) {
-        final name = p.basename(f.path);
-        if (name.startsWith('cover.') || name.startsWith('screenshot_')) {
-          f.deleteSync();
-        }
-      }
-    } catch (e) {
-      debugPrint('Image cleanup failed: $e');
-    }
-
-    int done = 0;
     final shots = screenshotUrls.take(maxScreenshots).toList();
     final total = (coverUrl.isNotEmpty ? 1 : 0) + shots.length;
+    int done = 0;
+
+    // ── Download all images, writing to temp names first ─────────────────
+    // We collect what was actually written before clearing old files, so a
+    // failed re-download doesn't wipe the previous pack with nothing to show.
+    final written = <File>[];
 
     if (coverUrl.isNotEmpty) {
       try {
         final bytes = await _fetchImageBytes(coverUrl, scrapingService);
         if (bytes != null && bytes.isNotEmpty) {
-          final ext = _ext(coverUrl);
-          await File(p.join(vnpfDir.path, 'cover$ext')).writeAsBytes(bytes);
+          final f = File(p.join(vnpfDir.path, 'cover_new${_ext(coverUrl)}'));
+          await f.writeAsBytes(bytes);
+          written.add(f);
+        } else {
+          debugPrint('Cover download returned no bytes: $coverUrl');
         }
       } catch (e) {
         debugPrint('Cover download failed ($coverUrl): $e');
@@ -703,14 +699,50 @@ class MetadataService {
       try {
         final bytes = await _fetchImageBytes(shots[i], scrapingService);
         if (bytes != null && bytes.isNotEmpty) {
-          final ext = _ext(shots[i]);
-          await File(p.join(vnpfDir.path, 'screenshot_${i + 1}$ext'))
-              .writeAsBytes(bytes);
+          final f = File(p.join(vnpfDir.path, 'screenshot_new_${i + 1}${_ext(shots[i])}'));
+          await f.writeAsBytes(bytes);
+          written.add(f);
+        } else {
+          debugPrint('Screenshot ${i + 1} returned no bytes: ${shots[i]}');
         }
       } catch (e) {
         debugPrint('Screenshot ${i + 1} download failed (${shots[i]}): $e');
       }
       onProgress?.call(++done, total);
+    }
+
+    // ── Only clear old pack if at least one new image was downloaded ──────
+    if (written.isEmpty) {
+      debugPrint('downloadImages: no images downloaded — keeping existing pack');
+      return;
+    }
+
+    // Delete old cover + screenshots
+    try {
+      for (final f in vnpfDir.listSync().whereType<File>()) {
+        final name = p.basename(f.path);
+        if ((name.startsWith('cover.') || name.startsWith('screenshot_')) &&
+            !name.contains('_new')) {
+          f.deleteSync();
+        }
+      }
+    } catch (e) {
+      debugPrint('Image cleanup failed: $e');
+    }
+
+    // Rename _new files to final names
+    int shotIdx = 1;
+    for (final f in written) {
+      final name = p.basename(f.path);
+      final ext  = p.extension(f.path);
+      final finalName = name.startsWith('cover_new')
+          ? 'cover$ext'
+          : 'screenshot_${shotIdx++}$ext';
+      try {
+        await f.rename(p.join(vnpfDir.path, finalName));
+      } catch (e) {
+        debugPrint('Rename failed for $name: $e');
+      }
     }
   }
 
@@ -728,51 +760,64 @@ class MetadataService {
             'Referer': _refererFor(url),
           })
           .timeout(const Duration(seconds: 20));
-      if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
+      // Only accept the response if it's actually an image — servers that require
+      // auth often return 200 + HTML login page instead of 403.
+      final ct = resp.headers['content-type'] ?? '';
+      if (resp.statusCode == 200 &&
+          resp.bodyBytes.isNotEmpty &&
+          ct.contains('image/')) {
         return resp.bodyBytes;
       }
-      // 403 / 302 → auth likely required → try WebView fetch
-      if (scraping == null || resp.statusCode == 200) return null;
-    } catch (_) {
+      debugPrint('Image HTTP fetch: status=${resp.statusCode} content-type=$ct url=$url');
+      // Fall through to WebView if scraping is available
+      if (scraping == null) return null;
+    } catch (e) {
+      debugPrint('Image HTTP fetch error ($url): $e');
       if (scraping == null) return null;
     }
 
-    // Fallback: use the WebView which carries the session cookies.
-    // We run a JS fetch() and return the bytes as a Base64 string.
+    // Fallback: use the WebView which carries session cookies.
+    // IMPORTANT: we evaluate JS on the SAME ORIGIN as the image URL so the
+    // fetch is same-origin (no CORS). XenForo sets cookies on .f95zone.to
+    // (with leading dot), so the subdomain attachments.f95zone.to shares them.
     try {
       if (!scraping.isInitialized) return null;
       final js = '''
 (async () => {
   try {
     const r = await fetch(${_jsString(url)}, {credentials: 'include'});
-    if (!r.ok) return null;
+    if (!r.ok) return 'ERR:' + r.status;
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.startsWith('image/')) return 'ERR:ct:' + ct;
     const buf = await r.arrayBuffer();
     const bytes = new Uint8Array(buf);
+    const chunkSize = 8192;
     let bin = '';
-    for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+    for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
     return btoa(bin);
-  } catch(e) { return null; }
+  } catch(e) { return 'ERR:' + String(e); }
 })()
 ''';
-      // Use evalOnPage pointing at the site's homepage so cookies are in scope
+      // Evaluate on the image's own origin so the fetch is same-origin (no CORS).
       final base = _siteBaseUrl(url);
+      debugPrint('WebView image fetch: base=$base url=$url');
       final result = await scraping.evalOnPage(base, js);
-      if (result is String && result.isNotEmpty) {
-        return base64Decode(result);
+      if (result is String) {
+        if (result.startsWith('ERR:')) {
+          debugPrint('WebView image fetch JS error ($url): $result');
+          return null;
+        }
+        if (result.isNotEmpty) {
+          return base64Decode(result);
+        }
       }
+      debugPrint('WebView image fetch returned no data for $url');
     } catch (e) {
       debugPrint('WebView image fetch failed ($url): $e');
     }
     return null;
-  }
-
-  static String _refererFor(String url) {
-    try {
-      final uri = Uri.parse(url);
-      return '${uri.scheme}://${uri.host}/';
-    } catch (_) {
-      return '';
-    }
   }
 
   static String _siteBaseUrl(String url) {
@@ -781,6 +826,15 @@ class MetadataService {
       return '${uri.scheme}://${uri.host}/';
     } catch (_) {
       return url;
+    }
+  }
+
+  static String _refererFor(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return '${uri.scheme}://${uri.host}/';
+    } catch (_) {
+      return '';
     }
   }
 

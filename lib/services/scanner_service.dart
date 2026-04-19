@@ -412,10 +412,11 @@ class ScannerService {
   }
 
   /// Scan each game version's .patches/ folder and register new entries in UserData.
+  /// .patches/ lives at the ROOT of the game directory (sibling of game/), NOT inside game/.
   static void autoDetectPatches(List<GameGroup> groups, UserData ud) {
     for (final g in groups) {
       for (final v in g.versions) {
-        final patchesDir = Directory(p.join(v.folderPath.path, 'game', '.patches'));
+        final patchesDir = Directory(p.join(v.folderPath.path, '.patches'));
         if (!patchesDir.existsSync()) continue;
         // Patch registration logic could go here or in UserData
       }

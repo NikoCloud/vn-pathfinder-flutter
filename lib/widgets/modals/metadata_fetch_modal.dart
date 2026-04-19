@@ -7,7 +7,7 @@ import '../../models/game_group.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/metadata_service.dart';
-import '../../services/scraping_service.dart';
+import '../../services/scraping_service.dart' show ScrapingService, scrapingServiceProvider, scrapingSessionProvider;
 import '../../services/scanner_service.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -113,12 +113,21 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   void initState() {
     super.initState();
     _queryCtrl = TextEditingController(text: widget.group.effectiveTitle);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _search());
+    // Acquire a scraping session — this brings the WebView2 instance online.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(scrapingSessionProvider.notifier).update((s) => s + 1);
+      _search();
+    });
   }
 
   @override
   void dispose() {
     _queryCtrl.dispose();
+    // Cancel pending requests immediately and release the scraping session.
+    // ScrapingWebView disposes the WebView when the count drops to zero.
+    final service = ref.read(scrapingServiceProvider);
+    service.cancelPending();
+    ref.read(scrapingSessionProvider.notifier).update((s) => (s - 1).clamp(0, 999));
     super.dispose();
   }
 
@@ -810,7 +819,7 @@ class _FieldMixer extends StatelessWidget {
   final Map<_Provider, bool> enrichingByProvider;
   final Map<String, _Provider?> fieldSource;
   final bool downloadImages;
-  final void Function(String field, _Provider prov) onSourceChange;
+  final void Function(String field, _Provider? prov) onSourceChange;
   final ValueChanged<bool> onToggleDownload;
 
   const _FieldMixer({
@@ -989,7 +998,7 @@ class _MixerRow extends StatelessWidget {
   final Map<_Provider, bool> enrichingByProvider;
   final Map<String, _Provider?> fieldSource;
   final bool Function(String field, MetadataResult r) hasData;
-  final void Function(String field, _Provider prov) onSourceChange;
+  final void Function(String field, _Provider? prov) onSourceChange;
   final Widget Function(MetadataResult r) valueWidget;
 
   const _MixerRow({
@@ -1029,6 +1038,11 @@ class _MixerRow extends StatelessWidget {
                     letterSpacing: 0.8,
                   ),
                 ),
+              ),
+              _NonePill(
+                field: field,
+                fieldSource: fieldSource,
+                onTap: onSourceChange,
               ),
               ..._Provider.values.map((prov) => _ProviderPill(
                     field: field,
@@ -1072,7 +1086,7 @@ class _ImagesRow extends StatelessWidget {
   final _Provider? imgSrc;
   final bool Function(String field, MetadataResult r) hasData;
   final bool downloadImages;
-  final void Function(String field, _Provider prov) onSourceChange;
+  final void Function(String field, _Provider? prov) onSourceChange;
   final ValueChanged<bool> onToggleDownload;
 
   const _ImagesRow({
@@ -1112,6 +1126,11 @@ class _ImagesRow extends StatelessWidget {
                   letterSpacing: 0.8,
                 ),
               ),
+            ),
+            _NonePill(
+              field: 'images',
+              fieldSource: fieldSource,
+              onTap: onSourceChange,
             ),
             ..._Provider.values.map((prov) => _ProviderPill(
                   field: 'images',
@@ -1156,51 +1175,54 @@ class _ImagesRow extends StatelessWidget {
           const SizedBox(height: 8),
           if (allUrls.isNotEmpty)
             SizedBox(
-              height: 80,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: allUrls.length,
-                separatorBuilder: (ctx, i) => const SizedBox(width: 6),
-                itemBuilder: (ctx, i) {
-                  final isCover = i == 0 && imgResult?.coverUrl.isNotEmpty == true;
-                  return Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: AppRadius.borderSm,
-                        child: Image.network(
-                          allUrls[i],
-                          width: isCover ? 56 : 120,
-                          height: 80,
-                          fit: BoxFit.cover,
-                          errorBuilder: (ctx2, e, st) => Container(
-                            width: isCover ? 56 : 120,
-                            height: 80,
-                            color: AppColors.bgCard,
-                            child: const Icon(Icons.broken_image_outlined,
-                                size: 14, color: AppColors.textMuted),
-                          ),
-                        ),
-                      ),
-                      if (isCover)
-                        Positioned(
-                          bottom: 3, left: 3,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.65),
-                              borderRadius: AppRadius.borderSm,
+              height: 200,
+              child: SingleChildScrollView(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: List.generate(allUrls.length, (i) {
+                    final isCover = i == 0 && imgResult?.coverUrl.isNotEmpty == true;
+                    const imgH = 110.0;
+                    final imgW = isCover ? 78.0 : 156.0;
+                    return Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: AppRadius.borderSm,
+                          child: Image.network(
+                            allUrls[i],
+                            width: imgW,
+                            height: imgH,
+                            fit: BoxFit.cover,
+                            errorBuilder: (ctx2, e, st) => Container(
+                              width: imgW,
+                              height: imgH,
+                              color: AppColors.bgCard,
+                              child: const Icon(Icons.broken_image_outlined,
+                                  size: 18, color: AppColors.textMuted),
                             ),
-                            child: Text('CVR',
-                                style: GoogleFonts.inter(
-                                    fontSize: 7,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white)),
                           ),
                         ),
-                    ],
-                  );
-                },
+                        if (isCover)
+                          Positioned(
+                            bottom: 4, left: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.65),
+                                borderRadius: AppRadius.borderSm,
+                              ),
+                              child: Text('COVER',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 7,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white)),
+                            ),
+                          ),
+                      ],
+                    );
+                  }),
+                ),
               ),
             )
           else if (isEnriching)
@@ -1225,6 +1247,53 @@ class _ImagesRow extends StatelessWidget {
   }
 }
 
+// ── None pill ─────────────────────────────────────────────────────────────────
+
+class _NonePill extends StatelessWidget {
+  final String field;
+  final Map<String, _Provider?> fieldSource;
+  final void Function(String field, _Provider? prov) onTap;
+
+  const _NonePill({
+    required this.field,
+    required this.fieldSource,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = fieldSource[field] == null;
+
+    return GestureDetector(
+      onTap: () => onTap(field, null),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.bgCard : Colors.transparent,
+          borderRadius: AppRadius.borderSm,
+          border: Border.all(
+            color: isSelected
+                ? AppColors.textMuted
+                : AppColors.border.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Text(
+          'NONE',
+          style: GoogleFonts.inter(
+            fontSize: 9,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+            color: isSelected
+                ? AppColors.textSecondary
+                : AppColors.textMuted.withValues(alpha: 0.55),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Provider pill ─────────────────────────────────────────────────────────────
 
 class _ProviderPill extends StatelessWidget {
@@ -1234,7 +1303,7 @@ class _ProviderPill extends StatelessWidget {
   final Map<_Provider, bool> enrichingByProvider;
   final Map<String, _Provider?> fieldSource;
   final bool Function(String field, MetadataResult r) hasData;
-  final void Function(String field, _Provider prov) onTap;
+  final void Function(String field, _Provider? prov) onTap;
 
   const _ProviderPill({
     required this.field,
