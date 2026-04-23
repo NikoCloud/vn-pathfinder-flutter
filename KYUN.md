@@ -338,7 +338,42 @@ A `PageView` or navigator would destroy and recreate the hidden tabs.
 
 ---
 
-## Known Remaining Issues (as of Phase 13.5)
+## Entry 13 — Azkosel's Corner Feed Provider (Phase 14)
+**Commit:** `8ef2568`
+
+**User request:** "New provider time. It has 2 latest update threads — one for mainstream games
+and one for 'forbidden' games. Can we handle that?"
+
+**Background:**
+The user shared the site's global RSS feed (`/index.php?forums/-/index.rss`) which covers the
+entire forum — including off-topic, AI chat, creator galleries, etc. The relevant categories are
+two specific forum nodes:
+- Node 13: regular games — `/index.php?forums/games.13/index.rss`
+- Node 32: forbidden games — `/index.php?forums/forbidden-haven-games.32/index.rss`
+
+**What was built:**
+- `feedSourceAzc` bool in `AppSettings` (defaults `false` — opt-in, not opt-out like F95/LC)
+- `setFeedSourceAzc()` in `SettingsNotifier` + `feed_source_azc` JSON key
+- Two `_fetchRss()` calls in `FeedService.fetchAll()` gated on `settings.feedSourceAzc`,
+  one per forum node, both using source key `'azc'` and label `'AzC'`
+- Both calls use plain-HTTP-first / ScrapingService-fallback (same as LewdCorner)
+- "Azkosel's" filter pill in the feed toolbar
+- Purple source badge in feed cards (`0x26B04AB0` bg, `0xFFCC80CC` text)
+
+**Why two separate `_fetchRss()` calls instead of one:**
+`_fetchRss()` takes a single URL. The merge happens automatically — both return `RawFeedItem`
+lists with source `'azc'`, and `Future.wait()` in `fetchAll()` flattens all results together
+before the sort. No special handling needed. The deduplication pass in `FeedService.deduplicate()`
+will also correctly deduplicate across the two AzC feeds if the same title appears in both.
+
+**Why opt-in default:**
+F95Zone and LewdCorner are established providers the user was already using. Azkosel's Corner
+is new — defaulting it off means existing installs don't silently start fetching a new source.
+The user enables it intentionally in Settings → Feed.
+
+---
+
+## Known Remaining Issues (as of Phase 14)
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
