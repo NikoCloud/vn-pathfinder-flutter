@@ -121,6 +121,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
   /// Items older than 10 days are pruned on each successful refresh.
   Future<void> refresh() async {
     state = state.copyWith(isLoading: true, error: null);
+    // Acquire a scraping session so WebView2 initialises for authenticated
+    // sources (F95Zone JSON API, LewdCorner/AzC if plain HTTP is blocked).
+    _ref.read(scrapingSessionProvider.notifier).update((s) => s + 1);
     try {
       final scraping = _ref.read(scrapingServiceProvider);
       final settings = _ref.read(settingsProvider);
@@ -166,6 +169,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
         isLoading: false,
         error: e.toString(),
       );
+    } finally {
+      // Release the session — WebView2 disposes when the count drops to zero.
+      _ref.read(scrapingSessionProvider.notifier).update((s) => (s - 1).clamp(0, 999));
     }
   }
 
