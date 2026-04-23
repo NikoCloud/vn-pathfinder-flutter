@@ -178,10 +178,31 @@ class MetadataService {
     }
   }
 
-  /// Strip XenForo bracket tags from a raw thread title.
-  /// e.g. "Acting Lessons [v1.0] [DarkSilver] [Ren'Py]" → "Acting Lessons"
+  /// Strip XenForo prefix labels and bracket tags from a raw thread title.
+  ///
+  /// Two passes:
+  ///   1. Strip all [bracketed] content (version numbers, dev names, engine tags).
+  ///   2. Iteratively strip known prefix words from the front — these appear as
+  ///      plain text when the site renders prefixes outside of <span> elements.
+  ///
+  /// e.g. "Ren'Py AI VN Female Muscle Leveling [v1.5] [FMG XP]"
+  ///   → "Female Muscle Leveling"
   static String _cleanXenforoTitle(String raw) {
-    return raw.replaceAll(RegExp(r'\s*\[[^\]]*\]'), '').trim();
+    // Pass 1: strip [bracketed] content
+    var t = raw.replaceAll(RegExp(r'\s*\[[^\]]*\]'), '').trim();
+    // Pass 2: strip known prefix words from the front (iterative — multiple prefixes)
+    bool changed = true;
+    while (changed && t.isNotEmpty) {
+      changed = false;
+      for (final prefix in _xfTitlePrefixes) {
+        if (t.toLowerCase().startsWith('$prefix ')) {
+          t = t.substring(prefix.length).trim();
+          changed = true;
+          break; // restart from the top of the prefix list
+        }
+      }
+    }
+    return t;
   }
 
   static List<MetadataResult> _parseF95SearchHtml(String body, String query) {
@@ -492,6 +513,17 @@ class MetadataService {
     }).where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
   }
 
+  /// XenForo thread-prefix labels that appear at the START of thread titles,
+  /// either as span elements (stripped by the DOM pass) or as plain text
+  /// (stripped by the iterative pass in [_cleanXenforoTitle]).
+  /// Order matters for multi-word prefixes — list longer ones first.
+  static const _xfTitlePrefixes = <String>[
+    'rpg maker', 'unreal engine', 'wolf rpg', 'on hold', 'tyranobuilder',
+    "ren'py", 'renpy', 'rpgm', 'unity', 'html', 'unreal', 'flash',
+    'godot', 'java', 'twine', 'construct', 'webgl', '3dcg', '2dcg',
+    'vn', 'ai', 'completed', 'abandoned', 'onhold', 'paused', 'demo',
+  ];
+
   /// F95Zone/XenForo meta-classification tags that should NOT be stored as
   /// genre/content tags. These duplicate the app's own engine-detection and
   /// status fields, or are too generic to be useful in a VN library context.
@@ -687,6 +719,21 @@ class MetadataService {
         ? imageUrls.sublist(1).take(9).toList()
         : result.screenshotUrls;
 
+    // ── Re-extract clean title from H1 ───────────────────────────────────
+    // The thread page H1 (<h1 class="p-title-value">) renders prefix labels
+    // as <span> elements, so stripping spans + applying _cleanXenforoTitle
+    // gives the correct game title even when search results include prefixes
+    // as plain text.
+    String title = result.title;
+    final h1El = doc.querySelector('h1.p-title-value');
+    if (h1El != null) {
+      for (final span in h1El.querySelectorAll('span')) {
+        span.remove();
+      }
+      final h1Title = _cleanXenforoTitle(h1El.text.trim());
+      if (h1Title.isNotEmpty) title = h1Title;
+    }
+
     // ── Extract XenForo tag list ──────────────────────────────────────────
     // XenForo 2.x renders tags in a <ul class="js-tagList"> or <div class="tagList">
     // Each tag is an <a class="tagItem"> element.
@@ -709,7 +756,7 @@ class MetadataService {
     return MetadataResult(
       provider: result.provider,
       id: result.id,
-      title: result.title,
+      title: title,
       developer: developer,
       synopsis: synopsis,
       coverUrl: cover,
