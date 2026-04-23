@@ -47,6 +47,7 @@ class MetadataResult {
     if (provider == 'f95zone') base['f95_url'] = sourceUrl;
     if (provider == 'lewdcorner') base['lc_url'] = sourceUrl;
     if (provider == 'itchio') base['itch_url'] = sourceUrl;
+    if (provider == 'azc') base['azc_url'] = sourceUrl;
     return base;
   }
 }
@@ -335,6 +336,99 @@ class MetadataService {
     return results.where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
   }
 
+  // ── Azkosel's Corner ──────────────────────────────────────────────────────
+
+  /// Search Azkosel's Corner for games.
+  /// Searches both the regular games forum (node 13) and the forbidden
+  /// games forum (node 32) in a single query by passing two node IDs.
+  /// Uses [scrapingService] to route through the WebView (same as other
+  /// XenForo sites — bypasses any Cloudflare or JS challenge page).
+  static Future<List<MetadataResult>> searchAzkosel(
+    String query,
+    ScrapingService scrapingService,
+  ) async {
+    try {
+      final encodedKeywords = Uri.encodeQueryComponent(query);
+      // Include both game forums: node 13 (games) + node 32 (forbidden games).
+      // c[title_only]=1 filters to thread titles only — avoids post body noise.
+      final url = 'https://azkoselscorner.com/search/search'
+          '?keywords=$encodedKeywords'
+          '&t=post'
+          '&o=relevance'
+          '&c[nodes][0]=13'    // Games
+          '&c[nodes][1]=32'    // Forbidden Haven Games
+          '&c[child_nodes]=1'
+          '&c[title_only]=1';
+
+      final html = await scrapingService.getString(url);
+      if (html.isEmpty) return [];
+
+      if (html.contains('id="ctrl_auth_login"') || html.contains('login--container')) {
+        debugPrint("Azkosel's Corner search redirected to login page.");
+        return [];
+      }
+
+      return _parseAzcSearchHtml(html, query);
+    } catch (e) {
+      debugPrint("Azkosel's Corner search failed: $e");
+      return [];
+    }
+  }
+
+  static List<MetadataResult> _parseAzcSearchHtml(String body, String query) {
+    final doc = html_parser.parse(body);
+    final results = <MetadataResult>[];
+
+    // XenForo 2.x search result rows
+    final searchRows = doc.querySelectorAll('li.block-row');
+    for (final el in searchRows) {
+      final titleEl = el.querySelector('h3.contentRow-title a');
+      if (titleEl == null) continue;
+
+      for (final label in titleEl.querySelectorAll('span')) {
+        label.remove();
+      }
+      final title = _cleanXenforoTitle(titleEl.text.trim());
+      final href = titleEl.attributes['href'] ?? '';
+      final url = href.startsWith('http') ? href : 'https://azkoselscorner.com$href';
+
+      results.add(MetadataResult(
+        provider: 'azc',
+        id: href,
+        title: title,
+        developer: '',
+        sourceUrl: url,
+      ));
+    }
+
+    // Fallback: thread list pattern
+    if (results.isEmpty) {
+      final threadItems = doc.querySelectorAll('div.structItem--thread');
+      for (final el in threadItems) {
+        final titleEl = el.querySelector('div.structItem-title a[data-tp-primary]') ??
+                        el.querySelector('div.structItem-title a');
+        if (titleEl == null) continue;
+
+        for (final label in titleEl.querySelectorAll('span')) {
+          label.remove();
+        }
+        final title = _cleanXenforoTitle(titleEl.text.trim());
+        final href = titleEl.attributes['href'] ?? '';
+        final url = href.startsWith('http') ? href : 'https://azkoselscorner.com$href';
+
+        results.add(MetadataResult(
+          provider: 'azc',
+          id: href,
+          title: title,
+          developer: '',
+          sourceUrl: url,
+        ));
+      }
+    }
+
+    return results.where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
+  }
+
   // ── itch.io ────────────────────────────────────────────────────────────────
 
   /// Search itch.io for games.
@@ -458,9 +552,11 @@ class MetadataService {
     // Strategy: prefer wrapper/anchor full-res first; fall back to img src
     // only for images that aren't wrapped in a lightbox container.
 
-    final siteBase = result.provider == 'f95zone'
-        ? 'https://f95zone.to'
-        : 'https://lewdcorner.com';
+    final siteBase = switch (result.provider) {
+      'f95zone'    => 'https://f95zone.to',
+      'azc'        => 'https://azkoselscorner.com',
+      _            => 'https://lewdcorner.com',
+    };
 
     String absUrl(String url) {
       if (url.startsWith('//')) return 'https:$url';

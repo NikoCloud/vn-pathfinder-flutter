@@ -22,13 +22,14 @@ void showMetadataFetchModal(BuildContext context, GameGroup group) {
 
 // ── Provider enum ─────────────────────────────────────────────────────────────
 
-enum _Provider { vndb, f95zone, lewdcorner, itchio }
+enum _Provider { vndb, f95zone, lewdcorner, azc, itchio }
 
 extension _ProviderX on _Provider {
   String get label => switch (this) {
         _Provider.vndb       => 'VNDB',
         _Provider.f95zone    => 'F95Zone',
         _Provider.lewdcorner => 'LewdCorner',
+        _Provider.azc        => "Azkosel's",
         _Provider.itchio     => 'itch.io',
       };
 
@@ -37,14 +38,16 @@ extension _ProviderX on _Provider {
         _Provider.vndb       => 'VNDB',
         _Provider.f95zone    => 'F95',
         _Provider.lewdcorner => 'LC',
+        _Provider.azc        => 'AzC',
         _Provider.itchio     => 'itch',
       };
 
-  // Key in AppSettings.siteCredentials (empty = no auth needed)
+  // Key in AppSettings.siteCredentials (empty = no login needed)
   String get credKey => switch (this) {
         _Provider.vndb       => '',
         _Provider.f95zone    => 'f95zone',
         _Provider.lewdcorner => 'lewdcorner',
+        _Provider.azc        => '',   // public search — no stored credentials needed
         _Provider.itchio     => 'itchio',
       };
 
@@ -54,10 +57,14 @@ extension _ProviderX on _Provider {
         _Provider.vndb       => 'vndb',
         _Provider.f95zone    => 'f95zone',
         _Provider.lewdcorner => 'lewdcorner',
+        _Provider.azc        => 'azc',
         _Provider.itchio     => 'itchio',
       };
 
-  bool get requiresAuth => this != _Provider.vndb;
+  // AzC and VNDB don't require stored login credentials.
+  bool get requiresAuth => this == _Provider.f95zone ||
+      this == _Provider.lewdcorner ||
+      this == _Provider.itchio;
 }
 
 // ── Field keys ────────────────────────────────────────────────────────────────
@@ -175,6 +182,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         _Provider.vndb       => await MetadataService.searchVndb(query),
         _Provider.f95zone    => await MetadataService.searchF95Zone(query, scraping),
         _Provider.lewdcorner => await MetadataService.searchLewdCorner(query, scraping),
+        _Provider.azc        => await MetadataService.searchAzkosel(query, scraping),
         _Provider.itchio     => await MetadataService.searchItchio(query, scraping),
       };
 
@@ -209,8 +217,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       if (autoAssign) _autoAssignFields(prov, r);
     });
 
-    // Enrich F95/LC results — fetches the thread page for full images/synopsis/tags
-    if (r.provider == 'f95zone' || r.provider == 'lewdcorner') {
+    // Enrich XenForo results (F95/LC/AzC) — fetches the thread page for full images/synopsis/tags
+    if (r.provider == 'f95zone' || r.provider == 'lewdcorner' || r.provider == 'azc') {
       if (!mounted) return;
       setState(() => _enrichingByProvider[prov] = true);
       final scraping = ref.read(scrapingServiceProvider);
@@ -307,6 +315,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
           case _Provider.vndb:       meta['vndb_url'] = r.sourceUrl;
           case _Provider.f95zone:    meta['f95_url']  = r.sourceUrl;
           case _Provider.lewdcorner: meta['lc_url']   = r.sourceUrl;
+          case _Provider.azc:        meta['azc_url']  = r.sourceUrl;
           case _Provider.itchio:     meta['itch_url'] = r.sourceUrl;
         }
       }
