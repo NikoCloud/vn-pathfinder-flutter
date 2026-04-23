@@ -288,8 +288,9 @@ class FeedService {
 
       final items = doc.findAllElements('item');
       return items.map((el) {
-        // Standard RSS fields
-        final title = el.findElements('title').firstOrNull?.innerText.trim() ?? '';
+        // Standard RSS fields — clean XenForo prefix labels and bracket tags
+        final rawTitle = el.findElements('title').firstOrNull?.innerText.trim() ?? '';
+        final title = _cleanFeedTitle(rawTitle);
         final link = el.findElements('link').firstOrNull?.innerText.trim() ?? '';
         final desc = el.findElements('description').firstOrNull?.innerText.trim() ?? '';
         final pubDateRaw = el.findElements('pubDate').firstOrNull?.innerText.trim() ?? '';
@@ -399,6 +400,39 @@ class FeedService {
       debugPrint('FeedService Discord $channelId failed: $e');
       return [];
     }
+  }
+
+  // ── Title cleaning ────────────────────────────────────────────────────────
+
+  /// Strip XenForo thread-prefix labels and bracket tags from an RSS title.
+  ///
+  /// XenForo RSS feeds include the full thread title, which contains:
+  ///   - Bracket tags: [v1.5], [DeveloperName], [Ren'Py]
+  ///   - Plain-text prefix labels: "Ren'Py AI VN " prepended to the real title
+  ///
+  /// Two passes — strip brackets first, then strip leading known prefix words.
+  static String _cleanFeedTitle(String raw) {
+    // Pass 1: strip [bracketed] content
+    var t = raw.replaceAll(RegExp(r'\s*\[[^\]]*\]'), '').trim();
+    // Pass 2: strip known XenForo thread-prefix words from the front
+    const prefixes = <String>[
+      'rpg maker', 'unreal engine', 'wolf rpg', 'on hold', 'tyranobuilder',
+      "ren'py", 'renpy', 'rpgm', 'unity', 'html', 'unreal', 'flash',
+      'godot', 'java', 'twine', 'construct', 'webgl', '3dcg', '2dcg',
+      'vn', 'ai', 'completed', 'abandoned', 'onhold', 'paused', 'demo',
+    ];
+    bool changed = true;
+    while (changed && t.isNotEmpty) {
+      changed = false;
+      for (final prefix in prefixes) {
+        if (t.toLowerCase().startsWith('$prefix ')) {
+          t = t.substring(prefix.length).trim();
+          changed = true;
+          break;
+        }
+      }
+    }
+    return t;
   }
 
   // ── Cross-source deduplication ───────────────────────────────────────────
