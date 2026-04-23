@@ -290,9 +290,18 @@ class FeedService {
       return items.map((el) {
         // Standard RSS fields — clean XenForo prefix labels and bracket tags
         final rawTitle = el.findElements('title').firstOrNull?.innerText.trim() ?? '';
+        // Extract version from bracket tags BEFORE cleaning the title so the
+        // badge can still be rendered even after [v1.5] is stripped from display.
+        final titleVersion = _extractTitleVersion(rawTitle);
         final title = _cleanFeedTitle(rawTitle);
         final link = el.findElements('link').firstOrNull?.innerText.trim() ?? '';
-        final desc = el.findElements('description').firstOrNull?.innerText.trim() ?? '';
+        final rawDesc = el.findElements('description').firstOrNull?.innerText.trim() ?? '';
+        // Prepend "Version: X" to rawBody if found in title brackets and not
+        // already present — this lets the version badge logic work for RSS
+        // sources (AzC, LewdCorner) the same way it does for F95Zone.
+        final desc = (titleVersion != null && !rawDesc.contains('Version:'))
+            ? 'Version: $titleVersion\n$rawDesc'
+            : rawDesc;
         final pubDateRaw = el.findElements('pubDate').firstOrNull?.innerText.trim() ?? '';
 
         // dc:creator (XenForo uses this for the poster name)
@@ -403,6 +412,19 @@ class FeedService {
   }
 
   // ── Title cleaning ────────────────────────────────────────────────────────
+
+  /// Extract a version string from XenForo title bracket tags.
+  /// Returns the first bracket content that looks like a version number:
+  ///   [v1.5] → "v1.5"   [v0.4.8a] → "v0.4.8a"   [v1.0 Final] → "v1.0 Final"
+  ///   [Ch. 5] → "Ch. 5"   [Episode 3] → "Episode 3"
+  /// Returns null if no version-like bracket is found.
+  static String? _extractTitleVersion(String rawTitle) {
+    final m = RegExp(
+      r'\[(v[\d.]+[^\]]*|ch(?:apter)?\.?\s*\d+[^\]]*|episode\s*\d+[^\]]*)\]',
+      caseSensitive: false,
+    ).firstMatch(rawTitle);
+    return m?.group(1)?.trim();
+  }
 
   /// Strip XenForo thread-prefix labels and bracket tags from an RSS title.
   ///
