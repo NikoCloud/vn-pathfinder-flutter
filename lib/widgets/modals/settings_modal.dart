@@ -788,6 +788,14 @@ class _NetworkPanel extends ConsumerWidget {
           onDisconnect: () => notifier.clearSiteCredentials('lewdcorner'),
           disabled: locked,
         ),
+        _XenforoLoginCard(
+          site: "Azkosel's Corner",
+          baseUrl: 'https://azkoselscorner.com',
+          credentials: settings.siteCredentials['azc'] ?? {},
+          onLogin: (cookies) => notifier.setSiteCredentials('azc', cookies),
+          onDisconnect: () => notifier.clearSiteCredentials('azc'),
+          disabled: locked,
+        ),
         _ItchioLoginCard(
           cookies: settings.siteCredentials['itchio'] ?? {},
           onUpdateCookies: (ck) => notifier.setSiteCredentials('itchio', ck),
@@ -2173,6 +2181,14 @@ class _FeedPanelState extends ConsumerState<_FeedPanel> {
           trailing: _ToggleSwitch(
             value: s.feedSourceLC,
             onChanged: notifier.setFeedSourceLC,
+          ),
+        ),
+        _SettingRow(
+          label: "Azkosel's Corner",
+          subtitle: 'Games + Forbidden Haven forums (requires AzC login in Network tab).',
+          trailing: _ToggleSwitch(
+            value: s.feedSourceAzc,
+            onChanged: notifier.setFeedSourceAzc,
           ),
         ),
       ]),
