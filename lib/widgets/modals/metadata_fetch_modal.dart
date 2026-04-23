@@ -47,7 +47,7 @@ extension _ProviderX on _Provider {
         _Provider.vndb       => '',
         _Provider.f95zone    => 'f95zone',
         _Provider.lewdcorner => 'lewdcorner',
-        _Provider.azc        => '',   // public search — no stored credentials needed
+        _Provider.azc        => 'azc',
         _Provider.itchio     => 'itchio',
       };
 
@@ -61,10 +61,8 @@ extension _ProviderX on _Provider {
         _Provider.itchio     => 'itchio',
       };
 
-  // AzC and VNDB don't require stored login credentials.
-  bool get requiresAuth => this == _Provider.f95zone ||
-      this == _Provider.lewdcorner ||
-      this == _Provider.itchio;
+  // Only VNDB has a public API — everything else needs a browser session.
+  bool get requiresAuth => this != _Provider.vndb;
 }
 
 // ── Field keys ────────────────────────────────────────────────────────────────
