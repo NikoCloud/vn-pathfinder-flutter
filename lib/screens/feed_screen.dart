@@ -16,7 +16,7 @@ class FeedScreen extends ConsumerStatefulWidget {
 }
 
 class _FeedScreenState extends ConsumerState<FeedScreen> {
-  String _sourceFilter = 'all'; // 'all' | 'f95zone' | 'lewdcorner' | 'discord'
+  String _sourceFilter = 'all'; // 'all' | 'f95zone' | 'lewdcorner' | 'azc' | 'discord'
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +98,8 @@ class _FeedToolbar extends StatelessWidget {
           _SourcePill(label: 'F95Zone', value: 'f95zone', current: sourceFilter, onTap: onFilterChanged),
           const SizedBox(width: 6),
           _SourcePill(label: 'LewdCorner', value: 'lewdcorner', current: sourceFilter, onTap: onFilterChanged),
+          const SizedBox(width: 6),
+          _SourcePill(label: "Azkosel's", value: 'azc', current: sourceFilter, onTap: onFilterChanged),
           const SizedBox(width: 6),
           _SourcePill(label: 'Discord', value: 'discord', current: sourceFilter, onTap: onFilterChanged),
 
@@ -552,6 +554,7 @@ class _SourceBadge extends StatelessWidget {
     final (bg, fg) = switch (item.source) {
       'f95zone'    => (const Color(0x264A9E6E), AppColors.accentLight),
       'lewdcorner' => (const Color(0x26C9904A), const Color(0xFFE8A86A)),
+      'azc'        => (const Color(0x26B04AB0), const Color(0xFFCC80CC)),
       'discord'    => (const Color(0x265865F2), const Color(0xFF8B9CF4)),
       _            => (AppColors.bgSecondary,    AppColors.textSecondary),
     };

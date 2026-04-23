@@ -97,6 +97,27 @@ class FeedService {
           requiresAuth: false, // public API endpoint, no login cookies needed
         ));
       }
+      if (settings.feedSourceAzc) {
+        // Azkosel's Corner — XenForo forum with two relevant categories:
+        //   Node 13: regular games   /forums/games.13/index.rss
+        //   Node 32: forbidden games /forums/forbidden-haven-games.32/index.rss
+        // Both are fetched and merged under the single 'azc' source key.
+        // Tried via plain HTTP first; falls back to ScrapingService if blocked.
+        futures.add(_fetchRss(
+          scraping,
+          'https://azkoselscorner.com/index.php?forums/games.13/index.rss',
+          source: 'azc',
+          label: "AzC",
+          requiresAuth: false,
+        ));
+        futures.add(_fetchRss(
+          scraping,
+          'https://azkoselscorner.com/index.php?forums/forbidden-haven-games.32/index.rss',
+          source: 'azc',
+          label: "AzC",
+          requiresAuth: false,
+        ));
+      }
 
       // Discord sources
       final token = settings.discordBotToken;

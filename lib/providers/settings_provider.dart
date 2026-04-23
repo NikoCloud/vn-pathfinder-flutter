@@ -30,6 +30,7 @@ class AppSettings {
   final int feedRefreshHours;    // 6 | 12 | 0 = manual only
   final bool feedSourceF95;      // poll F95Zone forum RSS
   final bool feedSourceLC;       // poll LewdCorner forum RSS
+  final bool feedSourceAzc;      // poll Azkosel's Corner forum RSS (both game categories)
   final String discordBotToken;  // Bot token for Discord REST API
   /// List of Discord channel entries.
   /// Format per entry: "channelId:ServerName:#channelName"
@@ -53,6 +54,7 @@ class AppSettings {
     this.siteCredentials = const {},
     this.feedEnabled = false,
     this.feedRefreshHours = 12,
+    this.feedSourceAzc = false,
     this.feedSourceF95 = true,
     this.feedSourceLC = true,
     this.discordBotToken = '',
@@ -78,6 +80,7 @@ class AppSettings {
           Map<String, String>.from(v as Map? ?? {}))),
     feedEnabled: json['feed_enabled'] as bool? ?? false,
     feedRefreshHours: json['feed_refresh_hours'] as int? ?? 12,
+    feedSourceAzc: json['feed_source_azc'] as bool? ?? false,
     feedSourceF95: json['feed_source_f95'] as bool? ?? true,
     feedSourceLC: json['feed_source_lc'] as bool? ?? true,
     discordBotToken: json['discord_bot_token'] as String? ?? '',
@@ -102,6 +105,7 @@ class AppSettings {
     'site_credentials': siteCredentials,
     'feed_enabled': feedEnabled,
     'feed_refresh_hours': feedRefreshHours,
+    'feed_source_azc': feedSourceAzc,
     'feed_source_f95': feedSourceF95,
     'feed_source_lc': feedSourceLC,
     'discord_bot_token': discordBotToken,
@@ -125,6 +129,7 @@ class AppSettings {
     Map<String, Map<String, String>>? siteCredentials,
     bool? feedEnabled,
     int? feedRefreshHours,
+    bool? feedSourceAzc,
     bool? feedSourceF95,
     bool? feedSourceLC,
     String? discordBotToken,
@@ -146,6 +151,7 @@ class AppSettings {
     siteCredentials: siteCredentials ?? this.siteCredentials,
     feedEnabled: feedEnabled ?? this.feedEnabled,
     feedRefreshHours: feedRefreshHours ?? this.feedRefreshHours,
+    feedSourceAzc: feedSourceAzc ?? this.feedSourceAzc,
     feedSourceF95: feedSourceF95 ?? this.feedSourceF95,
     feedSourceLC: feedSourceLC ?? this.feedSourceLC,
     discordBotToken: discordBotToken ?? this.discordBotToken,
@@ -205,6 +211,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   void setFeedEnabled(bool v) => update((s) => s.copyWith(feedEnabled: v));
   void setFeedRefreshHours(int v) => update((s) => s.copyWith(feedRefreshHours: v));
+  void setFeedSourceAzc(bool v) => update((s) => s.copyWith(feedSourceAzc: v));
   void setFeedSourceF95(bool v) => update((s) => s.copyWith(feedSourceF95: v));
   void setFeedSourceLC(bool v) => update((s) => s.copyWith(feedSourceLC: v));
   void setDiscordBotToken(String v) => update((s) => s.copyWith(discordBotToken: v));
