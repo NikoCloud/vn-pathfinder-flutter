@@ -9,7 +9,7 @@ Technical details live in `PROGRESS.md`. This file focuses on the reasoning and 
 ---
 
 ## Entry 1 — Project Born
-**Commit:** `76b9d4a`
+**Commit:** `e1b915f`
 
 **Why this exists:**
 VN Pathfinder 1.0 was a Python/Tkinter app. It worked, but Tkinter is ugly, hard to extend,
@@ -30,7 +30,7 @@ so existing libraries migrate cleanly.
 ---
 
 ## Entry 2 — Library Screen
-**Commit:** `34f13ac`
+**Commit:** `470413b`
 
 **User request:** Build the main library view. Sidebar with game list on the left, detail
 panel on the right. Match the HTML mockup in `mockup/`.
@@ -51,7 +51,7 @@ tells Flutter exactly how tall each item is and it only renders what's on screen
 ---
 
 ## Entry 3 — Settings Modal
-**Commit:** `eb1f3e7`, `842cabb`
+**Commit:** `8c04b4b`, `cecdd69`
 
 **User request:** Settings modal with all the knobs from 1.0 — library path, lockdown mode,
 site credentials, appearance, archive settings.
@@ -73,7 +73,7 @@ and theme.
 ---
 
 ## Entry 4 — Phases 4–9 (bundled in v0.9.0)
-**Commit:** `b87e0f2`
+**Commit:** `9ea6f43`
 
 **User requests (multiple sessions):**
 - Launch tracking: record last played date and total playtime per game
@@ -98,7 +98,7 @@ and theme.
 ---
 
 ## Entry 5 — Metadata Fetch Modal
-**Commits:** within `b87e0f2`, then refined in `99752ab`
+**Commits:** within `9ea6f43`, then refined in `1214ba6`
 
 **User request:** Build the metadata fetch system — search multiple providers (VNDB, F95Zone,
 LewdCorner, itch.io), preview results, let the user pick which fields come from which source,
@@ -129,7 +129,7 @@ temp names first, then only delete the old pack if at least one new image succee
 ---
 
 ## Entry 6 — Login System Overhaul (Phase 10.5)
-**Commit:** within `b87e0f2`
+**Commit:** within `9ea6f43`
 
 **User request:** F95Zone and LewdCorner logins always fail — the "✓ Connected" never shows.
 Fix it.
@@ -156,7 +156,7 @@ Only a real Chromium engine (WebView2) passes cleanly.
 ---
 
 ## Entry 7 — Cloudflare Bypass for Searches (Phase 11)
-**Commit:** within `b87e0f2`
+**Commit:** within `9ea6f43`
 
 **User request:** F95Zone searches return nothing even when logged in. Fix searches.
 
@@ -181,7 +181,7 @@ for it to resolve. (A bug in this logic was later fixed — see Entry 11.)
 ---
 
 ## Entry 8 — "✓ Connected" Still Not Showing (Phase 11 continuation)
-**Commit:** within `b87e0f2`
+**Commit:** within `9ea6f43`
 
 **User report:** After completing the WebView login, F95Zone still shows "Not connected"
 in both Settings and the Fetch Metadata modal.
@@ -200,7 +200,7 @@ keys for any data migrated from older versions.
 ---
 
 ## Entry 9 — Tags and Archive Ghost Entries (Phase 11.5)
-**Commit:** within `b87e0f2`
+**Commit:** within `9ea6f43`
 
 **User reports:**
 1. Tags fetched via Fetch Metadata don't appear in the filter dropdown.
@@ -220,7 +220,7 @@ to exclude these empty groups. They remain accessible in the Archive tab where t
 ---
 
 ## Entry 10 — RSS Feed Aggregator (Phase 12)
-**Commit:** `d63189f`
+**Commit:** `36f39c1`
 
 **User request:** Add a feed/news tab that aggregates update posts from F95Zone and LewdCorner
 so the user can see when games in their library get new versions, without opening a browser.
@@ -235,7 +235,7 @@ so the user can see when games in their library get new versions, without openin
 ---
 
 ## Entry 11 — Archive Screen Overhaul (Phase 13)
-**Commits:** `bb2e2a2`, `16e0238`, `cd7ba31`
+**Commits:** `f4cdb5d`, `26bda17`, `e6716e8`
 
 **User request:** The archive screen was a bare list. Make it match the quality of the
 library screen — hero panel, extraction UI, context menus, deletion options.
@@ -256,7 +256,7 @@ app responsive while the OS does the file work.
 ---
 
 ## Entry 12 — WebView2 RAM Usage (Phase 13.5)
-**Commit:** `643d8ab`
+**Commit:** `7653177`
 
 **User report:** Task Manager shows `vn_pathfinder.exe` using ~22 GB of RAM at idle.
 "Why is my game launcher using 22GB of RAM?"
@@ -339,7 +339,7 @@ A `PageView` or navigator would destroy and recreate the hidden tabs.
 ---
 
 ## Entry 13 — Azkosel's Corner Feed Provider (Phase 14)
-**Commit:** `8ef2568`
+**Commit:** `661fdff`
 
 **User request:** "New provider time. It has 2 latest update threads — one for mainstream games
 and one for 'forbidden' games. Can we handle that?"
@@ -373,12 +373,80 @@ The user enables it intentionally in Settings → Feed.
 
 ---
 
-## Known Remaining Issues (as of Phase 14)
+## Entry 14 — Azkosel's Corner in Fetch Metadata + XenForo Follow-ups (Phase 14)
+**Commits:** `1c3e726`, `2c8eada`, `b3ad44f`, `384bf5c`, `76b327d` (2026-04-22 → 04-23)
+
+**User request:** not logged at the time. Reconstructed from the commit messages during the
+2026-10-29 docs refresh.
+
+**What was built:**
+- **AzC as a fifth Fetch Metadata provider** (`1c3e726`). Both game forums (nodes 13 and 32) are
+  searched in one XenForo query and shown as a single result list — the user shouldn't have to
+  care which forum a game lives in. Enrichment reuses `fetchThreadDetails()`.
+- **AzC login** (`76b327d`). `1c3e726` shipped AzC as "no login required"; this commit reversed
+  that, adding the same XenForo browser-login card as F95Zone/LewdCorner and marking AzC as
+  auth-gated in the fetch modal.
+- **Title prefix stripping** (`2c8eada`). XenForo prepends engine/status labels to thread titles,
+  sometimes as spans and sometimes as plain text. Titles now get a two-pass clean (brackets, then
+  known prefix words), and thread pages re-read the title from the H1, where prefixes are always
+  spans — the most reliable source regardless of how the search page formatted it.
+- **Feed version badges** (`b3ad44f`). Stripping `[v1.5]`-style brackets for display was also
+  throwing away the version. It's now extracted first and kept in `rawBody` as a `Version:` line.
+- **Feed WebView session** (`384bf5c`). Correction to the Phase 13.5 known-issues entry: the real
+  symptom was not "feed holds the WebView alive". After the lazy-init change the feed never
+  acquired a session, so the WebView was never initialized and every source that needed it threw
+  "not initialized". `refresh()` now acquires the session and releases it in `finally`.
+
+---
+
+## Entry 15 — History Rewrite to Fix Author Identity
+**Date:** 2026-10-29
+
+**User request:** after about six months away, the user asked for a status breakdown. The review
+found the identity problem below, and the user chose to fix the README *and* rewrite history.
+
+**Problem:**
+- All 32 commits (and the `v0.9.0` tagger) carried the local Windows account name and a
+  placeholder email, because the repo-local git config was set to that account. On a public repo
+  this broke the project's own identity rule.
+- README linked to GitHub URLs under that name — which also meant the links were dead.
+- `CLAUDE.md` and this file named the account inside the very rule that forbids naming it.
+
+**What was done:**
+- `git filter-branch` in a scratch clone rewrote author and committer to
+  `NikoCloud <63919429+NikoCloud@users.noreply.github.com>` — GitHub's private noreply address,
+  which links commits to the account without exposing an email. Dates and messages unchanged.
+- The same pass removed the name from `README.md`, `CLAUDE.md` and `KYUN.md` in every historical
+  version (README links now point to `NikoCloud/vn-pathfinder-flutter` and `NikoCloud/VN-Pathfinder`).
+- The annotated `v0.9.0` tag was recreated with its original message and date.
+- `core.autocrlf` was disabled in the scratch clone: the system Git config has it on, which would
+  have silently rewritten line endings in every commit.
+- Verified before pushing: the name appears nowhere in history; per commit, only those three files
+  differ; every date and message is byte-identical. Then force-pushed with a lease on the old head.
+- The local clone was reset to the new history and its repo-local `user.name` / `user.email` set to
+  NikoCloud.
+
+**Consequences:**
+- Every commit hash changed. Hashes in `PROGRESS.md` and this file were updated in the follow-up
+  docs-refresh commit; hashes quoted anywhere else from before 2026-10-29 no longer exist.
+- Old commits may stay reachable on GitHub by direct SHA URL until GitHub garbage-collects them.
+  The repo had 0 forks.
+
+---
+
+## Known Remaining Issues (as of 2026-10-29)
+
+Full detail in `PROGRESS.md` → Phase 15.
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| FeedScreen uses ScrapingService without session management | Medium | Feed refresh holds WebView alive; should increment/decrement `scrapingSessionProvider` |
+| FeedScreen uses ScrapingService without session management | ✅ Fixed | `384bf5c` — see Entry 14 for the actual symptom |
+| Scraping failures look like "no results" | Medium | 14 `return [];` sites in `metadata_service.dart`, no retry, no error shown |
+| No Cloudflare challenge-page detection | Medium | A challenge page gets parsed as if it were content |
+| No real tests | Medium | `test/widget_test.dart` is a placeholder |
+| F95Zone feed relies on one endpoint | Low | `sam/latest_data.php`, no fallback |
 | `xenforoLogin()` in `metadata_service.dart` is dead code | Low | Never called; safe to delete in a cleanup pass |
+| Secrets stored as plain JSON | Low | Discord bot token + session cookies in `%APPDATA%\VN Pathfinder\` (local only) |
 | Patch toggle on paths with spaces | Unknown | `File.rename()` should handle spaces, but not tested end-to-end |
 | Dynamic accent color live hot-switch | Low | Provider wiring exists; ThemeData rebuild path not tested |
 | `webview_windows` is Windows-only | Deferred | Cross-platform needs `flutter_inappwebview` behind a platform conditional |
@@ -390,3 +458,5 @@ The user enables it intentionally in Settings → Feed.
 The developer account is **NikoCloud** everywhere public-facing (GitHub, commits, README).
 The local Windows account name must never appear in commits, public docs, or URLs.
 `CLAUDE.md` enforces this — always check before pushing anything that touches paths or attribution.
+The repo-local git config must also be NikoCloud (`user.name NikoCloud` + the noreply email above).
+Entry 15 happened because it wasn't — check `git config user.name` in any fresh clone.

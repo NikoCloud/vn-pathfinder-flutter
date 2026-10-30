@@ -1,6 +1,6 @@
 # VN Pathfinder 2.0 — Flutter Rewrite
 
-> **Status:** 🎯 Feature-Complete (Phase 12) | **Target:** Polish & Cross-Platform Testing | **ETA:** Early 2026
+> **Status:** 🎯 Feature-Complete through Phase 14 (`v0.9.0` tagged) | **Now:** Polish & scraping reliability | **Platform:** Windows (macOS/Linux planned)
 
 VN Pathfinder 2.0 is a complete rewrite of the popular visual novel library management tool, built with **Flutter** for true cross-platform compatibility, modern UI/UX, and superior performance.
 
@@ -51,9 +51,13 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
 
 ### Content Fetching & Metadata
 - ✅ Multi-source metadata scraping:
+  - **VNDB** (public API, no login)
   - **F95Zone** (games, tags, version info, ratings)
   - **itch.io** (games, metadata)
   - **Lewd Corner** (games, metadata, images)
+  - **Azkosel's Corner** (games + forbidden-games forums, searched together)
+- ✅ Pick each field (title, developer, synopsis, tags, images) from a different source in one apply
+- ✅ Site logins through an embedded browser (WebView2) — works behind Cloudflare
 - ✅ Fetch game banners, cover art, and in-game screenshots
 - ✅ Auto-populate tags from scraping sources
 - ✅ Manual metadata editing with local persistence
@@ -63,6 +67,7 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
 - ✅ Multi-source feed integration:
   - **F95Zone** latest game updates (via SAM API)
   - **LewdCorner** RSS feed
+  - **Azkosel's Corner** RSS feeds (opt-in)
   - **Discord** bot integration (read from configured announcement channels)
 - ✅ Cross-source deduplication (first-published wins)
 - ✅ Configurable refresh schedule (6-24 hours)
@@ -71,19 +76,17 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
 
 ### Gallery & Preview
 - ✅ Image carousel for game banners and screenshots
-- ✅ Drag-to-reorder gallery images
 - ✅ Full-screen image preview
 
 ### User Interface & UX
 - ✅ Dark mode and light mode with system preference detection
 - ✅ Responsive layout (works on different screen sizes)
-- ✅ Orphan cleanup tool (identify games without library entries)
-- ✅ Game stats dashboard (total games, by developer, playtime tracking)
+- ✅ Orphan cleanup tool (finds files and folders in the library root that aren't recognized games or archives)
+- ✅ Per-game playtime, play count and last-played tracking
 - ✅ Settings panel with configurable options
-- ✅ Multi-language support structure (currently English)
 
 ### Data & Privacy
-- ✅ Local-first architecture — all data stored in user's home directory
+- ✅ Local-first architecture — app data in `%APPDATA%\VN Pathfinder\`, per-game metadata and images in each game's `.vnpf\` folder
 - ✅ No telemetry, no tracking, no sign-ups required
 - ✅ Optional scraping toggle (can disable internet features entirely)
 - ✅ User data format: JSON with version migration support
@@ -107,7 +110,6 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
 - Modern, polished Material 3 design
 - Smooth transitions and animations
 - Better mobile-responsive layouts (future tablet support)
-- System tray integration (minimize to tray)
 - Better keyboard navigation and accessibility
 
 ### Performance Gains
@@ -129,33 +131,38 @@ VN Pathfinder 2.0 targets:
 | **Linux** (GTK 3+) | 🔄 Planned | Ubuntu, Fedora, Debian, etc. |
 | **iOS/Android** | ⏸️ Future (3.0+) | Out of scope for 2.0 launch, but codebase supports it |
 
-The same binary codebase compiles to native executables for each platform with **zero code changes** — Flutter handles platform-specific details.
+Most of the codebase is platform-neutral, but metadata scraping and site logins use `webview_windows` (WebView2), which is **Windows-only**. macOS and Linux builds need that swapped for a cross-platform WebView first.
 
 ---
 
 ## 🚀 Development Roadmap
 
-### Current Status (Phase 12)
+### Current Status (Phase 14)
 ✅ **Core library management** — fully functional
-✅ **Archive & patch system** — complete
-✅ **Multi-source metadata scraping** — F95Zone, LewdCorner, itch.io
-✅ **Feed aggregator** — F95Zone, LewdCorner, Discord integration
-✅ **Gallery & image management** — carousel, lightbox, drag-to-reorder
+✅ **Archive & patch system** — complete, with Steam-style extraction UI
+✅ **Multi-source metadata scraping** — VNDB, F95Zone, LewdCorner, itch.io, Azkosel's Corner
+✅ **Feed aggregator** — F95Zone, LewdCorner, Azkosel's Corner, Discord integration
+✅ **Gallery & image management** — carousel, lightbox
 ✅ **Settings panel** — complete UI with all configuration options
 ✅ **Search, filter, sort** — full-featured
 ✅ **Dark mode & responsive layout** — system preference detection
+✅ **Low idle memory** — the embedded browser only runs while scraping
 
-### Phase 13+: Next Priorities
+### Next Priorities
+- [ ] Scraping reliability — retry transient failures, detect Cloudflare challenge pages, show errors instead of empty results
+- [ ] Automated tests
 - [ ] Cross-platform testing (macOS, Linux)
 - [ ] Performance optimization and profiling
 - [ ] User documentation and help system
 - [ ] Beta testing with community feedback
 - [ ] Accessibility audit
 
-### Phase 4+: Future Features (Post-Launch)
+### Future Features (Post-Launch)
 - Feed normalization (standardized game title/version/tags)
 - Backend API infrastructure (Supabase + VNDB mirror for fallback)
-- Playtime tracking and statistics
+- Library statistics dashboard (totals, by developer, playtime)
+- Drag-to-reorder gallery images
+- System tray integration (minimize to tray)
 - Advanced filtering (by release date, rating, etc.)
 - Mod manager integration (ModDB, Nexus)
 - Community mod sharing
@@ -177,7 +184,7 @@ Version 1.0 is feature-complete and stable. Grab the latest release and start ma
 ## 🛠️ Building from Source
 
 ### Requirements
-- Flutter 3.x SDK ([Install Flutter](https://flutter.dev/docs/get-started/install))
+- Flutter 3.x SDK ([Install Flutter](https://flutter.dev/docs/get-started/install)) — last built with Flutter 3.41.6
 - Dart 3.x (included with Flutter)
 - Git
 
@@ -209,7 +216,8 @@ vn-pathfinder-flutter/
 ├── lib/
 │   ├── main.dart              # App entry point
 │   ├── models/                # Data models (Game, Patch, UserData, etc.)
-│   ├── screens/               # UI screens (LibraryScreen, ArchiveScreen, etc.)
+│   ├── providers/             # Riverpod state (library, filters, settings, feed)
+│   ├── screens/               # UI screens (Library, Archive, Feed)
 │   ├── services/              # Business logic (scraping, file I/O, patch management)
 │   ├── widgets/               # Reusable UI components
 │   └── utils/                 # Helpers (parsing, formatting, platform detection)
@@ -223,7 +231,7 @@ vn-pathfinder-flutter/
 ## 🔐 Privacy & Data
 
 - **No accounts required** — use immediately, no sign-ups
-- **All data stays local** — stored in your home directory (`~/.vn_pathfinder/`)
+- **All data stays local** — app data in `%APPDATA%\VN Pathfinder\`, game metadata in each game's `.vnpf\` folder
 - **No telemetry** — we don't track usage, errors, or analytics
 - **Open-source** — code is readable; audit if you like
 - **Optional scraping** — disable internet features if you prefer
@@ -242,7 +250,7 @@ This is a **solo project** (personal passion project), but feedback and testing 
 
 ## 📝 License
 
-[Same license as VN Pathfinder 1.0 — check 1.0 repo for details]
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ---
 

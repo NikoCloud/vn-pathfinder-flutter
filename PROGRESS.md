@@ -3,7 +3,12 @@
 **Stack:** Flutter 3.41.6 · Dart 3.11.4 · Riverpod 2.6 · window_manager 0.4.3  
 **Target:** Windows (primary). macOS/Linux later. Mobile is 3.0+ scope.  
 **Design ref:** `mockup/index.html` + `mockup/styles.css`  
-**1.0 ref:** `F:\RenPy\_VNPathfinder\vn_pathfinder.py`
+**1.0 ref:** `F:\RenPy\_VNPathfinder\vn_pathfinder.py` (also on GitHub: NikoCloud/VN-Pathfinder)  
+**Last updated:** 2026-10-29
+
+> **History rewrite (2026-10-29):** git history was rewritten to correct the commit author
+> identity. Every commit hash changed. Hashes in this file and `KYUN.md` were updated to the
+> new ones; any hash quoted elsewhere from before that date no longer exists.
 
 ---
 
@@ -11,25 +16,26 @@
 
 | # | Phase | Status | Commit |
 |---|-------|--------|--------|
-| 1 | Project scaffold — shell, theme, models, providers | ✅ Done | `76b9d4a` |
-| 2 | Library screen — sidebar + detail panel | ✅ Done | `34f13ac` |
-| 3 | Settings modal | ✅ Done | `master` |
-| 3.5 | Carousel fix + Color API bugs | ✅ Done | — |
-| 4 | Launch + playtime tracking | ✅ Done | — |
-| 5 | Library — grid mode | ✅ Done | — |
-| 6 | Game Properties modal | ✅ Done | — |
-| 7 | Metadata Fetch modal | ✅ Done (Phase 10) | — |
-| 8 | Archive screen | ✅ Done | — |
-| 9 | Add Game flow, orphan scanner, auto-backup | ✅ Done | — |
-| 9.5 | Context menus, lightbox, toasts | ✅ Done | — |
-| 10 | Metadata Fetch modal + all provider wiring complete | ✅ Done | — |
-| 10.5 | Login system overhaul + VNDB card in Settings | ✅ Done | — |
-| 11 | Search reliability — Cloudflare bypass for F95/LC searches | ✅ Done | — |
-| 11.5 | Tag system + library/archive separation fixes | ✅ Done | — |
-| 12 | RSS feed aggregator (F95Zone, LewdCorner, Discord) | ✅ Done | `d63189f` |
-| 13 | Archive overhaul — hero panel, extraction UI, deletion | ✅ Done | `cd7ba31` |
-| 13.5 | WebView2 lazy lifecycle + XenForo loop fix | ✅ Done | `643d8ab` |
-| 14 | Polish pass — missing wiring, edge cases | 🔲 Backlog | — |
+| 1 | Project scaffold — shell, theme, models, providers | ✅ Done | `e1b915f` |
+| 2 | Library screen — sidebar + detail panel | ✅ Done | `470413b` |
+| 3 | Settings modal | ✅ Done | `8c04b4b` |
+| 3.5 | Carousel fix + Color API bugs | ✅ Done | `cecdd69` |
+| 4 | Launch + playtime tracking | ✅ Done | `9ea6f43` (v0.9.0) |
+| 5 | Library — grid mode | ✅ Done | `9ea6f43` (v0.9.0) |
+| 6 | Game Properties modal | ✅ Done | `9ea6f43` (v0.9.0) |
+| 7 | Metadata Fetch modal | ✅ Done (Phase 10) | `9ea6f43` (v0.9.0) |
+| 8 | Archive screen | ✅ Done | `9ea6f43` (v0.9.0) |
+| 9 | Add Game flow, orphan scanner, auto-backup | ✅ Done | `9ea6f43` (v0.9.0) |
+| 9.5 | Context menus, lightbox, toasts | ✅ Done | `9ea6f43` (v0.9.0) |
+| 10 | Metadata Fetch modal + all provider wiring complete | ✅ Done | `9ea6f43` (v0.9.0) |
+| 10.5 | Login system overhaul + VNDB card in Settings | ✅ Done | `9ea6f43` (v0.9.0) |
+| 11 | Search reliability — Cloudflare bypass for F95/LC searches | ✅ Done | `9ea6f43` (v0.9.0) |
+| 11.5 | Tag system + library/archive separation fixes | ✅ Done | `9ea6f43` (v0.9.0) |
+| 12 | RSS feed aggregator (F95Zone, LewdCorner, Discord) | ✅ Done | `36f39c1` |
+| 13 | Archive overhaul — hero panel, extraction UI, deletion | ✅ Done | `e6716e8` |
+| 13.5 | WebView2 lazy lifecycle + XenForo loop fix | ✅ Done | `7653177` |
+| 14 | Azkosel's Corner provider (feed + metadata) + XenForo title/version fixes | ✅ Done | `661fdff`…`76b327d` |
+| 15 | Polish + scraping reliability | 🔲 Backlog | — |
 
 ---
 
@@ -115,7 +121,8 @@ AppShell
 │   │       │   └── ScreenshotCarousel (floating, 16:9)
 │   │       ├── MetaBar
 │   │       └── DetailContent
-│   └── ArchiveScreen           ← Phase 8
+│   ├── ArchiveScreen           ← Phase 8, overhauled Phase 13
+│   └── FeedScreen              ← Phase 12
 └── AppStatusBar (32px)
 ```
 
@@ -132,7 +139,9 @@ ScannerService.scanAll(libraryDir)
 
 ## Patch System (1.0 parity)
 
-- Inactive patches: `{game}/game/.patches/{filename}`
+- Inactive patches: `{game}/.patches/{filename}` — at the game ROOT (sibling of `game/`), outside
+  Ren'Py's load path. (Earlier versions of this file said `{game}/game/.patches/`; the code has
+  always used the root — see `scanner_service.dart` and `properties_modal.dart`.)
 - Active patches: moved to `{game}/game/{filename}` (physical file move)
 - Toggle = `File.rename()` back and forth
 - Key format: `{base_key}::{version_str or '_'}`
@@ -380,7 +389,7 @@ webview_windows: ^0.4.0   # itch.io embedded browser login (Windows only)
 - `lib/widgets/app_shell.dart` — added FeedScreen to IndexedStack (3rd tab)
 - `lib/widgets/navbar.dart` — added Feed tab to top nav
 
-**Commit:** `d63189f`  
+**Commit:** `36f39c1`  
 **`flutter analyze` result: 0 issues.**
 
 ---
@@ -389,19 +398,19 @@ webview_windows: ^0.4.0   # itch.io embedded browser login (Windows only)
 
 **What was done:**
 
-### Archive hero panel + extraction UI (commit `bb2e2a2`)
+### Archive hero panel + extraction UI (commit `f4cdb5d`)
 - `lib/screens/archive_screen.dart` — full rewrite with Steam-style split layout:
   - Left: scrollable archive list with cover thumbs, file size, extraction status badges
   - Right: hero panel with archive preview, extraction path picker, progress indicator
   - Right-click context menu on archive rows (extract, assign as patch, reveal in Explorer, delete)
 - Extracted archives get an "Extracted" indicator badge in the list
 
-### Archive deletion + background isolate (commits `16e0238`, `cd7ba31`)
+### Archive deletion + background isolate (commits `26bda17`, `e6716e8`)
 - Added delete options to archive context menu (delete archive only, delete extracted folder, delete both)
 - All delete operations run in a background `Isolate.run()` call to prevent UI freeze on large archives
 - Confirmation dialog before destructive actions
 
-**Commits:** `bb2e2a2`, `16e0238`, `cd7ba31`  
+**Commits:** `f4cdb5d`, `26bda17`, `e6716e8`  
 **`flutter analyze` result: 0 issues.**
 
 ---
@@ -441,17 +450,75 @@ A second bug caused all F95Zone/LewdCorner page loads to wait the full 10-second
 - Closing the modal: RAM released within seconds
 - Pending searches cancelled immediately on modal close — no zombie scraping
 
-**Commit:** `643d8ab`  
+**Commit:** `7653177`  
 **`flutter analyze` result: 0 issues.**
 
 ---
 
-## Phase 14 — Backlog / Polish
+## Phase 14 — Done ✅  (Azkosel's Corner provider + XenForo fixes)
 
-- **WebView session management for FeedScreen** — feed refresh also uses ScrapingService; should acquire/release `scrapingSessionProvider` the same way MetadataFetchModal does
+**What was done:**
+
+### Azkosel's Corner as a feed source (`661fdff`)
+- One togglable source that polls two XenForo RSS feeds — node 13 (games) and node 32
+  (forbidden-haven games) — and merges them under source key `azc`
+- `feedSourceAzc` setting (JSON `feed_source_azc`), **off by default**
+- Plain HTTP first, `ScrapingService` fallback (same pattern as LewdCorner)
+- "Azkosel's" filter pill in the feed toolbar, purple source badge on cards
+
+### Azkosel's Corner as a metadata provider (`1c3e726`, `76b327d`)
+- Fifth tab in Fetch Metadata. `MetadataService.searchAzkosel()` searches nodes 13 + 32 in one
+  XenForo query; results show as one list
+- Thread enrichment (developer, synopsis, images, tags) reuses `fetchThreadDetails()`
+- `azc_url` saved to `.vnpf/metadata.json` on apply
+- `76b327d`: XenForo browser-login card for AzC in Settings → Network (session stored under
+  `azc`), AzC toggle in Settings → Feed, fetch-modal `credKey` set to `azc` so the lock icon
+  shows when logged out
+
+### XenForo fixes (`2c8eada`, `b3ad44f`, `384bf5c`)
+- **Title cleanup:** `_cleanXenforoTitle` / `_cleanFeedTitle` strip `[bracket]` tags, then known
+  prefix words (Ren'Py, VN, 3DCG, Unity, …). `_parseThreadPage` re-reads the title from the
+  thread H1, where prefixes are always spans
+- **Feed version badge:** the version in RSS title brackets (e.g. `[v1.5]`) is extracted before
+  stripping and prepended to `rawBody` as a `Version:` line, so AzC and LewdCorner cards get badges
+- **Feed WebView session:** `FeedNotifier.refresh()` now increments `scrapingSessionProvider`
+  before fetching and decrements it in `finally` — fixes "not initialized" errors on feed refresh
+  (this was the open item from Phase 13.5)
+
+**`flutter analyze`:** not re-run after Phase 14 was recorded; no Flutter SDK was available at the
+2026-10-29 docs refresh.
+
+---
+
+## Phase 15 — Backlog / Polish
+
+### Scraping reliability
+An external AI review of the scraping code (May 2026, 19 findings) was spot-checked against the
+code on 2026-10-28. Confirmed:
+- **Failures look like "no results"** — search methods in `metadata_service.dart` catch errors and
+  `return [];` (14 sites) with no retry. Distinguish "failed" from "empty", retry transient
+  errors, and show the error in the UI
+- **No Cloudflare challenge-page detection** — a challenge/interstitial page is parsed as if it
+  were search results
+- **F95Zone feed has one source** — `sam/latest_data.php` only; no fallback to scraping the
+  Latest Updates page if that endpoint changes
+
+Not tracked (overstated): "Windows-only is critical" (Windows-first is a project decision),
+"searches use `t=post`" (already combined with `c[title_only]=1`), "`btoa` crashes on large
+images" (input is already chunked, and it's a fallback path). The remaining findings were not
+checked.
+
+### Carried over
 - **Dynamic accent color** at runtime: settings provider + AppTheme wiring exists, needs end-to-end test
 - **Orphan scanner trigger** — wired via Settings → General → "Scan Now" only; consider a persistent toolbar button
 - **Remove dead `xenforoLogin()`** from `metadata_service.dart` (browser login is the only auth path now)
 - **macOS / Linux** — `webview_windows` is Windows-only; swap to `flutter_inappwebview` behind a platform conditional for cross-platform
 - **Patch system end-to-end** — toggle (File.rename) on Windows paths with spaces not yet tested
 - **Version prefix edge cases** — scanner strips `v`/`V`; verify `ver2.0`, `version1`, etc.
+
+### Housekeeping
+- **Tests** — `test/widget_test.dart` is a placeholder; there are no real tests
+- **Toolchain drift** — last built on Flutter 3.41.6 (April 2026). Run `flutter pub get` and
+  `flutter analyze` and fix deprecations before starting new work
+- **Secrets at rest** — Discord bot token and site session cookies are stored as plain JSON in
+  `%APPDATA%\VN Pathfinder\` (local only; low priority)
