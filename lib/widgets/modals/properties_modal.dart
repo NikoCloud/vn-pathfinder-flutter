@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import '../../theme.dart';
+import '../../utils/formatters.dart';
 import '../../models/game_group.dart';
 import '../../models/game_version.dart';
 import '../../models/user_data.dart';
@@ -208,8 +209,10 @@ class _TabSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Mockup's tab rail is 160px with text-only tabs; the icon + selection
+    // marker need the extra room for "Launch Options" (bold when selected).
     return SizedBox(
-      width: 148,
+      width: 168,
       child: ColoredBox(
         color: AppColors.bgCard,
         child: ListView(
@@ -270,12 +273,16 @@ class _SidebarTabState extends State<_SidebarTab> {
                 const SizedBox(width: 12),
               Icon(widget.icon, size: 14, color: fg),
               const SizedBox(width: 8),
-              Text(widget.label,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w400,
-                    color: fg,
-                  )),
+              Flexible(
+                child: Text(widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w400,
+                      color: fg,
+                    )),
+              ),
             ],
           ),
         ),
@@ -645,7 +652,7 @@ class _VersionsPanel extends ConsumerWidget {
                     Row(
                       children: [
                         Text(
-                          v.versionStr.isNotEmpty ? 'v${v.versionStr}' : 'Unknown version',
+                          v.versionStr.isNotEmpty ? fmtVersion(v.versionStr) : 'Unknown version',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -768,7 +775,7 @@ class _PatchesPanel extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.only(bottom: 6, top: 4),
           child: Text(
-            v.versionStr.isNotEmpty ? 'v${v.versionStr}' : 'Unknown version',
+            v.versionStr.isNotEmpty ? fmtVersion(v.versionStr) : 'Unknown version',
             style: GoogleFonts.inter(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,

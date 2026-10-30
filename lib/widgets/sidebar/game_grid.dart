@@ -146,7 +146,7 @@ class _GameGridCardState extends ConsumerState<GameGridCard> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      _GridCover(cover: cover),
+                      _GridCover(cover: cover, imageEpoch: ref.watch(imageEpochProvider)),
                       // Running badge
                       if (isRunning)
                         Positioned(
@@ -226,7 +226,8 @@ class _GameGridCardState extends ConsumerState<GameGridCard> {
 
 class _GridCover extends StatelessWidget {
   final File? cover;
-  const _GridCover({this.cover});
+  final int imageEpoch; // see imageEpochProvider
+  const _GridCover({this.cover, required this.imageEpoch});
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +248,7 @@ class _GridCover extends StatelessWidget {
     }
     return Image.file(
       cover!,
+      key: ValueKey(imageEpoch),
       fit: BoxFit.cover,
       errorBuilder: (context, error, stack) => Container(
         color: AppColors.bgCard,

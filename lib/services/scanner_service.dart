@@ -18,12 +18,14 @@ const _platformSuffixes = {
   'ultra', 'compressed', 'public', 'release', 'market',
 };
 
-// Matches version suffixes in folder names
+// Matches version suffixes in folder names. Chapter/Episode keep a number that
+// follows a separator ("Chapter-1") without swallowing a platform tag after it
+// ("Episode-10-pc" → "Episode-10").
 final _versionRe = RegExp(
   r'[-_]'
   r'(v\.?\d[\w.]*|\d+\.\d[\w.]*|\d{3,}|Demo|DEMO|demo'
-  r'|Chapter[\w_]*|Day\d+[\w_]*|Act\.[\w.]+|Final|FINAL'
-  r'|VER_[\w.]+|Vers\.[\w.]+|Episode[\w_-]*)'
+  r'|Chapter[-_]?\d[\w.]*|Chapter\w*|Day\d+[\w_]*|Act\.[\w.]+|Final|FINAL'
+  r'|VER_[\w.]+|Vers\.[\w.]+|Episode[-_]?\d[\w.]*|Episode\w*)'
   r'(?:[-_].+)?$',
   caseSensitive: false,
 );
@@ -39,11 +41,24 @@ List<String> _stripPlatform(List<String> tokens) {
 String _camelSplit(String s) {
   s = s.replaceAll(RegExp(r'[-_]+'), ' ');
   s = s.replaceAllMapped(RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}');
+  // A capital that starts a new word after another capital:
+  // "AFamily" → "A Family", "HTMLGame" → "HTML Game".
+  s = s.replaceAllMapped(RegExp(r'([A-Z])([A-Z][a-z])'), (m) => '${m[1]} ${m[2]}');
   return s.replaceAll(RegExp(r' {2,}'), ' ').trim();
 }
 
 /// Returns (baseKey, versionStr, displayName)
 (String, String, String) parseFolderName(String name) {
+  final (tokens, versionStr) = _folderNameParts(name);
+  final baseForDisplay = tokens.join(' ');
+  final displayName = _camelSplit(baseForDisplay);
+  final baseKey = _titleKey(tokens);
+  return (baseKey, versionStr, displayName.isNotEmpty ? displayName : name);
+}
+
+/// Title tokens (platform tags stripped) and version string of a folder or
+/// archive name — the raw parts behind [parseFolderName].
+(List<String>, String) _folderNameParts(String name) {
   // Strip leading bracket groups like "[Completed]"
   final nameClean = name.replaceAll(RegExp(r'^\[[^\]]+\]\s*'), '');
   final m = _versionRe.firstMatch(nameClean);
@@ -53,27 +68,129 @@ String _camelSplit(String s) {
     versionStr = m.group(1) ?? '';
     baseRaw = nameClean.substring(0, m.start);
   }
+  // "_" is a word character, so "v0.4.8_Win" arrives with its platform tag
+  // attached ("-Win" is split off by the regex) — drop trailing platform/junk
+  // words the same way the title does.
+  if (versionStr.contains('_')) {
+    final parts = _stripPlatform(versionStr.split('_'));
+    if (parts.isNotEmpty) versionStr = parts.join('_');
+  }
   var tokens = baseRaw.split(RegExp(r'[-_\s]+')).where((t) => t.isNotEmpty).toList();
   tokens = _stripPlatform(tokens);
   if (versionStr.isEmpty) tokens = _stripPlatform(tokens);
-  final baseForDisplay = tokens.join(' ');
-  final displayName = _camelSplit(baseForDisplay);
-  final baseKey = baseForDisplay.replaceAll(RegExp(r'[-_\s]+'), '').toLowerCase();
-  return (baseKey, versionStr, displayName.isNotEmpty ? displayName : name);
+  return (tokens, versionStr);
 }
 
-List<int> parseVersionTuple(String v) {
-  if (v.isEmpty) return [-2];
-  if (v.toLowerCase() == 'demo' || v.toLowerCase() == 'final') return [-1];
-  final nums = RegExp(r'\d+').allMatches(v).map((m) => int.parse(m.group(0)!)).toList();
-  return nums.isNotEmpty ? nums : [-1];
-}
+String _titleKey(List<String> tokens) =>
+    tokens.join(' ').replaceAll(RegExp(r'[-_\s]+'), '').toLowerCase();
 
-int compareVersionTuples(List<int> a, List<int> b) {
-  for (var i = 0; i < a.length && i < b.length; i++) {
-    if (a[i] != b[i]) return a[i].compareTo(b[i]);
+/// Inner archive folders that say nothing about the game.
+const _genericFolderNames = {
+  'game', 'games', 'windows', 'win', 'win32', 'win64', 'pc', 'linux', 'mac',
+  'build', 'dist', 'release', 'x64', 'x86', 'output', 'data', 'files',
+  'content', 'extracted', 'newfolder',
+};
+
+/// Names the folder an extracted game goes into, from the best parts of the
+/// archive's file name and the single folder inside it (when there is one):
+///   • title — the one matching a game already in the library ([libraryKeys]),
+///     else the more descriptive one (more words), the inner folder on a tie;
+///     generic inner folders ("game", "Windows", …) don't count;
+///   • version — the more specific one (more numbers: 4.3.1 beats 4.3), the
+///     higher one if they're equally specific.
+/// Platform tags and junk after the version are dropped, so the result parses
+/// back cleanly: `<Title>-<version>`.
+String planExtractFolderName({
+  required String archiveStem,
+  String? innerFolder,
+  Set<String> libraryKeys = const {},
+}) {
+  final fromArchive = _folderNameParts(archiveStem);
+  final innerUseful = innerFolder != null &&
+      !_genericFolderNames.contains(_titleKey([innerFolder]));
+  final fromInner = innerUseful ? _folderNameParts(innerFolder) : null;
+
+  // Title
+  var title = fromArchive.$1;
+  if (fromInner != null && fromInner.$1.isNotEmpty) {
+    final innerKnown = libraryKeys.contains(_titleKey(fromInner.$1));
+    final archiveKnown = libraryKeys.contains(_titleKey(fromArchive.$1));
+    int words(List<String> t) => _camelSplit(t.join(' ')).split(' ').length;
+    if (fromArchive.$1.isEmpty || (innerKnown && !archiveKnown)) {
+      title = fromInner.$1;
+    } else if (!archiveKnown || innerKnown) {
+      if (words(fromInner.$1) >= words(fromArchive.$1)) title = fromInner.$1;
+    }
   }
-  return a.length.compareTo(b.length);
+
+  // Version
+  final versions = [if (fromInner != null) fromInner.$2, fromArchive.$2]
+      .where((v) => v.isNotEmpty)
+      .toList();
+  var version = '';
+  for (final v in versions) {
+    if (version.isEmpty) {
+      version = v;
+      continue;
+    }
+    final more = _versionNumbers(v).length - _versionNumbers(version).length;
+    if (more > 0 || (more == 0 && compareVersionStrings(v, version) > 0)) version = v;
+  }
+
+  final name = [title.join(' '), if (version.isNotEmpty) version]
+      .join('-')
+      .replaceAll(RegExp(r'[<>:"/\\|?*]'), '')
+      .replaceAll(RegExp(r'[. ]+$'), '');
+  // Only use the plan if it reads back as the title + version we picked.
+  final (key, parsedVersion, _) = parseFolderName(name);
+  if (name.isEmpty || key != _titleKey(title) || parsedVersion != version) {
+    return innerUseful ? innerFolder : archiveStem;
+  }
+  return name;
+}
+
+/// Orders folder-derived version strings, oldest first:
+///   unknown (empty) < Demo < numbered versions < Final.
+/// Numbered versions compare their digit runs in order (0.11.12 < 0.12.7;
+/// 1.0 < 1.0.1), then the text after the last number: pre-releases come
+/// before the plain release (0.5 Alpha < 0.5 Beta < 0.5 RC < 0.5), and other
+/// letters after it (0.5 < 0.5a < 0.5b).
+int compareVersionStrings(String a, String b) {
+  final ra = _versionRank(a), rb = _versionRank(b);
+  if (ra != rb) return ra.compareTo(rb);
+  final na = _versionNumbers(a), nb = _versionNumbers(b);
+  for (var i = 0; i < na.length && i < nb.length; i++) {
+    if (na[i] != nb[i]) return na[i].compareTo(nb[i]);
+  }
+  if (na.length != nb.length) return na.length.compareTo(nb.length);
+  final sa = _suffixRank(a), sb = _suffixRank(b);
+  if (sa.$1 != sb.$1) return sa.$1.compareTo(sb.$1);
+  return sa.$2.compareTo(sb.$2);
+}
+
+int _versionRank(String v) {
+  final s = v.trim().toLowerCase();
+  if (s.isEmpty) return -2;
+  if (s == 'demo') return -1;
+  if (s == 'final') return 1;
+  return 0;
+}
+
+List<int> _versionNumbers(String v) =>
+    RegExp(r'\d+').allMatches(v).map((m) => int.parse(m.group(0)!)).toList();
+
+/// (rank, text) for what follows the last number: pre-release words below the
+/// plain release (0), any other letters above it.
+(int, String) _suffixRank(String v) {
+  final last = RegExp(r'\d+').allMatches(v).lastOrNull;
+  final tail = (last == null ? v : v.substring(last.end))
+      .replaceAll(RegExp(r'[-_.\s]+'), '')
+      .toLowerCase();
+  if (tail.isEmpty) return (0, '');
+  if (tail.startsWith('alpha')) return (-3, tail);
+  if (tail.startsWith('beta')) return (-2, tail);
+  if (RegExp(r'^(rc|pre|preview|test)').hasMatch(tail)) return (-1, tail);
+  return (1, tail);
 }
 
 // ── Game Detection ────────────────────────────────────────────────────────────
@@ -337,6 +454,9 @@ class ScannerService {
 
     for (final e in entries) {
       if (e is Directory) {
+        // Dot-folders are hidden/system — including in-progress extractions
+        // (.vnp-extract-…).
+        if (p.basename(e.path).startsWith('.')) continue;
         final v = scanGameVersion(e);
         if (v != null) versions.add(v);
       } else if (e is File) {
@@ -377,10 +497,8 @@ class ScannerService {
     // Sort versions within each group by version tuple
     for (final k in groups.keys) {
       final g = groups[k]!;
-      final sorted = [...g.versions]..sort((a, b) =>
-          compareVersionTuples(
-              parseVersionTuple(a.versionStr),
-              parseVersionTuple(b.versionStr)));
+      final sorted = [...g.versions]
+        ..sort((a, b) => compareVersionStrings(a.versionStr, b.versionStr));
       groups[k] = g.copyWith(versions: sorted);
     }
 

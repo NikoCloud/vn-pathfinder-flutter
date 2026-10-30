@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme.dart';
+import '../../utils/formatters.dart';
 import '../../models/game_group.dart';
 import '../../models/user_data.dart';
 import '../../providers/settings_provider.dart';
@@ -352,7 +353,7 @@ class _VersionSelector extends StatelessWidget {
           icon: const Icon(Icons.expand_more, size: 14, color: AppColors.textSecondary),
           items: versions.map((v) => DropdownMenuItem(
             value: v,
-            child: Text(v.isEmpty ? 'Unknown' : 'v$v'),
+            child: Text(fmtVersion(v)),
           )).toList(),
           onChanged: (v) { if (v != null) onChanged(v); },
         ),

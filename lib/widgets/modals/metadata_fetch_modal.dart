@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -114,13 +115,30 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+  // Read once in initState: Riverpod forbids using `ref` in dispose(), and
+  // doing so threw before the session was released — leaving the WebView
+  // running after the modal closed.
+  late final ScrapingService _scraping;
+  late final StateController<int> _sessions;
+  bool _sessionAcquired = false;
+
+  // Previews of login-only images with no public thumbnail, fetched once each
+  // through the logged-in WebView.
+  final Map<String, Future<Uint8List?>> _loginImages = {};
+  Future<Uint8List?> _loginImageBytes(String url) => _loginImages.putIfAbsent(
+      url, () => MetadataService.fetchImageBytes(url, _scraping));
+
   @override
   void initState() {
     super.initState();
     _queryCtrl = TextEditingController(text: widget.group.effectiveTitle);
+    _scraping = ref.read(scrapingServiceProvider);
+    _sessions = ref.read(scrapingSessionProvider.notifier);
     // Acquire a scraping session — this brings the WebView2 instance online.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(scrapingSessionProvider.notifier).update((s) => s + 1);
+      if (!mounted) return;
+      _sessions.update((s) => s + 1);
+      _sessionAcquired = true;
       _search();
     });
   }
@@ -130,9 +148,12 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
     _queryCtrl.dispose();
     // Cancel pending requests immediately and release the scraping session.
     // ScrapingWebView disposes the WebView when the count drops to zero.
-    final service = ref.read(scrapingServiceProvider);
-    service.cancelPending();
-    ref.read(scrapingSessionProvider.notifier).update((s) => (s - 1).clamp(0, 999));
+    _scraping.cancelPending();
+    if (_sessionAcquired) {
+      // Deferred so the provider doesn't change while the tree is unmounting.
+      final sessions = _sessions;
+      Future.microtask(() => sessions.update((s) => (s - 1).clamp(0, 999)));
+    }
     super.dispose();
   }
 
@@ -349,6 +370,12 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       }
 
       await ref.read(libraryProvider.notifier).scan();
+      // The new image files reuse the old names: drop cached decodes and
+      // rebuild the widgets showing them so they appear without a restart.
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      ref.read(imageEpochProvider.notifier).state++;
       if (mounted) Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
@@ -458,6 +485,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                           enrichingByProvider: _enrichingByProvider,
                           fieldSource: _fieldSource,
                           downloadImages: _downloadImages,
+                          loginImageBytes: _loginImageBytes,
                           onSourceChange: (field, prov) =>
                               setState(() => _fieldSource[field] = prov),
                           onToggleDownload: (v) =>
@@ -828,6 +856,7 @@ class _FieldMixer extends StatelessWidget {
   final bool downloadImages;
   final void Function(String field, _Provider? prov) onSourceChange;
   final ValueChanged<bool> onToggleDownload;
+  final Future<Uint8List?> Function(String url) loginImageBytes;
 
   const _FieldMixer({
     required this.pickedByProvider,
@@ -836,6 +865,7 @@ class _FieldMixer extends StatelessWidget {
     required this.downloadImages,
     required this.onSourceChange,
     required this.onToggleDownload,
+    required this.loginImageBytes,
   });
 
   bool _hasData(String field, MetadataResult r) => switch (field) {
@@ -985,6 +1015,7 @@ class _FieldMixer extends StatelessWidget {
             downloadImages: downloadImages,
             onSourceChange: onSourceChange,
             onToggleDownload: onToggleDownload,
+            loginImageBytes: loginImageBytes,
           ),
 
           // ── Source links ───────────────────────────────────────────────────
@@ -1095,6 +1126,7 @@ class _ImagesRow extends StatelessWidget {
   final bool downloadImages;
   final void Function(String field, _Provider? prov) onSourceChange;
   final ValueChanged<bool> onToggleDownload;
+  final Future<Uint8List?> Function(String url) loginImageBytes;
 
   const _ImagesRow({
     required this.pickedByProvider,
@@ -1106,7 +1138,59 @@ class _ImagesRow extends StatelessWidget {
     required this.downloadImages,
     required this.onSourceChange,
     required this.onToggleDownload,
+    required this.loginImageBytes,
   });
+
+  /// A preview tile's image. Login-only images (LewdCorner attachments) use
+  /// the post's public thumbnail when it has one; full-size embeds (e.g. a
+  /// LewdCorner cover) have none, so their bytes come through the logged-in
+  /// WebView. Apply always downloads the full-size image.
+  Widget _previewImage(String url, double width, double height) {
+    Widget broken() => Container(
+          width: width,
+          height: height,
+          color: AppColors.bgCard,
+          child: const Icon(Icons.broken_image_outlined,
+              size: 18, color: AppColors.textMuted),
+        );
+
+    final preview = imgResult?.previewUrls[url];
+    if (preview == null && MetadataService.isLoginOnlyImage(url)) {
+      return FutureBuilder<Uint8List?>(
+        future: loginImageBytes(url),
+        builder: (context, snap) {
+          final bytes = snap.data;
+          if (bytes != null) {
+            return Image.memory(bytes,
+                width: width,
+                height: height,
+                fit: BoxFit.cover,
+                errorBuilder: (ctx2, e, st) => broken());
+          }
+          if (snap.connectionState != ConnectionState.done) {
+            return Container(
+              width: width,
+              height: height,
+              color: AppColors.bgCard,
+              alignment: Alignment.center,
+              child: const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 1.5, color: AppColors.accent),
+              ),
+            );
+          }
+          return broken();
+        },
+      );
+    }
+    return Image.network(preview ?? url,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        errorBuilder: (ctx2, e, st) => broken());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1195,19 +1279,7 @@ class _ImagesRow extends StatelessWidget {
                       children: [
                         ClipRRect(
                           borderRadius: AppRadius.borderSm,
-                          child: Image.network(
-                            allUrls[i],
-                            width: imgW,
-                            height: imgH,
-                            fit: BoxFit.cover,
-                            errorBuilder: (ctx2, e, st) => Container(
-                              width: imgW,
-                              height: imgH,
-                              color: AppColors.bgCard,
-                              child: const Icon(Icons.broken_image_outlined,
-                                  size: 18, color: AppColors.textMuted),
-                            ),
-                          ),
+                          child: _previewImage(allUrls[i], imgW, imgH),
                         ),
                         if (isCover)
                           Positioned(

@@ -55,10 +55,11 @@ class _DetailContentState extends ConsumerState<DetailContent> {
   @override
   Widget build(BuildContext context) {
     final g = widget.group;
-    final v = g.latestVersion;
-    final synopsis = v?.metaSynopsis ?? '';
+    // Newest version that has them, so a freshly installed update keeps the
+    // synopsis and tags fetched for an earlier version.
+    final synopsis = g.newestMeta((v) => v.metaSynopsis);
     final userTags = widget.userData.tags[g.baseKey] ?? [];
-    final fetchedTags = v?.metaTags ?? [];
+    final fetchedTags = g.newestMetaTags;
     // Deduplicate: user tags that are already in fetchedTags are shown only once (as fetched)
     final userOnlyTags = userTags.where((t) => !fetchedTags.contains(t)).toList();
 
@@ -353,10 +354,9 @@ class _ActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final v = group.latestVersion;
-    final sourceUrl = v?.metaSourceUrl ?? '';
-    final f95Url = v?.metaF95Url ?? '';
-    final vndbUrl = v?.metaVndbUrl ?? '';
+    final sourceUrl = group.newestMeta((v) => v.metaSourceUrl);
+    final f95Url = group.newestMeta((v) => v.metaF95Url);
+    final vndbUrl = group.newestMeta((v) => v.metaVndbUrl);
 
     return Wrap(
       spacing: 8,

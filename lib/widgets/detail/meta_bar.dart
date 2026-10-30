@@ -65,7 +65,7 @@ class _MetaBarState extends ConsumerState<MetaBar> {
     final feedHint = feedMap[normTitle];
 
     final installedVersion = v?.versionStr.isNotEmpty == true
-        ? (v!.versionStr.startsWith('v') ? v.versionStr : 'v${v.versionStr}')
+        ? fmtVersion(v!.versionStr)
         : '—';
 
     return Container(

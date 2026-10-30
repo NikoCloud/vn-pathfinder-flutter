@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme.dart';
+import '../../utils/formatters.dart';
 import '../../models/game_group.dart';
 import '../../models/user_data.dart';
+import '../../providers/library_provider.dart';
 import '../../services/scanner_service.dart';
 
 class GameEntry extends ConsumerStatefulWidget {
@@ -64,7 +66,11 @@ class _GameEntryState extends ConsumerState<GameEntry> {
           padding: const EdgeInsets.fromLTRB(9, 4, 12, 4),
           child: Row(
             children: [
-              _CoverThumb(group: widget.group, userData: widget.userData),
+              _CoverThumb(
+                group: widget.group,
+                userData: widget.userData,
+                imageEpoch: ref.watch(imageEpochProvider),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -150,7 +156,8 @@ class _GameEntryState extends ConsumerState<GameEntry> {
     final dev = g.effectiveDeveloper;
     final versions = g.versions;
     if (versions.isEmpty) return dev.isNotEmpty ? dev : '—';
-    final ver = versions.last.versionStr;
+    final raw = versions.last.versionStr;
+    final ver = raw.isEmpty ? '' : fmtVersion(raw);
     if (dev.isNotEmpty && ver.isNotEmpty) return '$dev · $ver';
     if (dev.isNotEmpty) return dev;
     if (ver.isNotEmpty) return ver;
@@ -161,8 +168,13 @@ class _GameEntryState extends ConsumerState<GameEntry> {
 class _CoverThumb extends StatelessWidget {
   final GameGroup group;
   final UserData userData;
+  final int imageEpoch; // see imageEpochProvider
 
-  const _CoverThumb({required this.group, required this.userData});
+  const _CoverThumb({
+    required this.group,
+    required this.userData,
+    required this.imageEpoch,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +193,7 @@ class _CoverThumb extends StatelessWidget {
       child: cover != null
           ? Image.file(
               cover,
+              key: ValueKey(imageEpoch),
               fit: BoxFit.cover,
               errorBuilder: (context, error, stack) => const _NoArtPlaceholder(),
             )

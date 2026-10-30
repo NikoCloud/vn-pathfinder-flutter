@@ -11,6 +11,8 @@ import '../models/archive_item.dart';
 import '../models/game_group.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/extraction_log.dart';
+import '../services/scanner_service.dart' show planExtractFolderName;
 import '../utils/formatters.dart';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -109,13 +111,8 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
         : (a, b) => cmp(b, a);
   }
 
-  bool _isExtracted(ArchiveItem item) {
-    final dir = Directory(p.join(
-      p.dirname(item.archivePath.path),
-      p.basenameWithoutExtension(item.archivePath.path),
-    ));
-    return dir.existsSync();
-  }
+  bool _isExtracted(ArchiveItem item) =>
+      Directory(_extractedDirPath(item)).existsSync();
 
   void _toggleSort(_SortKey key) {
     setState(() {
@@ -403,11 +400,8 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
 
   Future<void> _extractZip(
       ArchiveItem item, StateController<Map<String, _ExState>> notifier) async {
-    final destDir = p.join(
-      p.dirname(item.archivePath.path),
-      p.basenameWithoutExtension(item.archivePath.path),
-    );
-    Directory(destDir).createSync(recursive: true);
+    final staging = _stagingDir(item);
+    final destDir = staging.path;
     final key     = item.archivePath.path;
     final bytes   = await item.archivePath.readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);
@@ -415,8 +409,10 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     var done = 0;
 
     for (final file in archive.files) {
-      if (file.isFile) {
-        await compute(_writeFile, (p.join(destDir, file.name), file.content as List<int>));
+      final out = p.normalize(p.join(destDir, file.name));
+      // Skip entries that would land outside the extraction folder ("../…").
+      if (file.isFile && p.isWithin(destDir, out)) {
+        await compute(_writeFile, (out, file.content as List<int>));
       }
       done++;
       if (mounted) {
@@ -434,6 +430,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
       await Future.delayed(Duration.zero);
     }
 
+    await _placeExtracted(item, staging);
     final settings = ref.read(settingsProvider);
     if (settings.deleteAfterExtract) await item.archivePath.delete();
   }
@@ -450,16 +447,73 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     );
     if (sevenZip.isEmpty) throw '7-Zip not found. Install 7-Zip to extract RAR archives.';
 
-    final destDir = p.join(
-      p.dirname(item.archivePath.path),
-      p.basenameWithoutExtension(item.archivePath.path),
-    );
-    Directory(destDir).createSync(recursive: true);
-    final result = await Process.run(sevenZip, ['x', item.archivePath.path, '-o$destDir', '-y']);
-    if (result.exitCode != 0) throw '7-Zip extraction failed:\n${result.stderr}';
+    final staging = _stagingDir(item);
+    final result = await Process.run(sevenZip, ['x', item.archivePath.path, '-o${staging.path}', '-y']);
+    if (result.exitCode != 0) {
+      await compute(_deleteDir, staging.path);
+      throw '7-Zip extraction failed:\n${result.stderr}';
+    }
 
+    await _placeExtracted(item, staging);
     final settings = ref.read(settingsProvider);
     if (settings.deleteAfterExtract) await item.archivePath.delete();
+  }
+
+  /// A fresh hidden folder next to the archive (same drive, so the result can
+  /// be moved into place with a rename). The library scan skips dot-folders.
+  Directory _stagingDir(ArchiveItem item) {
+    final dir = Directory(p.join(p.dirname(item.archivePath.path),
+        '.vnp-extract-${DateTime.now().microsecondsSinceEpoch}'));
+    dir.createSync(recursive: true);
+    return dir;
+  }
+
+  /// Moves an extraction out of [staging] into the library, named by
+  /// planExtractFolderName from the archive's name and the single folder
+  /// inside it — which is flattened, so the game sits directly in the library
+  /// folder where the scanner recognises it. Re-extracting an archive merges
+  /// into the folder it went to before; any other existing folder is left
+  /// alone and the new one gets a "-dupN" suffix.
+  Future<void> _placeExtracted(ArchiveItem item, Directory staging) async {
+    final entries = staging
+        .listSync()
+        .where((e) => p.basename(e.path) != '__MACOSX')
+        .toList();
+    final singleRoot =
+        entries.length == 1 && entries.first is Directory ? entries.first as Directory : null;
+    final content = singleRoot ?? staging;
+
+    final libraryKeys = ref
+        .read(libraryProvider)
+        .groups
+        .where((g) => g.versions.isNotEmpty)
+        .map((g) => g.baseKey)
+        .toSet();
+    final name = planExtractFolderName(
+      archiveStem: p.basenameWithoutExtension(item.archivePath.path),
+      innerFolder: singleRoot == null ? null : p.basename(singleRoot.path),
+      libraryKeys: libraryKeys,
+    );
+
+    final parent = staging.parent.path;
+    var target = p.join(parent, name);
+    final previous = _extractedDirPath(item);
+    if (Directory(target).existsSync() && target != previous) {
+      var n = 2;
+      while (Directory(p.join(parent, '$name-dup$n')).existsSync()) {
+        n++;
+      }
+      target = p.join(parent, '$name-dup$n');
+    }
+
+    if (Directory(target).existsSync()) {
+      await compute(_mergeInto, (content.path, target));
+    } else {
+      await content.rename(target);
+    }
+    if (staging.existsSync()) await compute(_deleteDir, staging.path);
+    ExtractionLog.record(item.archivePath.path, target);
+    debugPrint('Extracted ${p.basename(item.archivePath.path)} → $name');
   }
 
   static Future<void> _writeFile((String, List<int>) args) async {
@@ -489,6 +543,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     final dirPath = _extractedDirPath(item);
     try {
       await compute(_deleteDir, dirPath);
+      ExtractionLog.forget(item.archivePath.path);
       if (mounted) setState(() {});
     } catch (e) { debugPrint('deleteSingleExtracted: $e'); }
   }
@@ -502,6 +557,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     if (!ok) return;
     try {
       await compute(_deleteDirsAndFiles, ([_extractedDirPath(item)], [item.archivePath.path]));
+      ExtractionLog.forget(item.archivePath.path);
       if (mounted) {
         ref.read(libraryProvider.notifier).scan();
         setState(() {});
@@ -531,6 +587,9 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     final dirs  = items.map(_extractedDirPath).toList();
     final files = items.map((i) => i.archivePath.path).toList();
     await compute(_deleteDirsAndFiles, (dirs, files));
+    for (final path in files) {
+      ExtractionLog.forget(path);
+    }
     _clearCompleted(items, exStates);
     if (mounted) {
       ref.read(libraryProvider.notifier).scan();
@@ -570,10 +629,14 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════
 
-  String _extractedDirPath(ArchiveItem item) => p.join(
-    p.dirname(item.archivePath.path),
-    p.basenameWithoutExtension(item.archivePath.path),
-  );
+  /// Where [item] was extracted: the recorded folder, or the archive-named
+  /// folder that extractions used before the naming planner.
+  String _extractedDirPath(ArchiveItem item) =>
+      ExtractionLog.folderFor(item.archivePath.path) ??
+      p.join(
+        p.dirname(item.archivePath.path),
+        p.basenameWithoutExtension(item.archivePath.path),
+      );
 
   Future<bool> _confirmDialog({
     required String title,
@@ -617,6 +680,18 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
   static Future<void> _deleteDir(String path) async {
     final dir = Directory(path);
     if (dir.existsSync()) dir.deleteSync(recursive: true);
+  }
+
+  /// Moves every file under `from` into `to`, keeping relative paths and
+  /// replacing files that already exist (same drive, so these are renames).
+  static Future<void> _mergeInto((String, String) args) async {
+    final (from, to) = args;
+    for (final f in Directory(from).listSync(recursive: true).whereType<File>()) {
+      final dest = File(p.join(to, p.relative(f.path, from: from)));
+      dest.parent.createSync(recursive: true);
+      if (dest.existsSync()) dest.deleteSync();
+      f.renameSync(dest.path);
+    }
   }
 
 
@@ -1980,7 +2055,7 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
                 value: _selectedVersion,
                 hint: 'Select version…',
                 items: _selectedGroup!.versions.map((v) => v.versionStr).toList(),
-                labelOf: (v) => v.isEmpty ? 'Unknown' : 'v$v',
+                labelOf: fmtVersion,
                 onChanged: (v) => setState(() => _selectedVersion = v),
               ),
             ],

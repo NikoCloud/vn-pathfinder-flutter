@@ -9,6 +9,13 @@ import '../services/scanner_service.dart';
 import 'notification_provider.dart';
 import 'settings_provider.dart';
 
+// ── Image Epoch ───────────────────────────────────────────────────────────────
+
+/// Bumped after Fetch Metadata rewrites a game's .vnpf images. Flutter caches
+/// decoded images by file path and the new files reuse the old names, so the
+/// widgets showing them key on this to rebuild and read the new files.
+final imageEpochProvider = StateProvider<int>((ref) => 0);
+
 // ── UserData Provider ─────────────────────────────────────────────────────────
 
 File _userdataFile() {

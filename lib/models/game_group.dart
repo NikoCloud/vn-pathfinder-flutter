@@ -18,14 +18,37 @@ class GameGroup {
   GameVersion? get latestVersion =>
       versions.isEmpty ? null : versions.last;
 
-  // Effective title: metadata title from latest version > parsed display name
-  String get effectiveTitle {
-    final t = latestVersion?.effectiveTitle;
-    return (t != null && t.isNotEmpty) ? t : displayName;
+  /// A metadata field from the newest version that has it. Fetch Metadata
+  /// saves into the then-latest version's folder, so a newly installed
+  /// version starts without .vnpf/metadata.json — fall back to older versions
+  /// the way cover art and screenshots already do.
+  String newestMeta(String Function(GameVersion v) field) {
+    for (final v in versions.reversed) {
+      final value = field(v);
+      if (value.isNotEmpty) return value;
+    }
+    return '';
   }
 
-  // Developer from latest version
-  String get effectiveDeveloper => latestVersion?.effectiveDeveloper ?? '';
+  // Effective title: newest metadata title > latest version's parsed name >
+  // group display name
+  String get effectiveTitle {
+    final t = newestMeta((v) => v.metaTitle);
+    if (t.isNotEmpty) return t;
+    final parsed = latestVersion?.displayName;
+    return (parsed != null && parsed.isNotEmpty) ? parsed : displayName;
+  }
+
+  // Developer from the newest version that has one
+  String get effectiveDeveloper => newestMeta((v) => v.effectiveDeveloper);
+
+  /// Fetched tags from the newest version that has any (see [newestMeta]).
+  List<String> get newestMetaTags {
+    for (final v in versions.reversed) {
+      if (v.metaTags.isNotEmpty) return v.metaTags;
+    }
+    return const [];
+  }
 
   GameGroup copyWith({
     String? displayName,

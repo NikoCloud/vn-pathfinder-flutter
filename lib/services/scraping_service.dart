@@ -15,7 +15,8 @@ class _ScrapingRequest {
   final String url;
   final Completer<dynamic> completer;
   final String? script;
-  _ScrapingRequest(this.url, this.completer, {this.script});
+  final bool reuseOrigin;
+  _ScrapingRequest(this.url, this.completer, {this.script, this.reuseOrigin = false});
 }
 
 /// Thrown when a queued request is cancelled before it executes.
@@ -23,6 +24,14 @@ class ScrapingCancelledException implements Exception {
   const ScrapingCancelledException();
   @override
   String toString() => 'ScrapingCancelledException: request was cancelled';
+}
+
+/// A scraping failure whose message is shown to the user as-is.
+class ScrapingException implements Exception {
+  final String message;
+  const ScrapingException(this.message);
+  @override
+  String toString() => message;
 }
 
 /// A service that leverages a hidden WebviewController to perform
@@ -35,6 +44,8 @@ class ScrapingService {
   WebviewController _controller = WebviewController();
   bool _isInitialized = false;
   bool _isInitializing = false;
+  /// Origin of the page the WebView last finished loading (for [evalOnOrigin]).
+  String? _loadedOrigin;
   Completer<void> _initCompleter = Completer<void>();
 
   Future<void> get ready => _initCompleter.future;
@@ -96,6 +107,7 @@ class ScrapingService {
     _controller = WebviewController();
     _isInitialized = false;
     _isInitializing = false;
+    _loadedOrigin = null;
     _initCompleter = Completer<void>();
     debugPrint('ScrapingService disposed.');
   }
@@ -113,6 +125,16 @@ class ScrapingService {
   Future<dynamic> evalOnPage(String url, String script) async {
     final completer = Completer<dynamic>();
     _queue.add(_ScrapingRequest(url, completer, script: script));
+    _processQueue();
+    return completer.future;
+  }
+
+  /// Like [evalOnPage], but when the WebView is already showing a page from
+  /// [url]'s origin, runs [script] there without navigating again. For
+  /// same-origin fetches that only need the session cookies (image downloads).
+  Future<dynamic> evalOnOrigin(String url, String script) async {
+    final completer = Completer<dynamic>();
+    _queue.add(_ScrapingRequest(url, completer, script: script, reuseOrigin: true));
     _processQueue();
     return completer.future;
   }
@@ -138,16 +160,32 @@ class ScrapingService {
     _isProcessing = true;
 
     final request = _queue.removeAt(0);
+    final stopwatch = Stopwatch()..start();
 
     try {
       if (!_isInitialized) {
-        throw Exception('ScrapingService not initialized');
+        // Callers open a scraping session and queue their first requests in
+        // the same breath, while the WebView is still starting up — wait for
+        // it instead of failing those requests.
+        try {
+          await ready.timeout(const Duration(seconds: 20));
+        } on TimeoutException {
+          throw const ScrapingException('The embedded browser did not start in time.');
+        }
+      }
+
+      if (request.reuseOrigin &&
+          request.script != null &&
+          _loadedOrigin == Uri.parse(request.url).origin) {
+        final result = await _controller.executeScript(request.script!);
+        if (!request.completer.isCompleted) request.completer.complete(result);
+        return;
       }
 
       debugPrint('Scraping: ${request.url}');
-      await _controller.loadUrl(request.url);
 
-      // Wait for page to report as loaded
+      // Wait for page to report as loaded. Listen before navigating so a fast
+      // navigationCompleted isn't missed.
       bool loaded = false;
       final timeout = DateTime.now().add(const Duration(seconds: 25));
 
@@ -156,6 +194,7 @@ class ScrapingService {
           loaded = true;
         }
       });
+      await _controller.loadUrl(request.url);
 
       // Poll until loaded or timeout
       while (!loaded && DateTime.now().isBefore(timeout)) {
@@ -169,11 +208,10 @@ class ScrapingService {
       //   (b) a real page header (p-main-header) is visible.
       // Cap at 5 retries × 2 s = 10 s max.
       const maxRetries = 5;
+      var html = '';
       for (var i = 0; i < maxRetries; i++) {
         await Future.delayed(const Duration(milliseconds: 2000));
-        final html =
-            await _controller.executeScript('document.documentElement.outerHTML');
-        if (html is! String) break;
+        html = await _pageHtml();
         final isSearching = html.contains('Searching...');
         final hasPageHeader = html.contains('p-main-header');
         // Ready when the search spinner is gone OR the real page structure exists
@@ -182,15 +220,32 @@ class ScrapingService {
             'Detected intermediate search page, waiting… (${maxRetries - i - 1} retries left)');
       }
 
+      // Cloudflare's "Just a moment…" check clears itself in a real browser
+      // after a few seconds and redirects to the page. Wait for that rather
+      // than handing the check page back as if it were the result.
+      final challengeDeadline = DateTime.now().add(const Duration(seconds: 20));
+      while (_isChallengePage(html) && DateTime.now().isBefore(challengeDeadline)) {
+        await Future.delayed(const Duration(seconds: 1));
+        html = await _pageHtml();
+      }
+      if (_isChallengePage(html)) {
+        throw ScrapingException(
+            'Blocked by a Cloudflare check on ${Uri.parse(request.url).host} — try again in a minute.');
+      }
+      final origin = await _controller.executeScript('location.origin');
+      _loadedOrigin = origin is String ? origin : null;
+
       // Extract results
       if (request.script != null) {
         final result = await _controller.executeScript(request.script!);
+        debugPrint('Scraped in ${stopwatch.elapsedMilliseconds} ms (loaded=$loaded): '
+            '${result is String ? '${result.length} chars' : result.runtimeType}');
         if (!request.completer.isCompleted) request.completer.complete(result);
       } else {
-        final html =
-            await _controller.executeScript('document.documentElement.outerHTML');
+        debugPrint('Scraped in ${stopwatch.elapsedMilliseconds} ms (loaded=$loaded): '
+            '${html.length} chars${_loginState(html)}');
         if (!request.completer.isCompleted) {
-          request.completer.complete(html is String ? html : '');
+          request.completer.complete(html);
         }
       }
     } catch (e) {
@@ -204,5 +259,22 @@ class ScrapingService {
         _processQueue();
       }
     }
+  }
+
+  Future<String> _pageHtml() async {
+    final html = await _controller.executeScript('document.documentElement.outerHTML');
+    return html is String ? html : '';
+  }
+
+  /// Cloudflare's interstitial check page. `_cf_chl_opt` only appears on the
+  /// check itself — `challenge-platform` scripts also load on normal pages.
+  static bool _isChallengePage(String html) =>
+      html.contains('_cf_chl_opt') || html.contains('<title>Just a moment...</title>');
+
+  /// XenForo sites flag every page with data-logged-in; surfaced in the log.
+  static String _loginState(String html) {
+    if (html.contains('data-logged-in="true"')) return ', logged in';
+    if (html.contains('data-logged-in="false"')) return ', LOGGED OUT';
+    return '';
   }
 }

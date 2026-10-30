@@ -304,10 +304,9 @@ class _FeedLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Expanded(
-      child: Center(
-        child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2),
-      ),
+    // Already placed inside an Expanded by FeedScreen.
+    return const Center(
+      child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2),
     );
   }
 }

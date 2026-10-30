@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import '../../theme.dart';
+import '../../utils/formatters.dart';
 import '../../models/game_version.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -530,7 +531,7 @@ class _DetectedCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _InfoRow('Title', version.effectiveTitle),
-          _InfoRow('Version', version.versionStr.isNotEmpty ? version.versionStr : '—'),
+          _InfoRow('Version', version.versionStr.isNotEmpty ? fmtVersion(version.versionStr) : '—'),
           _InfoRow('Engine', version.isRenpy ? 'Ren\'Py' : 'Other'),
           if (version.exePath != null)
             _InfoRow('Exe', p.basename(version.exePath!.path)),

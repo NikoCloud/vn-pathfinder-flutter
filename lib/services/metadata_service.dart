@@ -2,6 +2,7 @@ import 'dart:convert'; // jsonDecode, jsonEncode, base64Decode
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as p;
 import 'scraping_service.dart';
@@ -21,6 +22,11 @@ class MetadataResult {
   final List<String> tags;
   final String releaseDate;
 
+  /// Full-size image URL → a URL that loads without logging in, for previews.
+  /// Set for login-only images (LewdCorner attachments); the full-size URL is
+  /// still what gets downloaded, through the logged-in WebView.
+  final Map<String, String> previewUrls;
+
   const MetadataResult({
     required this.provider,
     required this.id,
@@ -32,6 +38,7 @@ class MetadataResult {
     required this.sourceUrl,
     this.tags = const [],
     this.releaseDate = '',
+    this.previewUrls = const {},
   });
 
   /// Converts this result to the .vnpf/metadata.json schema.
@@ -63,36 +70,32 @@ class MetadataService {
 
   /// Search VNDB for visual novels matching [query].
   /// No authentication required. Works in lockdown=OFF.
+  /// Failures throw, so the fetch modal shows them instead of "No results".
   static Future<List<MetadataResult>> searchVndb(String query) async {
-    try {
-      final body = jsonEncode({
-        'filters': ['search', '=', query],
-        'fields':
-            'title, alttitle, developers.name, description, image.url, '
-            'screenshots.url, released, tags.name',
-        'results': 15,
-        'sort': 'searchrank',
-      });
-      final resp = await http
-          .post(
-            Uri.parse('https://api.vndb.org/kana/vn'),
-            headers: {..._baseHeaders, 'Content-Type': 'application/json'},
-            body: body,
-          )
-          .timeout(const Duration(seconds: 12));
-      if (resp.statusCode != 200) {
-        debugPrint('VNDB API error ${resp.statusCode}: ${resp.body}');
-        return [];
-      }
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final results = (data['results'] as List?) ?? [];
-      return results
-          .map((r) => _parseVndbResult(r as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      debugPrint('VNDB search failed: $e');
-      return [];
+    final body = jsonEncode({
+      'filters': ['search', '=', query],
+      'fields':
+          'title, alttitle, developers.name, description, image.url, '
+          'screenshots.url, released, tags.name',
+      'results': 15,
+      'sort': 'searchrank',
+    });
+    final resp = await http
+        .post(
+          Uri.parse('https://api.vndb.org/kana/vn'),
+          headers: {..._baseHeaders, 'Content-Type': 'application/json'},
+          body: body,
+        )
+        .timeout(const Duration(seconds: 12));
+    if (resp.statusCode != 200) {
+      debugPrint('VNDB API error ${resp.statusCode}: ${resp.body}');
+      throw ScrapingException('VNDB API error ${resp.statusCode}.');
     }
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final results = (data['results'] as List?) ?? [];
+    return results
+        .map((r) => _parseVndbResult(r as Map<String, dynamic>))
+        .toList();
   }
 
   static MetadataResult _parseVndbResult(Map<String, dynamic> r) {
@@ -141,41 +144,154 @@ class MetadataService {
     );
   }
 
-  // ── F95Zone ────────────────────────────────────────────────────────────────
+  // ── XenForo forums (F95Zone, LewdCorner, Azkosel's Corner) ────────────────
 
-  /// Search F95Zone for games.
-  /// Uses [scrapingService] to bypass Cloudflare. 
+  /// Search F95Zone for games. Requires a logged-in session.
+  /// Uses [scrapingService] to bypass Cloudflare.
   static Future<List<MetadataResult>> searchF95Zone(
     String query,
     ScrapingService scrapingService,
-  ) async {
-    try {
-      // Build URL manually — Uri.https percent-encodes [] brackets which XenForo doesn't decode.
-      // c[title_only]=1 is critical: without it XenForo searches post bodies and returns
-      // discussion threads instead of game listings.
-      final encodedKeywords = Uri.encodeQueryComponent(query);
-      final url = 'https://f95zone.to/search/search'
-          '?keywords=$encodedKeywords'
-          '&t=post'
-          '&o=relevance'
-          '&c[nodes][0]=2'   // Adult Games forum node
-          '&c[child_nodes]=1'
-          '&c[title_only]=1';
+  ) {
+    return _searchXenforo(
+      query,
+      scrapingService,
+      provider: 'f95zone',
+      siteName: 'F95Zone',
+      baseUrl: 'https://f95zone.to',
+      nodes: const [2], // Adult Games forum
+      loginRequired: true,
+    );
+  }
 
-      final html = await scrapingService.getString(url);
-      if (html.isEmpty) return [];
-      
-      // Simple login detection
-      if (html.contains('id="ctrl_auth_login"') || html.contains('login--container')) {
-        debugPrint('F95Zone search redirected to login page. Session may have expired.');
-        return [];
-      }
-      
-      return _parseF95SearchHtml(html, query);
-    } catch (e) {
-      debugPrint('F95Zone search failed: $e');
-      return [];
+  /// Search LewdCorner for games. Node 6 is the master Games forum;
+  /// child_nodes includes sub-forums like AI/Plus games. Works logged out.
+  static Future<List<MetadataResult>> searchLewdCorner(
+    String query,
+    ScrapingService scrapingService,
+  ) {
+    return _searchXenforo(
+      query,
+      scrapingService,
+      provider: 'lewdcorner',
+      siteName: 'LewdCorner',
+      baseUrl: 'https://lewdcorner.com',
+      nodes: const [6],
+      loginRequired: false,
+    );
+  }
+
+  /// Search Azkosel's Corner for games: the regular games forum (node 13)
+  /// and the forbidden games forum (node 32) in one query. Members only.
+  static Future<List<MetadataResult>> searchAzkosel(
+    String query,
+    ScrapingService scrapingService,
+  ) {
+    return _searchXenforo(
+      query,
+      scrapingService,
+      provider: 'azc',
+      siteName: "Azkosel's Corner",
+      baseUrl: 'https://azkoselscorner.com',
+      nodes: const [13, 32],
+      loginRequired: true,
+    );
+  }
+
+  /// Shared XenForo title search. Failures throw (the fetch modal shows the
+  /// message) so they aren't mistaken for "No results".
+  static Future<List<MetadataResult>> _searchXenforo(
+    String query,
+    ScrapingService scrapingService, {
+    required String provider,
+    required String siteName,
+    required String baseUrl,
+    required List<int> nodes,
+    required bool loginRequired,
+  }) async {
+    // Build URL manually — Uri.https percent-encodes [] brackets which XenForo doesn't decode.
+    // c[title_only]=1 is critical: without it XenForo searches post bodies and returns
+    // discussion threads instead of game listings.
+    final nodeParams = [
+      for (var i = 0; i < nodes.length; i++) '&c[nodes][$i]=${nodes[i]}',
+    ].join();
+    final url = '$baseUrl/search/search'
+        '?keywords=${Uri.encodeQueryComponent(query)}'
+        '&t=post'
+        '&o=relevance'
+        '$nodeParams'
+        '&c[child_nodes]=1'
+        '&c[title_only]=1';
+
+    final html = await scrapingService.getString(url);
+    if (html.isEmpty) throw ScrapingException('$siteName returned an empty page.');
+
+    final results = _parseXenforoSearchHtml(html, provider: provider, baseUrl: baseUrl);
+    debugPrint('$siteName search "$query": ${results.length} results');
+
+    // XenForo flags every page with data-logged-in. A members-only search that
+    // comes back logged out is a login problem, not "no results".
+    if (results.isEmpty && loginRequired && html.contains('data-logged-in="false"')) {
+      throw ScrapingException('Not logged in to $siteName — log in from Settings → Network.');
     }
+    return results;
+  }
+
+  static List<MetadataResult> _parseXenforoSearchHtml(
+    String body, {
+    required String provider,
+    required String baseUrl,
+  }) {
+    final doc = html_parser.parse(body);
+    final gameThreads = <MetadataResult>[];
+    final otherThreads = <MetadataResult>[];
+
+    void add(Element titleEl) {
+      final rawTitle = _threadTitleText(titleEl);
+      final title = _cleanXenforoTitle(rawTitle);
+      final href = titleEl.attributes['href'] ?? '';
+      if (title.isEmpty || href.isEmpty) return;
+      // Developer is NOT reliably available in search result cards — the meta
+      // line shows the thread poster. fetchThreadDetails() fills it in.
+      final result = MetadataResult(
+        provider: provider,
+        id: href,
+        title: title,
+        developer: '',
+        sourceUrl: href.startsWith('http') ? href : '$baseUrl$href',
+      );
+      // Game threads carry [version] [developer] tags in their titles; stray
+      // threads that share the name (e.g. a bare "club-detention") don't.
+      // Listing game threads first keeps auto-pick on the real one.
+      (RegExp(r'\[[^\]]+\]').hasMatch(rawTitle) ? gameThreads : otherThreads).add(result);
+    }
+
+    // XenForo 2.x search result rows (li.block-row)
+    for (final el in doc.querySelectorAll('li.block-row')) {
+      final titleEl = el.querySelector('h3.contentRow-title a');
+      if (titleEl != null) add(titleEl);
+    }
+
+    // Fallback: thread list pattern (div.structItem--thread)
+    if (gameThreads.isEmpty && otherThreads.isEmpty) {
+      for (final el in doc.querySelectorAll('div.structItem--thread')) {
+        final titleEl = el.querySelector('div.structItem-title a[data-tp-primary]') ??
+            el.querySelector('div.structItem-title a');
+        if (titleEl != null) add(titleEl);
+      }
+    }
+
+    return [...gameThreads, ...otherThreads];
+  }
+
+  /// A thread title's text without its prefix labels (spans) or theme icons —
+  /// LewdCorner puts an `<i><svg><title>discussion</title></svg></i>` icon in
+  /// the thread H1. Bracket tags are kept; whitespace is collapsed.
+  static String _threadTitleText(Element el) {
+    final copy = el.clone(true);
+    for (final junk in copy.querySelectorAll('span, i, svg')) {
+      junk.remove();
+    }
+    return copy.text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   /// Strip XenForo prefix labels and bracket tags from a raw thread title.
@@ -205,251 +321,6 @@ class MetadataService {
     return t;
   }
 
-  static List<MetadataResult> _parseF95SearchHtml(String body, String query) {
-    final doc = html_parser.parse(body);
-    final results = <MetadataResult>[];
-
-    // XenForo 2.x Search Result Pattern (li.block-row)
-    final searchRows = doc.querySelectorAll('li.block-row');
-    for (final el in searchRows) {
-      final titleEl = el.querySelector('h3.contentRow-title a');
-      if (titleEl == null) continue;
-
-      // Strip XenForo thread-prefix label spans rendered inline with the title
-      // e.g. <span class="label label--green">VN</span><span ...>Ren'Py</span>
-      for (final label in titleEl.querySelectorAll('span')) {
-        label.remove();
-      }
-      final title = _cleanXenforoTitle(titleEl.text.trim());
-      final href = titleEl.attributes['href'] ?? '';
-      final url = href.startsWith('http') ? href : 'https://f95zone.to$href';
-      
-      // Developer is NOT reliably available in search result cards —
-      // ul.listInline contains the thread poster (not the developer).
-      // Leave it blank; fetchThreadDetails() will fill it from the OP body.
-      results.add(MetadataResult(
-        provider: 'f95zone',
-        id: href,
-        title: title,
-        developer: '',
-        sourceUrl: url,
-      ));
-    }
-
-    // Fallback: Thread List Pattern (div.structItem--thread)
-    if (results.isEmpty) {
-      final threadItems = doc.querySelectorAll('div.structItem--thread');
-      for (final el in threadItems) {
-        final titleEl = el.querySelector('div.structItem-title a[data-tp-primary]') ??
-                        el.querySelector('div.structItem-title a');
-        if (titleEl == null) continue;
-
-        // Strip XenForo thread-prefix label spans
-        for (final label in titleEl.querySelectorAll('span')) {
-          label.remove();
-        }
-        final title = _cleanXenforoTitle(titleEl.text.trim());
-        final href = titleEl.attributes['href'] ?? '';
-        final url = href.startsWith('http') ? href : 'https://f95zone.to$href';
-
-        // Leave developer blank — structItem-metaInfo shows the poster, not the dev.
-        results.add(MetadataResult(
-          provider: 'f95zone',
-          id: href,
-          title: title,
-          developer: '',
-          sourceUrl: url,
-        ));
-      }
-    }
-
-    return results.where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
-  }
-
-  // ── LewdCorner ─────────────────────────────────────────────────────────────
-
-  /// Search LewdCorner for games.
-  static Future<List<MetadataResult>> searchLewdCorner(
-    String query,
-    ScrapingService scrapingService,
-  ) async {
-    try {
-      // Same manual URL construction as F95Zone — avoids bracket encoding issues.
-      // c[title_only]=1 filters to game thread titles only (node 6 = master Games forum,
-      // child_nodes=1 includes sub-forums like AI/Plus games).
-      final encodedKeywords = Uri.encodeQueryComponent(query);
-      final url = 'https://lewdcorner.com/search/search'
-          '?keywords=$encodedKeywords'
-          '&t=post'
-          '&o=relevance'
-          '&c[nodes][0]=6'   // Games forum node (master, includes sub-forums)
-          '&c[child_nodes]=1'
-          '&c[title_only]=1';
-
-      final html = await scrapingService.getString(url);
-      if (html.isEmpty) return [];
-
-      if (html.contains('id="ctrl_auth_login"') || html.contains('login--container')) {
-        debugPrint('LewdCorner search redirected to login page. Session may have expired.');
-        return [];
-      }
-      
-      return _parseLcSearchHtml(html, query);
-    } catch (e) {
-      debugPrint('LewdCorner search failed: $e');
-      return [];
-    }
-  }
-
-  static List<MetadataResult> _parseLcSearchHtml(String body, String query) {
-    final doc = html_parser.parse(body);
-    final results = <MetadataResult>[];
-
-    // Search Result Pattern
-    final searchRows = doc.querySelectorAll('li.block-row');
-    for (final el in searchRows) {
-      final titleEl = el.querySelector('h3.contentRow-title a');
-      if (titleEl == null) continue;
-
-      // Strip XenForo thread-prefix label spans
-      for (final label in titleEl.querySelectorAll('span')) {
-        label.remove();
-      }
-      final title = _cleanXenforoTitle(titleEl.text.trim());
-      final href = titleEl.attributes['href'] ?? '';
-      final url = href.startsWith('http') ? href : 'https://lewdcorner.com$href';
-
-      results.add(MetadataResult(
-        provider: 'lewdcorner',
-        id: href,
-        title: title,
-        developer: '',
-        sourceUrl: url,
-      ));
-    }
-
-    // Fallback: Thread List Pattern
-    if (results.isEmpty) {
-      final threadItems = doc.querySelectorAll('div.structItem--thread');
-      for (final el in threadItems) {
-        final titleEl = el.querySelector('div.structItem-title a[data-tp-primary]') ??
-                        el.querySelector('div.structItem-title a');
-        if (titleEl == null) continue;
-
-        // Strip XenForo thread-prefix label spans
-        for (final label in titleEl.querySelectorAll('span')) {
-          label.remove();
-        }
-        final title = _cleanXenforoTitle(titleEl.text.trim());
-        final href = titleEl.attributes['href'] ?? '';
-        final url = href.startsWith('http') ? href : 'https://lewdcorner.com$href';
-
-        results.add(MetadataResult(
-          provider: 'lewdcorner',
-          id: href,
-          title: title,
-          developer: '',
-          sourceUrl: url,
-        ));
-      }
-    }
-
-    return results.where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
-  }
-
-  // ── Azkosel's Corner ──────────────────────────────────────────────────────
-
-  /// Search Azkosel's Corner for games.
-  /// Searches both the regular games forum (node 13) and the forbidden
-  /// games forum (node 32) in a single query by passing two node IDs.
-  /// Uses [scrapingService] to route through the WebView (same as other
-  /// XenForo sites — bypasses any Cloudflare or JS challenge page).
-  static Future<List<MetadataResult>> searchAzkosel(
-    String query,
-    ScrapingService scrapingService,
-  ) async {
-    try {
-      final encodedKeywords = Uri.encodeQueryComponent(query);
-      // Include both game forums: node 13 (games) + node 32 (forbidden games).
-      // c[title_only]=1 filters to thread titles only — avoids post body noise.
-      final url = 'https://azkoselscorner.com/search/search'
-          '?keywords=$encodedKeywords'
-          '&t=post'
-          '&o=relevance'
-          '&c[nodes][0]=13'    // Games
-          '&c[nodes][1]=32'    // Forbidden Haven Games
-          '&c[child_nodes]=1'
-          '&c[title_only]=1';
-
-      final html = await scrapingService.getString(url);
-      if (html.isEmpty) return [];
-
-      if (html.contains('id="ctrl_auth_login"') || html.contains('login--container')) {
-        debugPrint("Azkosel's Corner search redirected to login page.");
-        return [];
-      }
-
-      return _parseAzcSearchHtml(html, query);
-    } catch (e) {
-      debugPrint("Azkosel's Corner search failed: $e");
-      return [];
-    }
-  }
-
-  static List<MetadataResult> _parseAzcSearchHtml(String body, String query) {
-    final doc = html_parser.parse(body);
-    final results = <MetadataResult>[];
-
-    // XenForo 2.x search result rows
-    final searchRows = doc.querySelectorAll('li.block-row');
-    for (final el in searchRows) {
-      final titleEl = el.querySelector('h3.contentRow-title a');
-      if (titleEl == null) continue;
-
-      for (final label in titleEl.querySelectorAll('span')) {
-        label.remove();
-      }
-      final title = _cleanXenforoTitle(titleEl.text.trim());
-      final href = titleEl.attributes['href'] ?? '';
-      final url = href.startsWith('http') ? href : 'https://azkoselscorner.com$href';
-
-      results.add(MetadataResult(
-        provider: 'azc',
-        id: href,
-        title: title,
-        developer: '',
-        sourceUrl: url,
-      ));
-    }
-
-    // Fallback: thread list pattern
-    if (results.isEmpty) {
-      final threadItems = doc.querySelectorAll('div.structItem--thread');
-      for (final el in threadItems) {
-        final titleEl = el.querySelector('div.structItem-title a[data-tp-primary]') ??
-                        el.querySelector('div.structItem-title a');
-        if (titleEl == null) continue;
-
-        for (final label in titleEl.querySelectorAll('span')) {
-          label.remove();
-        }
-        final title = _cleanXenforoTitle(titleEl.text.trim());
-        final href = titleEl.attributes['href'] ?? '';
-        final url = href.startsWith('http') ? href : 'https://azkoselscorner.com$href';
-
-        results.add(MetadataResult(
-          provider: 'azc',
-          id: href,
-          title: title,
-          developer: '',
-          sourceUrl: url,
-        ));
-      }
-    }
-
-    return results.where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
-  }
-
   // ── itch.io ────────────────────────────────────────────────────────────────
 
   /// Search itch.io for games.
@@ -457,19 +328,14 @@ class MetadataService {
     String query,
     ScrapingService scrapingService,
   ) async {
-    try {
-      final uri = Uri.https('itch.io', '/search', {
-        'q': query,
-        'type': 'games',
-      });
-      final html = await scrapingService.getString(uri.toString());
-      if (html.isEmpty) return [];
-      
-      return _parseItchSearchHtml(html, query);
-    } catch (e) {
-      debugPrint('itch.io search failed: $e');
-      return [];
-    }
+    final uri = Uri.https('itch.io', '/search', {
+      'q': query,
+      'type': 'games',
+    });
+    final html = await scrapingService.getString(uri.toString());
+    if (html.isEmpty) throw const ScrapingException('itch.io returned an empty page.');
+
+    return _parseItchSearchHtml(html, query);
   }
 
   static List<MetadataResult> _parseItchSearchHtml(String body, String query) {
@@ -562,19 +428,26 @@ class MetadataService {
     final doc = html_parser.parse(body);
 
     // The first post in the thread contains the game description + images.
-    // Strategy: grab the FIRST article.message--post (= OP), then dig into
-    // its div.bbWrapper where XenForo 2.x renders bbCode content.
-    final opArticle = doc.querySelector('article.message--post') ??
-        doc.querySelector('article.message');
-    final opEl = opArticle?.querySelector('div.bbWrapper') ??
+    // Strategy: grab the FIRST post (Azkosel's Corner renders it as an
+    // article.message--article), then the div.bbWrapper inside its
+    // message-body, where XenForo 2.x renders bbCode content. Not just the
+    // first bbWrapper: the LewdCorner and Azkosel's Corner themes render
+    // custom thread fields (developer links, other games…) as bbWrappers
+    // above the body.
+    final opArticle =
+        doc.querySelector('article.message--post, article.message--article') ??
+            doc.querySelector('article.message');
+    final opEl = opArticle?.querySelector('.message-body .bbWrapper') ??
+        opArticle?.querySelector('div.bbWrapper') ??
         opArticle?.querySelector('.message-body') ??
         doc.querySelector('div.bbWrapper');
     if (opEl == null) return result;
+    final fields = _customFields(opArticle);
 
     // ── Extract full-size images from the OP post ────────────────────────
     //
     // XenForo 2 uses thumbnails in <img src> and puts the full-res URL in:
-    //   1. div.bbImageWrapper[data-lb-src]  — native attachment lightbox src
+    //   1. div.bbImageWrapper[data-lb-src] or [data-src] — native lightbox src
     //   2. a[href] wrapping the <img>        — lightbox anchor href
     //   3. img[data-url]                     — sometimes used for full-res
     //
@@ -597,11 +470,22 @@ class MetadataService {
     }
 
     final imageUrls = <String>[];
+    final previews = <String, String>{};
 
-    // Pass 1 — XenForo attachment wrappers: div.bbImageWrapper[data-lb-src]
-    for (final wrapper in opEl.querySelectorAll('div.bbImageWrapper[data-lb-src]')) {
-      final src = absUrl(wrapper.attributes['data-lb-src']!.trim());
-      if (src.isNotEmpty && !imageUrls.contains(src)) imageUrls.add(src);
+    // Pass 1 — XenForo lightbox wrappers: div.bbImageWrapper. The full-res
+    //   URL is in data-lb-src on older installs and data-src on current ones
+    //   (all three forums as of 2026-10); fall back to the wrapped <img>.
+    for (final wrapper in opEl.querySelectorAll('div.bbImageWrapper')) {
+      final img = wrapper.querySelector('img');
+      final raw = (wrapper.attributes['data-lb-src'] ??
+              wrapper.attributes['data-src'] ??
+              img?.attributes['data-url'] ??
+              img?.attributes['src'] ??
+              '')
+          .trim();
+      if (raw.isEmpty || raw.startsWith('data:')) continue;
+      final src = absUrl(raw);
+      if (!imageUrls.contains(src)) imageUrls.add(src);
     }
 
     // Pass 1b — LewdCorner / some XenForo installs use [data-lb-src] on <a>
@@ -626,13 +510,29 @@ class MetadataService {
     //   where the poster linked to the full image.
     for (final a in opEl.querySelectorAll('a[href]')) {
       final href = (a.attributes['href'] ?? '').trim();
-      // Only follow anchors that point directly to an image file
+      // Only follow anchors that point directly to an image file, or to a
+      // XenForo attachment (/attachments/title-png.864396/ serves the full
+      // image; LewdCorner wraps its thumbnails in these).
+      final isAttachment = isLoginOnlyImage(href);
       if (!RegExp(r'\.(jpe?g|png|webp|gif|avif)(\?|$)', caseSensitive: false)
-          .hasMatch(href)) { continue; }
+              .hasMatch(href) &&
+          !isAttachment) { continue; }
       // Must contain at least one <img> child (confirm it's an image link)
-      if (a.querySelector('img') == null) { continue; }
+      final img = a.querySelector('img');
+      if (img == null) { continue; }
       final src = absUrl(href);
       if (!imageUrls.contains(src)) imageUrls.add(src);
+      // Attachment pages need a login; the thumbnail inside (its largest
+      // srcset entry, else src) doesn't, so the fetch modal previews that.
+      if (isAttachment) {
+        final srcset = (img.attributes['srcset'] ?? '').trim();
+        final thumb = srcset.isNotEmpty
+            ? srcset.split(',').last.trim().split(RegExp(r'\s+')).first
+            : (img.attributes['src'] ?? '').trim();
+        if (thumb.isNotEmpty && !thumb.startsWith('data:')) {
+          previews[src] = absUrl(thumb);
+        }
+      }
     }
 
     // Pass 3 — fallback for imgs NOT inside a bbImageWrapper or lightbox <a>
@@ -656,7 +556,7 @@ class MetadataService {
               img.attributes['data-lazy-src'] ??
               img.attributes['src'] ?? '')
           .trim();
-      if (src.isEmpty) continue;
+      if (src.isEmpty || src.startsWith('data:')) continue;
 
       // Skip obvious thumbnails by URL pattern (thumb_, _thumb., /thumb/)
       if (RegExp(r'(^|[/_-])thumb[_./]', caseSensitive: false).hasMatch(src)) continue;
@@ -673,11 +573,28 @@ class MetadataService {
     //
     // When we call opEl.text we get the plain-text version with labels intact.
     // Regex on that text is more reliable than DOM walking because thread
-    // authors don't always use the same HTML structure.
-    final opText = opEl.text;
+    // authors don't always use the same HTML structure. <br> becomes a line
+    // break first — some posts have no newline after it, which hid the next
+    // "Label:" from the synopsis pattern. A <br> followed by a source newline
+    // still counts once. Zero-width spaces are dropped.
+    final textCopy = opEl.clone(true);
+    for (final br in textCopy.querySelectorAll('br')) {
+      br.replaceWith(Text('\u0000'));
+    }
+    final opText = textCopy.text
+        .replaceAll(RegExp('\u0000[ \t]*\n?'), '\n')
+        .replaceAll('​', '');
 
-    // Developer: look for "Developer:" label anywhere in the OP text.
+    // Developer: the theme's custom thread field when there is one
+    // (LewdCorner "Developer Name", Azkosel's Corner "Developer/Studio"),
+    // else a "Developer:" label anywhere in the OP text.
     String developer = result.developer;
+    if (developer.isEmpty) {
+      developer = fields['developer name'] ??
+          fields['developer/studio'] ??
+          fields['developer'] ??
+          '';
+    }
     if (developer.isEmpty) {
       final devMatch = RegExp(
         r'^Developer[:\s]+(.+)$',
@@ -685,30 +602,44 @@ class MetadataService {
         caseSensitive: false,
       ).firstMatch(opText);
       if (devMatch != null) {
-        developer = devMatch.group(1)?.trim() ?? '';
+        // "Leonave - Patreon - Discord": the developer's links follow a
+        // " - " or " | " separator on the same line; keep only the name.
+        developer = (devMatch.group(1) ?? '')
+            .split(RegExp(r'\s[-|–—]\s'))
+            .first
+            .replaceAll(RegExp(r'[\s\-|–—:]+$'), '')
+            .trim();
       }
     }
     // Fallback: last bracketed segment of the h1 title (e.g. "[DevName]").
     // This is a weak signal — only use it if the OP text gave us nothing.
     if (developer.isEmpty) {
       final titleEl = doc.querySelector('h1.p-title-value');
-      final rawTitle = titleEl?.text.trim() ?? '';
+      final rawTitle = titleEl == null ? '' : _threadTitleText(titleEl);
       final devMatch = RegExp(r'\[([^\[\]]+)\]\s*$').firstMatch(rawTitle);
       if (devMatch != null) developer = devMatch.group(1)?.trim() ?? '';
     }
 
     // Synopsis: look for "Overview:" or "Synopsis:" labeled section.
-    // Capture everything after the label until the next "Label:" header, a
-    // XenForo BBCode tag line, or end-of-string.  Trim whitespace.
+    // Capture everything after the label until the next "Label:" header
+    // (possibly indented, e.g. "Spoiler: Genre:" inside a spoiler block, or
+    // ": Genre:" where the theme draws "Spoiler" as an icon), a XenForo
+    // BBCode tag line, or end-of-string.  Trim whitespace and drop
+    // "View attachment …" placeholder lines.
+    // End-of-string is (?![\s\S]): Dart has no \Z — it matches a literal "Z"
+    // (any "z" here, case-insensitively), which cut "Frozen Past" to "Fro".
     String synopsis = result.synopsis;
     if (synopsis.isEmpty) {
       final synopsisMatch = RegExp(
-        r'(?:Overview|Synopsis)[:\s]*\n?([\s\S]+?)(?=\n[A-Z][^\n:]{0,30}:|\n\[|\Z)',
+        r'(?:Overview|Synopsis)[:\s]*\n?([\s\S]+?)(?=\n[ \t]*:?[ \t]*[A-Z][^\n:]{0,30}:|\n\[|(?![\s\S]))',
         multiLine: true,
         caseSensitive: false,
       ).firstMatch(opText);
       if (synopsisMatch != null) {
-        synopsis = synopsisMatch.group(1)?.trim() ?? '';
+        synopsis = (synopsisMatch.group(1) ?? '')
+            .replaceAll(RegExp(r'^[ \t]*View attachment[^\n]*$', multiLine: true), '')
+            .trim()
+            .replaceAll(RegExp(r'\n{3,}'), '\n\n');
         // Cap to 1 200 chars so the UI doesn't overflow
         if (synopsis.length > 1200) synopsis = synopsis.substring(0, 1200).trimRight();
       }
@@ -721,16 +652,13 @@ class MetadataService {
 
     // ── Re-extract clean title from H1 ───────────────────────────────────
     // The thread page H1 (<h1 class="p-title-value">) renders prefix labels
-    // as <span> elements, so stripping spans + applying _cleanXenforoTitle
-    // gives the correct game title even when search results include prefixes
-    // as plain text.
+    // as <span> elements, so stripping spans (and theme icons) + applying
+    // _cleanXenforoTitle gives the correct game title even when search
+    // results include prefixes as plain text.
     String title = result.title;
     final h1El = doc.querySelector('h1.p-title-value');
     if (h1El != null) {
-      for (final span in h1El.querySelectorAll('span')) {
-        span.remove();
-      }
-      final h1Title = _cleanXenforoTitle(h1El.text.trim());
+      final h1Title = _cleanXenforoTitle(_threadTitleText(h1El));
       if (h1Title.isNotEmpty) title = h1Title;
     }
 
@@ -763,8 +691,29 @@ class MetadataService {
       screenshotUrls: screenshots,
       sourceUrl: result.sourceUrl,
       tags: tags.isNotEmpty ? tags : result.tags,
-      releaseDate: result.releaseDate,
+      releaseDate: result.releaseDate.isNotEmpty
+          ? result.releaseDate
+          : (fields['release date'] ?? ''),
+      previewUrls: previews,
     );
+  }
+
+  /// Custom thread fields some themes show above the first post
+  /// (dl.pairs--customField: <dt> label, <dd> value), keyed by lowercased label.
+  static Map<String, String> _customFields(Element? post) {
+    final fields = <String, String>{};
+    if (post == null) return fields;
+    for (final pair in post.querySelectorAll('dl.pairs--customField')) {
+      final label = (pair.querySelector('dt')?.text ?? '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .replaceAll(RegExp(r':\s*$'), '')
+          .trim()
+          .toLowerCase();
+      final value =
+          (pair.querySelector('dd')?.text ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (label.isNotEmpty && value.isNotEmpty) fields[label] = value;
+    }
+    return fields;
   }
 
   // ── XenForo Login (F95Zone / LewdCorner) ──────────────────────────────────
@@ -932,6 +881,23 @@ class MetadataService {
   /// Downloads image bytes. For authenticated domains (F95Zone / LewdCorner
   /// attachment CDNs) that require session cookies, falls back to fetching
   /// via the ScrapingService WebView cookie store using a JS fetch().
+  /// XenForo attachment links (/attachments/title-png.864396/). On LewdCorner
+  /// they need a logged-in session, so they can't be loaded with plain HTTP.
+  static bool isLoginOnlyImage(String url) => _xfAttachmentRe.hasMatch(url);
+  static final _xfAttachmentRe = RegExp(r'/attachments/[^/?#]+\.\d+/?(\?|$)');
+
+  /// Image bytes for previewing a login-only image (see [isLoginOnlyImage]),
+  /// fetched through the logged-in WebView when plain HTTP is refused.
+  static Future<Uint8List?> fetchImageBytes(
+      String url, ScrapingService scraping) async {
+    final bytes = await _fetchImageBytes(url, scraping);
+    if (bytes == null) return null;
+    return bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+  }
+
+  /// Distinguishes concurrent WebView image fetches' result slots.
+  static int _webFetchSeq = 0;
+
   static Future<List<int>?> _fetchImageBytes(
       String url, ScrapingService? scraping) async {
     // First: try a plain HTTP request (works for public CDNs, VNDB, itch.io)
@@ -965,36 +931,58 @@ class MetadataService {
     // (with leading dot), so the subdomain attachments.f95zone.to shares them.
     try {
       if (!scraping.isInitialized) return null;
-      final js = '''
-(async () => {
-  try {
-    const r = await fetch(${_jsString(url)}, {credentials: 'include'});
-    if (!r.ok) return 'ERR:' + r.status;
-    const ct = r.headers.get('content-type') || '';
-    if (!ct.startsWith('image/')) return 'ERR:ct:' + ct;
-    const buf = await r.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    const chunkSize = 8192;
-    let bin = '';
-    for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-    }
-    return btoa(bin);
-  } catch(e) { return 'ERR:' + String(e); }
+      // WebView2's executeScript doesn't wait for promises — an async IIFE
+      // comes back as an empty object — so start the fetch with its result
+      // parked in a page global, then poll for it.
+      final slot = 'f${_webFetchSeq++}';
+      final startJs = '''
+(() => {
+  const slots = window.__vnpFetch = window.__vnpFetch || {};
+  slots['$slot'] = null;
+  (async () => {
+    try {
+      const r = await fetch(${_jsString(url)}, {credentials: 'include'});
+      if (!r.ok) { slots['$slot'] = 'ERR:' + r.status; return; }
+      const ct = r.headers.get('content-type') || '';
+      if (!ct.startsWith('image/')) { slots['$slot'] = 'ERR:ct:' + ct; return; }
+      const buf = await r.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const chunkSize = 8192;
+      let bin = '';
+      for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      slots['$slot'] = btoa(bin);
+    } catch (e) { slots['$slot'] = 'ERR:' + String(e); }
+  })();
+  return 'started';
+})()
+''';
+      final pollJs = '''
+(() => {
+  const slots = window.__vnpFetch;
+  if (!slots || !('$slot' in slots)) return 'ERR:page changed';
+  const v = slots['$slot'];
+  if (v === null) return null;
+  delete slots['$slot'];
+  return v;
 })()
 ''';
       // Evaluate on the image's own origin so the fetch is same-origin (no CORS).
       final base = _siteBaseUrl(url);
       debugPrint('WebView image fetch: base=$base url=$url');
-      final result = await scraping.evalOnPage(base, js);
-      if (result is String) {
+      await scraping.evalOnOrigin(base, startJs);
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (DateTime.now().isBefore(deadline)) {
+        await Future.delayed(const Duration(milliseconds: 150));
+        final result = await scraping.evalOnOrigin(base, pollJs);
+        if (result is! String) continue; // still fetching
         if (result.startsWith('ERR:')) {
           debugPrint('WebView image fetch JS error ($url): $result');
           return null;
         }
-        if (result.isNotEmpty) {
-          return base64Decode(result);
-        }
+        if (result.isNotEmpty) return base64Decode(result);
+        break;
       }
       debugPrint('WebView image fetch returned no data for $url');
     } catch (e) {
@@ -1034,6 +1022,10 @@ class MetadataService {
     final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
     if (path.endsWith('.png')) return '.png';
     if (path.endsWith('.webp')) return '.webp';
+    // XenForo attachment links carry the extension in the slug:
+    // /attachments/title3-png.864396/
+    final slugExt = RegExp(r'-(png|webp)\.\d+/?$').firstMatch(path);
+    if (slugExt != null) return '.${slugExt.group(1)}';
     return '.jpg';
   }
 }

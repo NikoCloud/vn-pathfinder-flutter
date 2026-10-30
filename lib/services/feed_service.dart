@@ -18,6 +18,18 @@ import 'scraping_service.dart';
 class FeedService {
   static const _ua = 'VN-Pathfinder/2.0 (https://github.com/NikoCloud/vn-pathfinder-flutter)';
 
+  /// JS returning a loaded document's source: the XML itself for an XML
+  /// document, or the <pre> text when Chromium shows the response as text.
+  static const _documentSourceJs = '''
+(() => {
+  const root = document.documentElement;
+  if (root && root.nodeName.toLowerCase() !== 'html') {
+    return new XMLSerializer().serializeToString(document);
+  }
+  const pre = document.querySelector('body > pre');
+  return pre ? pre.textContent : (root ? root.outerHTML : '');
+})()''';
+
   // ── F95Zone tag ID → name lookup (from latestUpdates.tags in page HTML) ──
   static const Map<int, String> _f95Tags = {
     7: 'adventure', 9: 'animated', 12: 'bdsm', 13: 'bestiality',
@@ -263,8 +275,11 @@ class FeedService {
       }
 
       // Fall back to ScrapingService if plain HTTP failed or auth is required.
+      // Read the document's source text, not its outerHTML: Chromium renders
+      // a feed as plain text inside <html><body><pre>, which isn't valid XML.
       if (body.isEmpty) {
-        body = await scraping.getString(feedUrl);
+        final raw = await scraping.evalOnPage(feedUrl, _documentSourceJs);
+        body = raw is String ? raw : '';
       }
 
       if (body.isEmpty) return [];

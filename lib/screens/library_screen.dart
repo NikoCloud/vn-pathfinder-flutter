@@ -25,6 +25,7 @@ class LibraryScreen extends ConsumerWidget {
     final ud = ref.watch(userDataProvider);
     final selectedKey = libState.selectedBaseKey;
     final isGrid = ref.watch(gridViewProvider);
+    final imageEpoch = ref.watch(imageEpochProvider);
 
     GameGroup? selected;
     if (selectedKey != null) {
@@ -54,7 +55,9 @@ class LibraryScreen extends ConsumerWidget {
         ),
         Expanded(
           child: selected != null
-              ? _DetailPane(group: selected, userData: ud)
+              // Keyed on the image epoch so freshly fetched art replaces the
+              // cached images after Fetch Metadata.
+              ? _DetailPane(key: ValueKey(imageEpoch), group: selected, userData: ud)
               : const _EmptyState(),
         ),
       ],
@@ -124,7 +127,7 @@ class _DetailPane extends ConsumerStatefulWidget {
   final GameGroup group;
   final UserData userData;
 
-  const _DetailPane({required this.group, required this.userData});
+  const _DetailPane({super.key, required this.group, required this.userData});
 
   @override
   ConsumerState<_DetailPane> createState() => _DetailPaneState();
