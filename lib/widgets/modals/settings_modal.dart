@@ -743,6 +743,15 @@ class _NetworkPanel extends ConsumerWidget {
           ),
         ),
         _SettingRow(
+          label: 'Game Update Checks',
+          subtitle: "Ask F95Zone which version each game's thread is on (uses links saved by Fetch Metadata)",
+          trailing: _ToggleSwitch(
+            value: settings.checkGameUpdates,
+            onChanged: notifier.setCheckGameUpdates,
+            disabled: locked,
+          ),
+        ),
+        _SettingRow(
           label: 'Metadata Scraping',
           subtitle: 'Fetch game info from F95Zone, LewdCorner, itch.io',
           trailing: _ToggleSwitch(

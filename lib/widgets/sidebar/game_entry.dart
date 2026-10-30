@@ -1,12 +1,14 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme.dart';
 import '../../utils/formatters.dart';
 import '../../models/game_group.dart';
+import '../../models/game_status.dart';
 import '../../models/user_data.dart';
 import '../../providers/library_provider.dart';
+import '../../providers/update_provider.dart';
+import '../common/status_menu.dart';
 import '../../services/scanner_service.dart';
 
 class GameEntry extends ConsumerStatefulWidget {
@@ -34,7 +36,8 @@ class _GameEntryState extends ConsumerState<GameEntry> {
 
   @override
   Widget build(BuildContext context) {
-    final played = _isPlayed();
+    // Same test the status filter uses (manual mark, playtime or saves).
+    final played = isGamePlayed(widget.group, widget.userData);
 
     final bg = widget.selected
         ? AppColors.bgActive
@@ -101,6 +104,15 @@ class _GameEntryState extends ConsumerState<GameEntry> {
                 ),
               ),
               const SizedBox(width: 6),
+              if (ref.watch(availableUpdatesProvider)[widget.group.baseKey]
+                  case final update?) ...[
+                Tooltip(
+                  message: 'Update available: ${fmtVersion(update.version)} on ${update.sourceLabel}',
+                  child: const Icon(Icons.arrow_circle_up_rounded,
+                      size: 14, color: updateAvailableColor),
+                ),
+                const SizedBox(width: 6),
+              ],
               // Played status dot
               Container(
                 width: 7,
@@ -123,32 +135,6 @@ class _GameEntryState extends ConsumerState<GameEntry> {
         ),
       ),
     );
-  }
-
-  bool _isPlayed() {
-    final g = widget.group;
-    final ud = widget.userData;
-    for (final v in g.versions) {
-      final fn = v.folderName;
-      if (ud.manualUnplayed.contains(fn)) return false;
-      if (ud.manualPlayed.contains(fn)) return true;
-      if (v.localSaveDir.existsSync()) {
-        try {
-          if (v.localSaveDir.listSync().isNotEmpty) { return true; }
-        } catch (_) {}
-      }
-      if (v.appdataSaveDir != null && v.appdataSaveDir!.existsSync()) {
-        try {
-          if (v.appdataSaveDir!.listSync().whereType<File>().any(
-                (f) => f.path.endsWith('.save') ||
-                    f.uri.pathSegments.last == 'persistent',
-              )) {
-            return true;
-          }
-        } catch (_) {}
-      }
-    }
-    return false;
   }
 
   String _metaLine() {

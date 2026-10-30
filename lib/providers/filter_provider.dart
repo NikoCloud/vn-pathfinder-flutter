@@ -1,11 +1,17 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/game_group.dart';
+import '../models/game_status.dart';
 import '../models/user_data.dart';
 import 'library_provider.dart';
+import 'update_provider.dart';
 
 enum SortMode { alpha, recentlyPlayed, dateAdded }
 enum SearchMode { title, creator }
 enum TagMatchMode { any, all } // OR / AND
+
+const _allStatusIds = {
+  'unplayed', 'playing', 'updated', 'on-hold', 'completed', 'skimmed', 'abandoned',
+};
 
 class FilterState {
   final String query;
@@ -14,8 +20,10 @@ class FilterState {
   final List<String> excludeTags;
   final TagMatchMode tagMatchMode;
   final Set<String> engines;      // 'renpy','rpgm','unity','html','unreal','other'
-  final Set<String> statuses;     // 'playing','completed','on-hold','unplayed','abandoned'
+  final Set<String> statuses;     // GameStatus ids
   final SortMode sort;
+  final bool updatesOnly;         // only games with a newer version on a forum
+  final bool unfetchedOnly;       // only games with no .vnpf folder
 
   const FilterState({
     this.query = '',
@@ -24,8 +32,10 @@ class FilterState {
     this.excludeTags = const [],
     this.tagMatchMode = TagMatchMode.any,
     this.engines = const {'renpy', 'rpgm', 'unity', 'html', 'unreal', 'other'},
-    this.statuses = const {'playing', 'completed', 'on-hold', 'unplayed', 'abandoned'},
+    this.statuses = _allStatusIds,
     this.sort = SortMode.alpha,
+    this.updatesOnly = false,
+    this.unfetchedOnly = false,
   });
 
   FilterState copyWith({
@@ -37,6 +47,8 @@ class FilterState {
     Set<String>? engines,
     Set<String>? statuses,
     SortMode? sort,
+    bool? updatesOnly,
+    bool? unfetchedOnly,
   }) => FilterState(
     query: query ?? this.query,
     searchMode: searchMode ?? this.searchMode,
@@ -46,6 +58,8 @@ class FilterState {
     engines: engines ?? this.engines,
     statuses: statuses ?? this.statuses,
     sort: sort ?? this.sort,
+    updatesOnly: updatesOnly ?? this.updatesOnly,
+    unfetchedOnly: unfetchedOnly ?? this.unfetchedOnly,
   );
 
   bool get isActive =>
@@ -85,6 +99,9 @@ class FilterNotifier extends StateNotifier<FilterState> {
     enabled ? s.add(engine) : s.remove(engine);
     state = state.copyWith(engines: s);
   }
+
+  void setUpdatesOnly(bool v) => state = state.copyWith(updatesOnly: v);
+  void setUnfetchedOnly(bool v) => state = state.copyWith(unfetchedOnly: v);
 
   void toggleStatus(String status, bool enabled) {
     final s = Set<String>.from(state.statuses);
@@ -160,23 +177,21 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
     }).toList();
   }
 
-  // Status filter (only when not all statuses selected)
-  const allStatuses = {'playing', 'completed', 'on-hold', 'unplayed', 'abandoned'};
-  if (!filter.statuses.containsAll(allStatuses)) {
-    result = result.where((g) {
-      final explicit = ud.status[g.baseKey];
-      final String gameStatus;
-      if (explicit != null && explicit.isNotEmpty) {
-        gameStatus = explicit;
-      } else {
-        // Derive: any playtime → playing, otherwise → unplayed
-        final hasPlay = g.versions.any((v) =>
-            (ud.playtime[v.folderName] ?? 0) > 0 ||
-            ud.manualPlayed.contains(v.folderName));
-        gameStatus = hasPlay ? 'playing' : 'unplayed';
-      }
-      return filter.statuses.contains(gameStatus);
-    }).toList();
+  if (filter.updatesOnly) {
+    final updates = ref.watch(availableUpdatesProvider);
+    result = result.where((g) => updates.containsKey(g.baseKey)).toList();
+  }
+
+  if (filter.unfetchedOnly) {
+    result = result.where((g) => g.isUnfetched).toList();
+  }
+
+  // Status filter (only when not all statuses selected) — the same status the
+  // library shows: picked by the user, or detected (see effectiveGameStatus).
+  if (!filter.statuses.containsAll(_allStatusIds)) {
+    result = result
+        .where((g) => filter.statuses.contains(effectiveGameStatus(g, ud).id))
+        .toList();
   }
 
   // Sort
@@ -205,6 +220,16 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   return result;
 });
 
+/// How many library games the Unfetched filter would show.
+final unfetchedCountProvider = Provider<int>((ref) {
+  final ud = ref.watch(userDataProvider);
+  return ref
+      .watch(libraryProvider)
+      .groups
+      .where((g) => g.versions.isNotEmpty && !ud.hidden.contains(g.baseKey) && g.isUnfetched)
+      .length;
+});
+
 /// Returns the merged tag set for a group:
 ///   • user-assigned tags stored in UserData (from 1.0 or the Properties modal)
 ///   • tags from every version's .vnpf/metadata.json via GameVersion.metaTags
@@ -217,18 +242,8 @@ Set<String> _allTagsForGroup(GameGroup g, UserData ud) {
   return tags;
 }
 
-DateTime? _latestPlay(GameGroup g, UserData ud) {
-  DateTime? latest;
-  for (final v in g.versions) {
-    final iso = ud.lastPlayed[v.folderName];
-    if (iso == null) continue;
-    try {
-      final dt = DateTime.parse(iso);
-      if (latest == null || dt.isAfter(latest)) latest = dt;
-    } catch (_) {}
-  }
-  return latest;
-}
+// Play sessions are recorded per game (baseKey); saves count as play too.
+DateTime? _latestPlay(GameGroup g, UserData ud) => gameLastPlayedAt(g, ud);
 
 DateTime _folderMtime(GameGroup g) {
   try {

@@ -3,10 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../theme.dart';
 import '../../models/game_group.dart';
+import '../../models/game_status.dart';
 import '../../models/user_data.dart';
 import '../../providers/feed_provider.dart';
+import '../../providers/update_provider.dart';
+import '../../services/update_check_service.dart';
+import '../common/status_menu.dart';
 import '../../utils/formatters.dart';
 
 class MetaBar extends ConsumerStatefulWidget {
@@ -51,7 +56,8 @@ class _MetaBarState extends ConsumerState<MetaBar> {
     final ud = widget.userData;
 
     final playtimeSeconds = ud.playtime[baseKey] ?? 0;
-    final lastPlayed = ud.lastPlayed[baseKey];
+    // Last tracked session or newest save, like the status rules.
+    final lastPlayed = gameLastPlayedAt(widget.group, ud)?.toIso8601String();
     final playCount = ud.playCount[baseKey] ?? 0;
 
     // Look up whether the feed has seen a version for this game.
@@ -111,6 +117,7 @@ class _MetaBarState extends ConsumerState<MetaBar> {
           _VersionStat(
             installed: installedVersion,
             feedHint: feedHint,
+            update: ref.watch(availableUpdatesProvider)[widget.group.baseKey],
           ),
         ],
       ),
@@ -138,7 +145,8 @@ class _VersionStat extends StatelessWidget {
   final String installed;
   final FeedVersionHint? feedHint;
 
-  const _VersionStat({required this.installed, this.feedHint});
+  final AvailableUpdate? update;
+  const _VersionStat({required this.installed, this.feedHint, this.update});
 
   String get _sourceLabel {
     if (feedHint == null) return '';
@@ -174,7 +182,40 @@ class _VersionStat extends StatelessWidget {
             color: AppColors.textPrimary,
           ),
         ),
-        if (feedHint != null) ...[
+        if (update case final u?) ...[
+          const SizedBox(height: 3),
+          Tooltip(
+            message: 'Open the ${u.sourceLabel} thread to download it',
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: () => launchUrl(Uri.parse(u.url)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: updateAvailableColor.withValues(alpha: 0.14),
+                    borderRadius: AppRadius.borderSm,
+                    border: Border.all(color: updateAvailableColor.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.arrow_circle_up_rounded, size: 10, color: updateAvailableColor),
+                    const SizedBox(width: 3),
+                    Text(
+                      'Update available · ${fmtVersion(u.version)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w600,
+                        color: updateAvailableColor,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    const Icon(Icons.open_in_new, size: 9, color: updateAvailableColor),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ] else if (feedHint != null) ...[
           const SizedBox(height: 3),
           Row(
             mainAxisSize: MainAxisSize.min,

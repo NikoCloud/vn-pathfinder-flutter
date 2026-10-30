@@ -11,6 +11,7 @@ class AppSettings {
   final String libraryDir;
   final bool lockdown;
   final bool checkUpdates;
+  final bool checkGameUpdates;   // ask F95Zone which version each game's thread is on
   final bool fetchMetadata;
   final bool allowProviderLogin;
   final bool allowDownloadLinks;
@@ -41,6 +42,7 @@ class AppSettings {
     this.libraryDir = '',
     this.lockdown = true,
     this.checkUpdates = false,
+    this.checkGameUpdates = false,
     this.fetchMetadata = false,
     this.allowProviderLogin = false,
     this.allowDownloadLinks = false,
@@ -65,6 +67,7 @@ class AppSettings {
     libraryDir: json['library_dir'] as String? ?? '',
     lockdown: json['lockdown'] as bool? ?? true,
     checkUpdates: json['check_updates'] as bool? ?? true,
+    checkGameUpdates: json['check_game_updates'] as bool? ?? true,
     fetchMetadata: json['fetch_metadata'] as bool? ?? true,
     allowProviderLogin: json['allow_provider_login'] as bool? ?? true,
     allowDownloadLinks: json['allow_download_links'] as bool? ?? true,
@@ -92,6 +95,7 @@ class AppSettings {
     'library_dir': libraryDir,
     'lockdown': lockdown,
     'check_updates': checkUpdates,
+    'check_game_updates': checkGameUpdates,
     'fetch_metadata': fetchMetadata,
     'allow_provider_login': allowProviderLogin,
     'allow_download_links': allowDownloadLinks,
@@ -116,6 +120,7 @@ class AppSettings {
     String? libraryDir,
     bool? lockdown,
     bool? checkUpdates,
+    bool? checkGameUpdates,
     bool? fetchMetadata,
     bool? allowProviderLogin,
     bool? allowDownloadLinks,
@@ -138,6 +143,7 @@ class AppSettings {
     libraryDir: libraryDir ?? this.libraryDir,
     lockdown: lockdown ?? this.lockdown,
     checkUpdates: checkUpdates ?? this.checkUpdates,
+    checkGameUpdates: checkGameUpdates ?? this.checkGameUpdates,
     fetchMetadata: fetchMetadata ?? this.fetchMetadata,
     allowProviderLogin: allowProviderLogin ?? this.allowProviderLogin,
     allowDownloadLinks: allowDownloadLinks ?? this.allowDownloadLinks,
@@ -198,6 +204,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setLibraryDir(String path) => update((s) => s.copyWith(libraryDir: path));
   void setLockdown(bool v) => update((s) => s.copyWith(lockdown: v));
   void setCheckUpdates(bool v) => update((s) => s.copyWith(checkUpdates: v));
+  void setCheckGameUpdates(bool v) => update((s) => s.copyWith(checkGameUpdates: v));
   void setFetchMetadata(bool v) => update((s) => s.copyWith(fetchMetadata: v));
   void setAllowProviderLogin(bool v) => update((s) => s.copyWith(allowProviderLogin: v));
   void setAllowDownloadLinks(bool v) => update((s) => s.copyWith(allowDownloadLinks: v));

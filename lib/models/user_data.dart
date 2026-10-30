@@ -9,10 +9,10 @@ class UserData {
   final Set<String> manualUnplayed;               // folder_name → force-unplayed
   final Map<String, String> customDisplayNames;   // base_key → display name
 
-  // v2
-  final Map<String, int> playtime;               // folder_name → seconds
-  final Map<String, String> lastPlayed;          // folder_name → ISO datetime
-  final Map<String, int> playCount;              // folder_name → N
+  // v2 — 1.0 keyed these by folder name; 2.0 records sessions per base_key
+  final Map<String, int> playtime;               // base_key → seconds
+  final Map<String, String> lastPlayed;          // base_key → ISO datetime
+  final Map<String, int> playCount;              // base_key → N
   final Map<String, List<String>> tags;          // base_key → [tag, ...]
   final Map<String, String> customArt;           // base_key → absolute path
   final Map<String, String> patchAssignments;    // archive_name → base_key
@@ -22,9 +22,13 @@ class UserData {
   final Map<String, Map<String, bool>> appliedPatches;
   final List<String> customPresets;              // user-promoted preset tags
 
-  // Play status per game: 'playing' | 'completed' | 'on-hold' | 'abandoned'
-  // Missing key = derived from playtime (has playtime → 'playing', else 'unplayed')
-  final Map<String, String> status;             // base_key → status string
+  // Play status the user picked, by GameStatus id. Missing key = detected
+  // (Unplayed / Playing / Updated) — see effectiveGameStatus.
+  final Map<String, String> status;             // base_key → status id
+
+  // 2.0 addition (1.0 ignores it): the version string last launched from the
+  // app, so "Updated since last played" can compare versions.
+  final Map<String, String> lastPlayedVersion;  // base_key → version_str
 
   const UserData({
     this.notes = const {},
@@ -41,6 +45,7 @@ class UserData {
     this.appliedPatches = const {},
     this.customPresets = const [],
     this.status = const {},
+    this.lastPlayedVersion = const {},
   });
 
   factory UserData.empty() => const UserData(
@@ -74,6 +79,8 @@ class UserData {
           : {},
       customPresets: List<String>.from(json['custom_presets'] as List? ?? []),
       status: Map<String, String>.from(json['status'] as Map? ?? {}),
+      lastPlayedVersion: Map<String, String>.from(
+          json['last_played_version'] as Map? ?? {}),
     );
   }
 
@@ -93,6 +100,7 @@ class UserData {
     'applied_patches': appliedPatches,
     'custom_presets': customPresets,
     'status': status,
+    'last_played_version': lastPlayedVersion,
   };
 
   UserData copyWith({
@@ -110,6 +118,7 @@ class UserData {
     Map<String, Map<String, bool>>? appliedPatches,
     List<String>? customPresets,
     Map<String, String>? status,
+    Map<String, String>? lastPlayedVersion,
   }) => UserData(
     notes: notes ?? this.notes,
     hidden: hidden ?? this.hidden,
@@ -125,5 +134,6 @@ class UserData {
     appliedPatches: appliedPatches ?? this.appliedPatches,
     customPresets: customPresets ?? this.customPresets,
     status: status ?? this.status,
+    lastPlayedVersion: lastPlayedVersion ?? this.lastPlayedVersion,
   );
 }

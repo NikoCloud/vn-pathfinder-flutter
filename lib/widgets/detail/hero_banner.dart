@@ -6,10 +6,13 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../theme.dart';
 import '../../utils/formatters.dart';
 import '../../models/game_group.dart';
+import '../../models/game_status.dart';
 import '../../models/user_data.dart';
+import '../../providers/library_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/play_tracker_provider.dart';
 import '../../services/scanner_service.dart';
+import '../common/status_menu.dart';
 import 'screenshot_carousel.dart';
 import 'screenshot_lightbox.dart';
 
@@ -313,6 +316,8 @@ class _HeroContentState extends ConsumerState<_HeroContent> {
                   ),
                   const SizedBox(width: 6),
                   _PropertiesButton(onTap: widget.onProperties),
+                  const SizedBox(width: 6),
+                  _StatusButton(group: g),
                 ],
               ),
             ],
@@ -566,6 +571,94 @@ class _PropertiesButtonState extends State<_PropertiesButton> {
               Icons.settings_outlined,
               size: 18,
               color: _hovered ? AppColors.accent : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Status button ─────────────────────────────────────────────────────────────
+
+/// Shows the game's status — picked by the user, or detected ("auto") — and
+/// opens the status menu to change it.
+class _StatusButton extends ConsumerStatefulWidget {
+  final GameGroup group;
+  const _StatusButton({required this.group});
+
+  @override
+  ConsumerState<_StatusButton> createState() => _StatusButtonState();
+}
+
+class _StatusButtonState extends ConsumerState<_StatusButton> {
+  bool _hovered = false;
+
+  Future<void> _openMenu(GameStatus detected, GameStatus? picked) async {
+    final box = context.findRenderObject()! as RenderBox;
+    final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final below = box.localToGlobal(Offset(0, box.size.height + 4), ancestor: overlay);
+    final value = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(below & box.size, Offset.zero & overlay.size),
+      color: AppColors.bgCard,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppRadius.borderMd,
+        side: const BorderSide(color: AppColors.border),
+      ),
+      items: statusMenuEntries(detected: detected, picked: picked),
+    );
+    if (value != null && mounted) {
+      ref.read(userDataProvider.notifier).setStatus(widget.group.baseKey, value);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ud = ref.watch(userDataProvider);
+    final status = effectiveGameStatus(widget.group, ud);
+    final picked = GameStatus.fromId(ud.status[widget.group.baseKey]);
+
+    return Tooltip(
+      message: picked == null ? 'Status — detected automatically' : 'Status',
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => _openMenu(detectedGameStatus(widget.group, ud), picked),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: _hovered ? const Color(0x1A4A9E6E) : AppColors.bgSecondary,
+              border: Border.all(
+                color: _hovered ? AppColors.accent : AppColors.borderLight,
+              ),
+              borderRadius: AppRadius.borderMd,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(statusIcon(status), size: 16, color: statusColor(status)),
+                const SizedBox(width: 8),
+                Text(status.label,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    )),
+                if (picked == null) ...[
+                  const SizedBox(width: 5),
+                  Text('auto',
+                      style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted)),
+                ],
+                const SizedBox(width: 4),
+                Icon(Icons.expand_more,
+                    size: 16,
+                    color: _hovered ? AppColors.accent : AppColors.textSecondary),
+              ],
             ),
           ),
         ),

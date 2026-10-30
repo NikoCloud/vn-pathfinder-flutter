@@ -43,6 +43,16 @@ void main() {
     expect(versionOf('AFamilyVenture-0.09_V4_Alpha-pc'), '0.09_V4_Alpha');
   });
 
+  test('a space separates dotted versions only', () {
+    expect(parseFolderName('New in City 0.3.3'), ('newincity', '0.3.3', 'New in City'));
+    expect(parseFolderName('BBUltimate v0.11').$1, parseFolderName('BBUltimate v0.8').$1);
+    expect(versionOf('School, Love & Friends v2.15'), 'v2.15');
+    // Numbers that are part of the title stay there.
+    expect(parseFolderName('Persona 4 Rise Gaiden'), ('persona4risegaiden', '', 'Persona 4 Rise Gaiden'));
+    expect(versionOf('Cyberpunk 2077'), '');
+    expect(versionOf('Love Story v2'), '');
+  });
+
   test('ordering: unknown < Demo < numbers < Final; pre-releases and letters', () {
     final sorted = ['Final', '0.5b', '', '0.5', '1.0', 'Demo', '0.5a', '0.5 Beta', '0.11.12', '0.5 Alpha', '0.12.7']
       ..sort(compareVersionStrings);

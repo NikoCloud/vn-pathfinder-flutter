@@ -62,7 +62,7 @@ class PlayTrackerNotifier extends StateNotifier<PlayTrackerState> {
       });
 
       // Record when the process exits
-      proc.exitCode.then((_) => _onExit(baseKey));
+      proc.exitCode.then((_) => _onExit(baseKey, version.versionStr));
 
       return null; // success
     } catch (e) {
@@ -70,7 +70,7 @@ class PlayTrackerNotifier extends StateNotifier<PlayTrackerState> {
     }
   }
 
-  void _onExit(String baseKey) {
+  void _onExit(String baseKey, String versionStr) {
     _ticker?.cancel();
     _ticker = null;
     final seconds = state.elapsedSeconds;
@@ -80,7 +80,8 @@ class PlayTrackerNotifier extends StateNotifier<PlayTrackerState> {
 
     // Only record meaningful sessions (> 10 seconds to avoid accidental clicks)
     if (seconds > 10) {
-      _ref.read(userDataProvider.notifier).recordPlaySession(baseKey, seconds);
+      _ref.read(userDataProvider.notifier)
+          .recordPlaySession(baseKey, seconds, versionStr: versionStr);
     }
   }
 

@@ -4,9 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../../models/game_group.dart';
+import '../../models/game_status.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/play_tracker_provider.dart';
+import '../common/status_menu.dart';
 import '../modals/properties_modal.dart';
 import '../../theme.dart';
 
@@ -91,13 +93,13 @@ void showGameContextMenu({
         borderRadius: AppRadius.borderMd,
         side: const BorderSide(color: AppColors.border),
       ),
-      items: [
-        _statusItem('unplayed', 'Unplayed', Icons.circle_outlined),
-        _statusItem('playing', 'Playing', Icons.play_circle_outline, color: AppColors.playGreen),
-        _statusItem('completed', 'Completed', Icons.check_circle_outline, color: AppColors.accent),
-        _statusItem('on-hold', 'On Hold', Icons.pause_circle_outline, color: Colors.orange),
-        _statusItem('abandoned', 'Abandoned', Icons.do_not_disturb_on_outlined, color: AppColors.danger),
-      ],
+      items: () {
+        final ud = ref.read(userDataProvider);
+        return statusMenuEntries(
+          detected: detectedGameStatus(group, ud),
+          picked: GameStatus.fromId(ud.status[group.baseKey]),
+        );
+      }(),
     );
 
     if (statusResult != null) {
@@ -172,14 +174,6 @@ void _openSavesFolder(String gameFolderPath, WidgetRef ref) {
   }
 
   ref.read(notificationProvider.notifier).warning('No saves folder found for this game.');
-}
-
-PopupMenuItem<String> _statusItem(String value, String label, IconData icon, {Color? color}) {
-  return PopupMenuItem(
-    value: value,
-    height: 36,
-    child: _MenuRow(icon: icon, label: label, color: color),
-  );
 }
 
 class _MenuRow extends StatelessWidget {

@@ -225,7 +225,8 @@ String _normaliseTitle(String t) => t
     .trim()
     .toLowerCase();
 
-String? _extractFeedVersion(RawFeedItem item) {
+/// The version a feed item announces ("Version: …" line in its body).
+String? extractFeedVersion(RawFeedItem item) {
   // F95Zone / LewdCorner SAM API puts version on its own line as "Version: …"
   final m = RegExp(r'^Version:\s*(.+)$', multiLine: true).firstMatch(item.rawBody);
   if (m != null) return m.group(1)?.trim();
@@ -236,7 +237,7 @@ final feedVersionMapProvider = Provider<Map<String, FeedVersionHint>>((ref) {
   final items = ref.watch(feedProvider).items; // already sorted newest-first
   final map = <String, FeedVersionHint>{};
   for (final item in items) {
-    final version = _extractFeedVersion(item);
+    final version = extractFeedVersion(item);
     if (version == null || version.isEmpty) continue;
     final key = _normaliseTitle(item.title);
     if (key.isEmpty) continue;

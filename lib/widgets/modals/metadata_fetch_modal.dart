@@ -827,11 +827,13 @@ class _ResultItemState extends State<_ResultItem> {
               const SizedBox(height: 2),
               Row(children: [
                 if (r.developer.isNotEmpty) ...[
-                  Text(r.developer,
-                      style: GoogleFonts.inter(
-                          fontSize: 10, color: AppColors.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
+                  Flexible(
+                    child: Text(r.developer,
+                        style: GoogleFonts.inter(
+                            fontSize: 10, color: AppColors.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
                   const SizedBox(width: 6),
                 ],
                 if (r.releaseDate.isNotEmpty)

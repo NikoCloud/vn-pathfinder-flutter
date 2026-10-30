@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import '../models/archive_item.dart';
 import '../models/game_group.dart';
@@ -20,13 +22,15 @@ const _platformSuffixes = {
 
 // Matches version suffixes in folder names. Chapter/Episode keep a number that
 // follows a separator ("Chapter-1") without swallowing a platform tag after it
-// ("Episode-10-pc" → "Episode-10").
+// ("Episode-10-pc" → "Episode-10"). A space also separates a version, but only
+// a dotted one ("New in City 0.3.3", "BBUltimate v0.11") so titles like
+// "Persona 4" or "Cyberpunk 2077" keep their numbers.
 final _versionRe = RegExp(
-  r'[-_]'
+  r'(?:[-_]|\s(?=v?\.?\d+\.\d))'
   r'(v\.?\d[\w.]*|\d+\.\d[\w.]*|\d{3,}|Demo|DEMO|demo'
   r'|Chapter[-_]?\d[\w.]*|Chapter\w*|Day\d+[\w_]*|Act\.[\w.]+|Final|FINAL'
   r'|VER_[\w.]+|Vers\.[\w.]+|Episode[-_]?\d[\w.]*|Episode\w*)'
-  r'(?:[-_].+)?$',
+  r'(?:[-_\s].+)?$',
   caseSensitive: false,
 );
 
@@ -402,6 +406,8 @@ GameVersion? scanGameVersion(Directory dir) {
     }
   } catch (_) {}
 
+  final localSaves = Directory(p.join(dir.path, 'game', 'saves'));
+  final appdataSaves = renpy ? _resolveAppdata(dir, baseKey) : null;
   return GameVersion(
     folderName: p.basename(dir.path),
     folderPath: dir,
@@ -409,11 +415,163 @@ GameVersion? scanGameVersion(Directory dir) {
     versionStr: versionStr,
     displayName: displayName,
     exePath: exePath,
-    localSaveDir: Directory(p.join(dir.path, 'game', 'saves')),
-    appdataSaveDir: renpy ? _resolveAppdata(dir, baseKey) : null,
+    localSaveDir: localSaves,
+    appdataSaveDir: appdataSaves,
     metadata: loadGameMetadata(dir),
     isRenpy: renpy,
+    saves: _readSaves(localSaves, appdataSaves),
+    hasVnpf: Directory(p.join(dir.path, _metadataDir)).existsSync(),
   );
+}
+
+/// Reads a version's saves from its local game/saves folder and Ren'Py's
+/// AppData folder (Ren'Py writes each save to both; AppData also keeps saves
+/// from earlier installs). Kept cheap: name listings plus a few file stats.
+///   • Save names say who made them: "auto-1-LT1" autosave, "quick-1-LT1"
+///     quicksave, "1-1-LT1" a save the player made; engine/game-made saves
+///     ("_tracesave-…", named ones) are ignored.
+///   • Ren'Py rotates autosaves so auto-1 is always the newest, and rewrites
+///     `persistent` whenever the game runs — their times stand in for "last
+///     played", and auto-1's own record gives the game version last played.
+SaveInfo _readSaves(Directory local, Directory? appdata) {
+  final localNames = _listNames(local);
+  final hasLocalSaves = localNames.any((n) => n.endsWith('.save'));
+  // Counts from both folders' names; file stats/reads from the local copy
+  // when this version has one.
+  final names = {...localNames, if (appdata != null) ..._listNames(appdata)};
+  final dir = hasLocalSaves || appdata == null ? local : appdata;
+
+  var manual = 0, auto = 0;
+  for (final n in names) {
+    if (!n.endsWith('.save')) continue;
+    if (n.startsWith('auto-')) {
+      auto++;
+    } else if (n.startsWith('quick-') || RegExp(r'^\d+-\d+').hasMatch(n)) {
+      manual++;
+    }
+  }
+
+  File fileFor(String name) {
+    final preferred = File(p.join(dir.path, name));
+    if (appdata == null || preferred.existsSync()) return preferred;
+    return File(p.join(appdata.path, name));
+  }
+
+  DateTime? modified(String name) {
+    try {
+      return fileFor(name).lastModifiedSync();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // The newest save: auto-1, else quick-1, else any save the player made.
+  String? newest;
+  for (final pattern in [RegExp(r'^auto-1[-.]'), RegExp(r'^quick-1[-.]'), RegExp(r'^\d+-\d+')]) {
+    newest = names.where((n) => n.endsWith('.save') && pattern.hasMatch(n)).firstOrNull;
+    if (newest != null) break;
+  }
+  final newestAt = newest == null ? null : modified(newest);
+
+  DateTime? lastSaveAt = newestAt;
+  for (final source in [local, ?appdata]) {
+    final persistent = File(p.join(source.path, 'persistent'));
+    try {
+      if (persistent.existsSync()) {
+        final t = persistent.lastModifiedSync();
+        if (lastSaveAt == null || t.isAfter(lastSaveAt)) lastSaveAt = t;
+      }
+    } catch (_) {}
+  }
+
+  return SaveInfo(
+    lastSaveAt: lastSaveAt,
+    hasLocalSaves: hasLocalSaves,
+    manualSaves: manual,
+    autoSaves: auto,
+    newestSaveVersion: newest == null ? null : _saveGameVersion(fileFor(newest)),
+    newestSaveAt: newestAt,
+  );
+}
+
+List<String> _listNames(Directory dir) {
+  try {
+    if (!dir.existsSync()) return const [];
+    return dir.listSync().whereType<File>().map((f) => p.basename(f.path)).toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// The game version (config.version) a Ren'Py save was made in — the "json"
+/// entry of the save's zip, e.g. {"_version": "0.3.2", ...}.
+String? _saveGameVersion(File save) {
+  final bytes = _readZipEntry(save, 'json');
+  if (bytes == null) return null;
+  try {
+    final json = jsonDecode(utf8.decode(bytes, allowMalformed: true));
+    final version = json is Map ? json['_version'] : null;
+    return version is String && version.trim().isNotEmpty ? version.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Reads one entry of a zip without loading the rest — a Ren'Py save's tiny
+/// "json" sits next to a multi-megabyte pickled "log". Finds the entry via
+/// the central directory and inflates just that (stored or deflated).
+List<int>? _readZipEntry(File file, String entryName) {
+  RandomAccessFile? raf;
+  try {
+    raf = file.openSync();
+    final length = raf.lengthSync();
+    final tailLength = length < 65557 ? length : 65557; // EOCD + max comment
+    raf.setPositionSync(length - tailLength);
+    final tail = raf.readSync(tailLength);
+    final tailData = ByteData.sublistView(tail);
+    var eocd = -1;
+    for (var i = tail.length - 22; i >= 0; i--) {
+      if (tailData.getUint32(i, Endian.little) == 0x06054b50) {
+        eocd = i;
+        break;
+      }
+    }
+    if (eocd < 0) return null;
+    final dirSize = tailData.getUint32(eocd + 12, Endian.little);
+    final dirOffset = tailData.getUint32(eocd + 16, Endian.little);
+    raf.setPositionSync(dirOffset);
+    final dir = raf.readSync(dirSize);
+    final dirData = ByteData.sublistView(dir);
+    var pos = 0;
+    while (pos + 46 <= dir.length && dirData.getUint32(pos, Endian.little) == 0x02014b50) {
+      final method = dirData.getUint16(pos + 10, Endian.little);
+      final compressedSize = dirData.getUint32(pos + 20, Endian.little);
+      final nameLength = dirData.getUint16(pos + 28, Endian.little);
+      final extraLength = dirData.getUint16(pos + 30, Endian.little);
+      final commentLength = dirData.getUint16(pos + 32, Endian.little);
+      final headerOffset = dirData.getUint32(pos + 42, Endian.little);
+      final name = utf8.decode(dir.sublist(pos + 46, pos + 46 + nameLength), allowMalformed: true);
+      if (name == entryName) {
+        raf.setPositionSync(headerOffset);
+        final header = ByteData.sublistView(raf.readSync(30));
+        if (header.getUint32(0, Endian.little) != 0x04034b50) return null;
+        raf.setPositionSync(headerOffset +
+            30 +
+            header.getUint16(26, Endian.little) +
+            header.getUint16(28, Endian.little));
+        final data = raf.readSync(compressedSize);
+        if (method == 0) return data;
+        if (method == 8) return ZLibCodec(raw: true).decode(data);
+        return null;
+      }
+      pos += 46 + nameLength + extraLength + commentLength;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  } finally {
+    raf?.closeSync();
+  }
 }
 
 ArchiveItem scanArchive(File file) {
@@ -437,8 +595,10 @@ ArchiveItem scanArchive(File file) {
 }
 
 class ScannerService {
-  static Future<List<GameGroup>> scanAll(Directory libraryDir) async {
-    return await Future(() => _scanAllSync(libraryDir));
+  /// Scans on a background isolate: it's all synchronous disk work (folder
+  /// listings, metadata, save files) that would otherwise freeze the UI.
+  static Future<List<GameGroup>> scanAll(Directory libraryDir) {
+    return Isolate.run(() => _scanAllSync(libraryDir));
   }
 
   static List<GameGroup> _scanAllSync(Directory libraryDir) {

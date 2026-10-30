@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme.dart';
+import '../../models/game_status.dart';
 import '../../providers/filter_provider.dart';
+import '../../providers/update_provider.dart';
 
 class FilterPanel extends ConsumerWidget {
   const FilterPanel({super.key});
@@ -17,6 +19,8 @@ class FilterPanel extends ConsumerWidget {
         _TagExcludeSection(),
         _EngineSection(),
         _StatusSection(),
+        _UpdatesSection(),
+        _MetadataSection(),
         _SortRow(),
       ],
     );
@@ -185,13 +189,6 @@ class _EngineSection extends ConsumerWidget {
 
 class _StatusSection extends ConsumerWidget {
   const _StatusSection();
-  static const _statuses = [
-    ('playing', 'Playing'),
-    ('completed', 'Completed'),
-    ('on-hold', 'On Hold'),
-    ('unplayed', 'Unplayed'),
-    ('abandoned', 'Abandoned'),
-  ];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -200,13 +197,51 @@ class _StatusSection extends ConsumerWidget {
 
     return _Collapsible(
       label: 'STATUS',
-      children: _statuses
+      children: GameStatus.values
           .map((s) => _FilterCheckbox(
-                label: s.$2,
-                value: filter.statuses.contains(s.$1),
-                onChanged: (v) => notifier.toggleStatus(s.$1, v),
+                label: s.label,
+                value: filter.statuses.contains(s.id),
+                onChanged: (v) => notifier.toggleStatus(s.id, v),
               ))
           .toList(),
+    );
+  }
+}
+
+class _UpdatesSection extends ConsumerWidget {
+  const _UpdatesSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(availableUpdatesProvider).length;
+    return _Collapsible(
+      label: 'UPDATES',
+      children: [
+        _FilterCheckbox(
+          label: 'Update available ($count)',
+          value: ref.watch(filterProvider).updatesOnly,
+          onChanged: (v) => ref.read(filterProvider.notifier).setUpdatesOnly(v),
+        ),
+      ],
+    );
+  }
+}
+
+class _MetadataSection extends ConsumerWidget {
+  const _MetadataSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(unfetchedCountProvider);
+    return _Collapsible(
+      label: 'METADATA',
+      children: [
+        _FilterCheckbox(
+          label: 'Unfetched ($count)',
+          value: ref.watch(filterProvider).unfetchedOnly,
+          onChanged: (v) => ref.read(filterProvider.notifier).setUnfetchedOnly(v),
+        ),
+      ],
     );
   }
 }

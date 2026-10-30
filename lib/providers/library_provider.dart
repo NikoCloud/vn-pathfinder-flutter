@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
+import '../models/game_status.dart';
 import '../models/user_data.dart';
 import '../services/scanner_service.dart';
 import 'notification_provider.dart';
@@ -104,19 +105,22 @@ class UserDataNotifier extends StateNotifier<UserData> {
       update((ud) => ud.copyWith(
           customDisplayNames: {...ud.customDisplayNames, baseKey: name}));
 
-  void recordPlaySession(String folderName, int seconds) {
+  void recordPlaySession(String baseKey, int seconds, {String? versionStr}) {
     update((ud) {
       final playtime = Map<String, int>.from(ud.playtime);
       final playCount = Map<String, int>.from(ud.playCount);
-      playtime[folderName] = (playtime[folderName] ?? 0) + seconds;
-      playCount[folderName] = (playCount[folderName] ?? 0) + 1;
+      playtime[baseKey] = (playtime[baseKey] ?? 0) + seconds;
+      playCount[baseKey] = (playCount[baseKey] ?? 0) + 1;
       return ud.copyWith(
         playtime: playtime,
         playCount: playCount,
         lastPlayed: {
           ...ud.lastPlayed,
-          folderName: DateTime.now().toIso8601String(),
+          baseKey: DateTime.now().toIso8601String(),
         },
+        lastPlayedVersion: versionStr == null
+            ? null
+            : {...ud.lastPlayedVersion, baseKey: versionStr},
       );
     });
   }
@@ -161,15 +165,20 @@ class UserDataNotifier extends StateNotifier<UserData> {
     }
   }
 
+  /// Sets a game's status by GameStatus id; '' clears it so the status is
+  /// detected again ("Auto").
   void setStatus(String baseKey, String status) {
-    state = state.copyWith(
-      status: {...state.status, baseKey: status},
-    );
+    final statuses = Map<String, String>.from(state.status);
+    if (status.isEmpty) {
+      statuses.remove(baseKey);
+    } else {
+      statuses[baseKey] = status;
+    }
+    state = state.copyWith(status: statuses);
     save();
-    
-    // Notify user
-    final label = status.substring(0, 1).toUpperCase() + status.substring(1);
-    _ref.read(notificationProvider.notifier).success('Status updated to $label');
+
+    final label = GameStatus.fromId(status)?.label ?? 'Auto';
+    _ref.read(notificationProvider.notifier).success('Status set to $label');
   }
 }
 

@@ -50,6 +50,10 @@ class GameGroup {
     return const [];
   }
 
+  /// No version has a .vnpf folder, so nothing has been saved for this game.
+  /// One version is enough, since metadata and art fall back across versions.
+  bool get isUnfetched => !versions.any((v) => v.hasVnpf);
+
   GameGroup copyWith({
     String? displayName,
     List<GameVersion>? versions,
