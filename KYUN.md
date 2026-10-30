@@ -434,12 +434,118 @@ found the identity problem below, and the user chose to fix the README *and* rew
 
 ---
 
-## Known Remaining Issues (as of 2026-10-29)
+## Entry 16 — Scrapers Repaired After the Forum Redesigns
+**Commit:** `d27c83a` (2026-10-30)
 
-Full detail in `PROGRESS.md` → Phase 15.
+**User report:** after the app was rebuilt on a new machine: "logins succeed, and some data is
+coming through, it just seems that pages may have been updated and it's not where the app expects
+it to be… except for F95 which is coming up empty almost all the time."
+
+**How it was diagnosed:** the real parsers were run against saved live pages — guest pages via
+plain HTTP, logged-in pages via headless Edge on a temporary copy of the app's WebView2 profile
+(deleted afterwards) — and a debug build logged every page the hidden browser loaded while the user
+tested. That split the problem into site changes, old bugs, and app-side races.
+
+**What was wrong:**
+- **F95 "empty":** a startup race (searches queued before the WebView finished starting failed
+  instantly, shown as "No results found") plus search terms built from folder names ("AFamily
+  Venture"). F95's pages and search were fine logged in.
+- **LewdCorner and Azkosel's Corner redesigns:** both now render custom thread fields (developer
+  links, other games…) as bbWrappers above the first post, so the parser read a 7-character field
+  instead of the post — no synopsis, no images. Azkosel's Corner also marks the first post as an
+  article (`message--article`). LewdCorner's title H1 gained an icon whose hidden label read as
+  "discussion".
+- **Old bugs:** the synopsis regex ended in `\Z`, which Dart reads as the letter "z" — "Frozen
+  Past" became "Fro". The developer kept " - Patreon - Discord". Errors and logged-out pages were
+  indistinguishable from "no results".
+
+**Why errors now throw:** every failure used to become an empty list, which is how a startup race,
+an expired login and a site redesign all looked identical to the user. The modal already displayed
+exceptions; the scrapers just never raised any.
+
+---
+
+## Entry 17 — Image Pipeline and the Hidden Browser
+**Commit:** `d27c83a` (2026-10-30)
+
+**User reports:** LewdCorner preview tiles were "just 10 blank images"; after Apply, new art only
+appeared after restarting the app; and the hidden browser kept running after Fetch Metadata closed
+("a MAJOR bug").
+
+**Root causes:**
+- **Blank previews:** previews use plain `Image.network`; LewdCorner's full-size attachment links
+  return a 403 login page without the session. Public thumbnails exist for most images (used for
+  previews now); full-size embeds such as a cover have none, so those load through the WebView.
+- **Downloads never worked through the WebView:** `executeScript` returns an async script's
+  unresolved promise (it arrived as an empty map), so every login-only download failed and the app
+  kept the old images. The fetch now parks its result in a page global and is polled.
+- **Art only after restart:** Apply rewrites `cover.jpg`/`screenshot_N.jpg` under the same names and
+  Flutter caches decoded images by path. Two failure modes looked like one; the user asked for a
+  restart-only test, which proved files had been written but not shown.
+- **Browser left running:** the modal called `ref` in `dispose()`, which Riverpod forbids; it threw
+  before releasing the scraping session, so the WebView never shut down.
+
+---
+
+## Entry 18 — Consistent Versioning and Version-Aware Extraction
+**Commit:** `d27c83a` (2026-10-30)
+
+**User request:** "understand how the versioning works, so I can make sure it's all consistent" —
+then "do all 4" of the proposed fixes, plus: extraction should be version-aware, because "some zips
+actually have better naming conventions than the folder inside of it".
+
+**What was inconsistent (seen in the real library):** six places formatted versions four ways
+("vv0.03.27", "vChapter", raw "0.12.7"); "Chapter-1" parsed as "Chapter"; "Episode-10-pc" kept its
+platform tag; "Final" sorted as the oldest version; letter suffixes tied; and a newly installed
+version lost the fetched title and synopsis (art fell back to older versions, text didn't).
+
+**What changed:** one formatter (`fmtVersion`), parser fixes, a defined order
+(`compareVersionStrings`), and text metadata falling back like art. Across the 233 library folders
+no game changed library entry and nine version strings improved. Extraction now flattens the inner
+folder and names the result from the best of both names — see PROGRESS.md → Versioning Model.
+
+**Why flatten:** extracting into a folder named after the archive left games one level deep, where
+the scanner can't see a Ren'Py `game/` folder — three such games were treated as generic exe games
+(no Ren'Py save detection, wrong patch folder). The four already-nested games were flattened by hand
+with an undo record kept outside the repo.
+
+**Why `-dupN` instead of merging:** re-extracting an archive merges into the folder it created
+before, but extraction never merges into some other existing folder — a re-upload of the same
+version can't silently overwrite files in a game the user already has.
+
+---
+
+## Design Decision — Feed Cards Are Text-Only
+
+The F95 feed data includes cover images, and the Feed tab deliberately strips them. This is
+intentional: the feed must not favor any provider. Some sources (Discord, and possibly future ones)
+can't supply images, and image cards would draw more attention than text-only ones. The plan is to
+approach every provider about the app, so the layout stays neutral — the same principle as
+cross-source deduplication ("first-published wins, no platform bias"). Show images only if every
+provider can supply them.
+
+---
+
+## Known Remaining Issues (as of 2026-10-30)
+
+Full detail in `PROGRESS.md` → Phase 16.
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
+| Scraping failures look like "no results" | ✅ Fixed | `d27c83a` — errors are shown; see Entry 16 |
+| No Cloudflare challenge-page detection | ✅ Fixed | `d27c83a` — challenge pages are waited out, then reported |
+| No real tests | ✅ Fixed | 19 tests (`metadata_service_test.dart`, `versioning_test.dart`) |
+| Transient scraping failures aren't retried | Low | Reported now, but nothing retries |
+| LewdCorner feed API needs a key | Medium | 403 "Invalid API key"; guest forum feeds (`games.6`, `games.119`) work |
+| Zip extraction loads the whole archive into RAM | Medium | Multi-GB archives; stream it in an isolate |
+| F95Zone feed relies on one endpoint | Low | `sam/latest_data.php`, no fallback |
+| `xenforoLogin()` in `metadata_service.dart` is dead code | Low | Never called; safe to delete in a cleanup pass |
+| Secrets stored as plain JSON | Low | Discord bot token + session cookies in `%APPDATA%\VN Pathfinder\` (local only) |
+| Patch toggle on paths with spaces | Unknown | `File.rename()` should handle spaces, but not tested end-to-end |
+| Dynamic accent color live hot-switch | Low | Provider wiring exists; ThemeData rebuild path not tested |
+| `webview_windows` is Windows-only | Deferred | Cross-platform needs `flutter_inappwebview` behind a platform conditional |
+
+-------|----------|-------|
 | FeedScreen uses ScrapingService without session management | ✅ Fixed | `384bf5c` — see Entry 14 for the actual symptom |
 | Scraping failures look like "no results" | Medium | 14 `return [];` sites in `metadata_service.dart`, no retry, no error shown |
 | No Cloudflare challenge-page detection | Medium | A challenge page gets parsed as if it were content |

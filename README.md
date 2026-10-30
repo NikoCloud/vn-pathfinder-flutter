@@ -1,6 +1,6 @@
 # VN Pathfinder 2.0 — Flutter Rewrite
 
-> **Status:** 🎯 Feature-Complete through Phase 14 (`v0.9.0` tagged) | **Now:** Polish & scraping reliability | **Platform:** Windows (macOS/Linux planned)
+> **Status:** 🎯 Feature-Complete through Phase 15 (`v0.9.0` tagged) | **Now:** Polish & reliability | **Platform:** Windows (macOS/Linux planned)
 
 VN Pathfinder 2.0 is a complete rewrite of the popular visual novel library management tool, built with **Flutter** for true cross-platform compatibility, modern UI/UX, and superior performance.
 
@@ -47,6 +47,7 @@ This rewrite is an investment in **longevity and quality** — not just a port, 
   - Per-version patch state (different game versions have independent patch sets)
   - Collision detection and user-friendly rename dialogs
 - ✅ Extract RAR archives with optional 7-Zip backend
+- ✅ Version-aware extraction — names the extracted game from the best of the archive name and the folder inside it, and flattens that folder so the game is detected cleanly
 - ✅ Last-modified date display for archive files
 
 ### Content Fetching & Metadata
@@ -137,7 +138,7 @@ Most of the codebase is platform-neutral, but metadata scraping and site logins 
 
 ## 🚀 Development Roadmap
 
-### Current Status (Phase 14)
+### Current Status (Phase 15)
 ✅ **Core library management** — fully functional
 ✅ **Archive & patch system** — complete, with Steam-style extraction UI
 ✅ **Multi-source metadata scraping** — VNDB, F95Zone, LewdCorner, itch.io, Azkosel's Corner
@@ -147,10 +148,12 @@ Most of the codebase is platform-neutral, but metadata scraping and site logins 
 ✅ **Search, filter, sort** — full-featured
 ✅ **Dark mode & responsive layout** — system preference detection
 ✅ **Low idle memory** — the embedded browser only runs while scraping
+✅ **Consistent versions** — one display format, sensible ordering (Demo < numbered < Final), metadata carried across updates
+✅ **Clear scraper errors** — "not logged in" or "blocked by Cloudflare" instead of empty results
 
 ### Next Priorities
-- [ ] Scraping reliability — retry transient failures, detect Cloudflare challenge pages, show errors instead of empty results
-- [ ] Automated tests
+- [ ] Scraping reliability — retry transient failures
+- [ ] More automated tests
 - [ ] Cross-platform testing (macOS, Linux)
 - [ ] Performance optimization and profiling
 - [ ] User documentation and help system

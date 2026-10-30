@@ -4,7 +4,7 @@
 **Target:** Windows (primary). macOS/Linux later. Mobile is 3.0+ scope.  
 **Design ref:** `mockup/index.html` + `mockup/styles.css`  
 **1.0 ref:** `F:\RenPy\_VNPathfinder\vn_pathfinder.py` (also on GitHub: NikoCloud/VN-Pathfinder)  
-**Last updated:** 2026-10-29
+**Last updated:** 2026-10-30
 
 > **History rewrite (2026-10-29):** git history was rewritten to correct the commit author
 > identity. Every commit hash changed. Hashes in this file and `KYUN.md` were updated to the
@@ -35,7 +35,8 @@
 | 13 | Archive overhaul — hero panel, extraction UI, deletion | ✅ Done | `e6716e8` |
 | 13.5 | WebView2 lazy lifecycle + XenForo loop fix | ✅ Done | `7653177` |
 | 14 | Azkosel's Corner provider (feed + metadata) + XenForo title/version fixes | ✅ Done | `661fdff`…`76b327d` |
-| 15 | Polish + scraping reliability | 🔲 Backlog | — |
+| 15 | Scraper repair after forum redesigns, image pipeline, versioning, smart extraction | ✅ Done | `d27c83a` |
+| 16 | Polish + remaining reliability | 🔲 Backlog | — |
 
 ---
 
@@ -485,28 +486,92 @@ A second bug caused all F95Zone/LewdCorner page loads to wait the full 10-second
   before fetching and decrements it in `finally` — fixes "not initialized" errors on feed refresh
   (this was the open item from Phase 13.5)
 
-**`flutter analyze`:** not re-run after Phase 14 was recorded; no Flutter SDK was available at the
-2026-10-29 docs refresh.
+**`flutter analyze`:** 0 issues when re-run on 2026-10-30 (Flutter 3.41.6), before the Phase 15 work.
 
 ---
 
-## Phase 15 — Backlog / Polish
+## Phase 15 — Done ✅  (Scraper repair, image pipeline, versioning, smart extraction)
 
-### Scraping reliability
-An external AI review of the scraping code (May 2026, 19 findings) was spot-checked against the
-code on 2026-10-28. Confirmed:
-- **Failures look like "no results"** — search methods in `metadata_service.dart` catch errors and
-  `return [];` (14 sites) with no retry. Distinguish "failed" from "empty", retry transient
-  errors, and show the error in the UI
-- **No Cloudflare challenge-page detection** — a challenge/interstitial page is parsed as if it
-  were search results
-- **F95Zone feed has one source** — `sam/latest_data.php` only; no fallback to scraping the
-  Latest Updates page if that endpoint changes
+**Commit:** `d27c83a` · **`flutter analyze`:** 0 issues · **Tests:** 19 passing
 
-Not tracked (overstated): "Windows-only is critical" (Windows-first is a project decision),
-"searches use `t=post`" (already combined with `c[title_only]=1`), "`btoa` crashes on large
-images" (input is already chunked, and it's a fallback path). The remaining findings were not
-checked.
+Found by building and running the app again after six months; most issues were diagnosed by running
+the real parsers against saved live pages (guest and logged-in). See KYUN entries 16–18 for the why.
+
+### Scrapers (`scraping_service.dart`, `metadata_service.dart`)
+- **Startup race:** the fetch modal opened a scraping session and searched in the same frame;
+  requests queued before the WebView finished starting threw "not initialized" and showed as
+  "No results found". `_processQueue` now waits on `ready` (20 s).
+- **Errors are visible:** `ScrapingException` messages reach the modal ("Not logged in to F95Zone",
+  "Blocked by a Cloudflare check…", "…returned an empty page"). Login is detected from XenForo's
+  `data-logged-in="false"` (members-only searches with no results). Cloudflare "Just a moment…"
+  pages (`_cf_chl_opt`) are waited out for up to 20 s. VNDB and itch.io throw instead of returning [].
+- **First post:** `article.message--post` or `--article` (Azkosel's Corner), body from
+  `.message-body .bbWrapper` — LewdCorner/AzC render custom thread fields as bbWrappers above it.
+- **Fields:** developer/release date from custom fields (`dl.pairs--customField`: "Developer
+  Name", "Developer/Studio", "Release Date"); OP-text developer drops " - Patreon - …".
+- **Synopsis:** `\Z` replaced with `(?![\s\S])` (Dart reads `\Z` as a literal "z"); `<br>` becomes a
+  line break; indented and icon-drawn spoiler labels (": Genre:") end it; "View attachment" lines dropped.
+- **Titles:** `_threadTitleText` strips span/i/svg (LewdCorner's H1 icon read as "discussion").
+- **Images:** `div.bbImageWrapper[data-src]` (all three forums now) and XenForo
+  `/attachments/name-png.123/` links; `previewUrls` maps login-only images to public thumbnails.
+- **Search:** one `_searchXenforo` for all three forums; game threads (`[version] [dev]` titles)
+  rank first so auto-pick avoids stray threads.
+
+### Images and the hidden browser
+- **WebView leak:** the modal used `ref` in `dispose()` (forbidden), threw, and never released its
+  session — Chromium kept running. It now reads the service/notifier in `initState`.
+- **WebView image fetch never worked:** `executeScript` returns an async script's promise, not its
+  result. `_fetchImageBytes` now stores the result in `window.__vnpFetch[slot]` and polls;
+  `evalOnOrigin` reuses the loaded page instead of navigating for every image.
+- **New art after Apply:** files reuse their names and Flutter caches decoded images by path, so
+  Apply clears `imageCache` and bumps `imageEpochProvider`, which the detail pane, sidebar
+  thumbnail and grid cover key on.
+- **AzC feed:** the WebView fallback reads the document source (`_documentSourceJs`) instead of
+  Chrome's HTML wrapper around a text/XML response.
+
+### Versioning and extraction
+See **Versioning Model** below. Also: Properties tab rail 148 → 168 px (overflow), Feed loading
+spinner no longer nests `Expanded`, `_camelSplit` splits "AFamily" → "A Family".
+
+---
+
+## Versioning Model (reference)
+
+- **One folder = one version.** `parseFolderName` takes the version from the folder name: the part
+  after `-`/`_` matching `_versionRe` (`0.12.7`, `v0.5`, `Demo`, `Chapter-1`, `Episode-10`,
+  `Act.4.3.1.Beta`, `Final`, …). Platform/junk words after it are dropped, including `_`-joined ones
+  (`v0.4.8_Win` → `v0.4.8`). A leading `v` is **kept** in `versionStr`.
+- **Grouping:** folders with the same `baseKey` (title tokens, separators removed, lowercased) are
+  one library entry. Playtime, user tags, notes, hidden and custom art are keyed by `baseKey`.
+- **Ordering:** `compareVersionStrings` — unknown (empty) < Demo < numbered < Final; numbers compare
+  in order (0.11.12 < 0.12.7; 1.0 < 1.0.1); then pre-releases before the release
+  (Alpha < Beta < RC < plain), then letters after it (0.5 < 0.5a < 0.5b). Latest = last.
+- **Display:** always `fmtVersion` — one lowercase `v` on numbers (`V0.2` → `v0.2`,
+  `v.0.14.0` → `v0.14.0`), words as words (`Chapter 1`), empty → `Unknown`.
+- **Per version folder:** `.vnpf/` metadata + images (Fetch Metadata writes to the latest version)
+  and `.patches/` (patch state keyed `baseKey::versionStr`).
+- **Reading metadata:** title, developer, synopsis, fetched tags and source links come from the
+  newest version that has them (`GameGroup.newestMeta`); cover/screenshots fall back the same way.
+- **Extraction:** archives unpack into a hidden `.vnp-extract-*` folder (the scanner skips dot-folders);
+  a single inner folder is flattened into the library; `planExtractFolderName` picks the title
+  (one matching a library game, else the more descriptive; inner folder on a tie; generic names like
+  `game`/`Windows` ignored) and the more specific version; the result is `<Title>-<version>`.
+  `ExtractionLog` (`%APPDATA%\VN Pathfinder\extractions.json`) records where each archive went.
+  Re-extracting merges only into that archive's own previous folder; other clashes get `-dupN`.
+
+---
+
+## Phase 16 — Backlog / Polish
+
+### Reliability
+- **Retry transient scraping failures** — failures are now reported, but nothing retries
+- **F95Zone feed has one source** — `sam/latest_data.php` only; no fallback if it changes
+- **LewdCorner feed** — `latest-updates.php?api=1&action=rss` now answers 403 "Invalid API key".
+  The guest-readable forum feeds `/forums/games.6/index.rss` + `/forums/games.119/index.rss` work
+  (activity-ordered, plainer descriptions); switching is a product decision
+- **Zip extraction reads the whole archive into memory** before writing files — multi-GB games
+  can use a lot of RAM; stream with `InputFileStream`/`decodeStream` in an isolate
+- **One unidentified RenderFlex overflow** (267 px) was logged once while Fetch Metadata searched
 
 ### Carried over
 - **Dynamic accent color** at runtime: settings provider + AppTheme wiring exists, needs end-to-end test
@@ -514,11 +579,11 @@ checked.
 - **Remove dead `xenforoLogin()`** from `metadata_service.dart` (browser login is the only auth path now)
 - **macOS / Linux** — `webview_windows` is Windows-only; swap to `flutter_inappwebview` behind a platform conditional for cross-platform
 - **Patch system end-to-end** — toggle (File.rename) on Windows paths with spaces not yet tested
-- **Version prefix edge cases** — scanner strips `v`/`V`; verify `ver2.0`, `version1`, etc.
 
 ### Housekeeping
-- **Tests** — `test/widget_test.dart` is a placeholder; there are no real tests
-- **Toolchain drift** — last built on Flutter 3.41.6 (April 2026). Run `flutter pub get` and
-  `flutter analyze` and fix deprecations before starting new work
+- **Tests** — 19 tests (`test/metadata_service_test.dart`, `test/versioning_test.dart`) use small
+  synthetic pages and folder names; extend them when a site changes again
+- **Toolchain** — builds on Flutter 3.41.6 (pinned by `pubspec.lock`); current stable is newer —
+  upgrade as its own step
 - **Secrets at rest** — Discord bot token and site session cookies are stored as plain JSON in
   `%APPDATA%\VN Pathfinder\` (local only; low priority)
