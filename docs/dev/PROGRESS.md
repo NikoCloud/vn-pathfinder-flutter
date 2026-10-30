@@ -3,8 +3,9 @@
 **Stack:** Flutter 3.41.6 · Dart 3.11.4 · Riverpod 2.6 · window_manager 0.4.3  
 **Target:** Windows (primary). macOS/Linux later. Mobile is 3.0+ scope.  
 **Design ref:** `mockup/index.html` + `mockup/styles.css`  
-**1.0 ref:** `F:\RenPy\_VNPathfinder\vn_pathfinder.py` (also on GitHub: NikoCloud/VN-Pathfinder)  
-**Last updated:** 2026-10-30
+**1.0 ref:** GitHub: NikoCloud/VN-Pathfinder  
+**Last updated:** 2026-10-30  
+**Releases and features:** `README.md` and `CHANGELOG.md`. This file is developer reference only.
 
 > **History rewrite (2026-10-29):** git history was rewritten to correct the commit author
 > identity. Every commit hash changed. Hashes in this file and `KYUN.md` were updated to the
@@ -36,7 +37,8 @@
 | 13.5 | WebView2 lazy lifecycle + XenForo loop fix | ✅ Done | `7653177` |
 | 14 | Azkosel's Corner provider (feed + metadata) + XenForo title/version fixes | ✅ Done | `661fdff`…`76b327d` |
 | 15 | Scraper repair after forum redesigns, image pipeline, versioning, smart extraction | ✅ Done | `d27c83a` |
-| 16 | Polish + remaining reliability | 🔲 Backlog | — |
+| 16 | Game status, update alerts, Unfetched filter | ✅ Done | `4056573` |
+| 17 | Polish + remaining reliability | 🔲 Backlog | — |
 
 ---
 
@@ -535,10 +537,49 @@ spinner no longer nests `Expanded`, `_camelSplit` splits "AFamily" → "A Family
 
 ---
 
+## Phase 16 — Done ✅  (Game status, update alerts, Unfetched filter)
+
+**Commit:** `4056573` · **`flutter analyze`:** 0 issues · **Tests:** 34 passing
+
+### Game status (`models/game_status.dart`)
+- **Resolution:** `effectiveGameStatus` returns the user's pick (`UserData.status`), else
+  `detectedGameStatus`. A picked Playing or On Hold still shows Updated when a newer version is
+  detected. Updated can't be picked by hand (`GameStatus.manual`).
+- **Detection order:** Unplayed → Skimmed → Updated → Playing.
+- **Skimmed:** autosaves with no page saves or quicksaves.
+- **Updated:** `UserData.lastPlayedVersion` (recorded on launch) if known. Otherwise the newest
+  folder having local saves means not updated, and an older folder having them means updated.
+  Last, the `_version` in the newest save is compared with the folder version, numbered only.
+- **Saves:** `SaveInfo` is read at scan time by `_readSaves` (names, a few stats, and only the
+  `json` entry of the newest save). The scan runs in `Isolate.run`.
+
+### Update alerts (`services/update_check_service.dart`, `providers/update_provider.dart`)
+- **Versions:** `sam/checker.php?threads=` on f95zone.to, batches of 50, no login.
+- **Games without a saved F95Zone link:** title search through `latest_data.php`. It accepts only
+  a single exact match (ignoring case and punctuation), at 1 request per second. Misses retry
+  after 7 days.
+- **Other forums:** feed items match a game's saved link by source and thread ID.
+- **Newer:** `isClearlyNewer` compares the `v…` part ("Part 8 v0.114" → `v0.114`).
+- **Cadence:** after each library scan, at most every 6 hours (no timer, so an open app doesn't
+  re-check by itself). Cached in `update_check.json`, gated by Lockdown and `check_game_updates`.
+
+### Unfetched filter
+- `GameVersion.hasVnpf` is set at scan time. `GameGroup.isUnfetched` means no version has a
+  `.vnpf` folder.
+- It's a filter (`unfetchedOnly`, `unfetchedCountProvider`), not a status, because a game can be
+  both Playing and Unfetched.
+
+### Fixes
+- Fetch Metadata results row: the developer `Text` is now `Flexible`, so long names get an
+  ellipsis (184 px overflow). The one-off 267 px overflow logged during a search is probably the
+  same row and hasn't recurred.
+
+---
+
 ## Versioning Model (reference)
 
 - **One folder = one version.** `parseFolderName` takes the version from the folder name: the part
-  after `-`/`_` matching `_versionRe` (`0.12.7`, `v0.5`, `Demo`, `Chapter-1`, `Episode-10`,
+  after `-`, `_` or (before a dotted version) a space, matching `_versionRe` (`0.12.7`, `v0.5`, `Demo`, `Chapter-1`, `Episode-10`,
   `Act.4.3.1.Beta`, `Final`, …). Platform/junk words after it are dropped, including `_`-joined ones
   (`v0.4.8_Win` → `v0.4.8`). A leading `v` is **kept** in `versionStr`.
 - **Grouping:** folders with the same `baseKey` (title tokens, separators removed, lowercased) are
@@ -561,7 +602,13 @@ spinner no longer nests `Expanded`, `_camelSplit` splits "AFamily" → "A Family
 
 ---
 
-## Phase 16 — Backlog / Polish
+## Phase 17 — Backlog / Polish
+
+Fixes and cleanup only. Promised and planned features are in `BACKLOG.md`.
+
+### Release
+- **Publish a Windows build** — `v0.9.0` is a source tag with no GitHub Release, and `pubspec.yaml`
+  says `2.0.0+1`. Decide the version scheme before the first published build
 
 ### Reliability
 - **Retry transient scraping failures** — failures are now reported, but nothing retries
@@ -571,18 +618,22 @@ spinner no longer nests `Expanded`, `_camelSplit` splits "AFamily" → "A Family
   (activity-ordered, plainer descriptions); switching is a product decision
 - **Zip extraction reads the whole archive into memory** before writing files — multi-GB games
   can use a lot of RAM; stream with `InputFileStream`/`decodeStream` in an isolate
-- **One unidentified RenderFlex overflow** (267 px) was logged once while Fetch Metadata searched
+- **Network setting defaults** — Game Update Checks and Site Logins are off in `AppSettings()` but
+  on in `fromJson`. New installs start off; older settings files without the key start on
+- **Unfetched false negatives** — Properties (rename, launch arguments, exe override) and Add Game
+  also create `.vnpf`, so those games drop out of Unfetched without being fetched
+- **`A.`-prefixed versions** — `Siblings Delights A.2.0.7.2` parses as a separate game
 
 ### Carried over
-- **Dynamic accent color** at runtime: settings provider + AppTheme wiring exists, needs end-to-end test
+- **Settings that do nothing** — see `BACKLOG.md` → Looks built but isn't
 - **Orphan scanner trigger** — wired via Settings → General → "Scan Now" only; consider a persistent toolbar button
 - **Remove dead `xenforoLogin()`** from `metadata_service.dart` (browser login is the only auth path now)
 - **macOS / Linux** — `webview_windows` is Windows-only; swap to `flutter_inappwebview` behind a platform conditional for cross-platform
 - **Patch system end-to-end** — toggle (File.rename) on Windows paths with spaces not yet tested
 
 ### Housekeeping
-- **Tests** — 19 tests (`test/metadata_service_test.dart`, `test/versioning_test.dart`) use small
-  synthetic pages and folder names; extend them when a site changes again
+- **Tests** — 34 tests in `test/` use small synthetic pages, folder names and game data; extend
+  them when a site changes again
 - **Toolchain** — builds on Flutter 3.41.6 (pinned by `pubspec.lock`); current stable is newer —
   upgrade as its own step
 - **Secrets at rest** — Discord bot token and site session cookies are stored as plain JSON in

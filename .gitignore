@@ -1,3 +1,6 @@
+# Agent notes
+.agent/
+
 # Flutter/Dart specifics
 .dart_tool/
 .flutter-plugins

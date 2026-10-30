@@ -5,7 +5,6 @@
 - **Owner:** NikoCloud (GitHub: https://github.com/NikoCloud) — ALWAYS use NikoCloud for anything online/public
 - **Repo:** https://github.com/NikoCloud/vn-pathfinder-flutter
 - **Legacy repo (1.0 reference):** https://github.com/NikoCloud/VN-Pathfinder
-- **Local 1.0 source:** `F:\RenPy\_VNPathfinder\vn_pathfinder.py`
 
 ## What This Is
 A complete rewrite of VN Pathfinder (visual novel library manager) in Flutter/Dart. Goal is feature parity with 1.0, then expand. The user manages a personal adult visual novel library — this is expected and intentional.
@@ -21,12 +20,11 @@ A complete rewrite of VN Pathfinder (visual novel library manager) in Flutter/Da
 ```
 lib/
   main.dart
-  models/         # Game, Patch, UserData, etc. — mirror 1.0 data model
-  providers/      # Riverpod providers (games, patches, settings)
-  notifiers/      # StateNotifier classes
-  screens/        # LibraryScreen, ArchivesScreen, SettingsScreen
-  widgets/        # Reusable components (GameCard, DetailPanel, Carousel, etc.)
-  services/       # File I/O, scraping, patch management
+  models/         # GameGroup, GameVersion, GameStatus, UserData, etc.
+  providers/      # Riverpod providers and StateNotifiers
+  screens/        # Library, Archive and Feed screens
+  widgets/        # Reusable components, modals (settings, properties, metadata fetch)
+  services/       # Scanner, scraping, metadata, feed, update checks
   utils/          # Helpers
 ```
 
@@ -40,7 +38,7 @@ lib/
 7. Orphan cleanup tool
 
 ## Data Model (from 1.0)
-- `UserData` — top-level container, JSON persisted at `~/.vn_pathfinder/userdata.json`
+- `UserData` — top-level container, JSON persisted at `%APPDATA%\VN Pathfinder\userdata.json`
 - `GameGroup` — one entry per game title, contains multiple `GameVersion` entries
 - `GameVersion` — path, version string, metadata (title, dev, tags, notes, synopsis, images)
 - `applied_patches` — `Dict["{base_key}::{version_str}", Dict[str, bool]]`
@@ -72,6 +70,15 @@ The user adds issues in plain language — don't wait for precise repro steps, j
 - Never expose local Windows paths (C:\Users\<windows-user>\...) in public-facing content
 - Always use NikoCloud as the identity, never the local Windows account name
 - License: Apache 2.0
+
+## Documentation
+This is a release product, not a research repo. Write for the people using it.
+- `README.md` — what the app does, how to get it, known issues. Keep it current with every feature change.
+- `CHANGELOG.md` — every user-visible change. New work goes under Unreleased until a version ships.
+- `docs/dev/BACKLOG.md` — everything promised or planned that isn't in the app. Never delete an item unless it ships or NikoCloud drops it.
+- `docs/dev/` also holds developer reference: `PROGRESS.md` (phases, internals, fixes) and `KYUN.md` (design reasoning).
+- Only state what the code does. Check a claim before writing it.
+- Agent handoff notes never go in the repo or its docs.
 
 ## Mockup
 Located in `mockup/` folder. This is the design reference — implement Flutter to match it.

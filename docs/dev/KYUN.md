@@ -515,6 +515,28 @@ version can't silently overwrite files in a game the user already has.
 
 ---
 
+## Entry 19 — Game Status, Update Alerts and Unfetched
+**Commit:** `4056573` (2026-10-30)
+
+**Why save files, not folder dates:** copying a library resets folder dates, which marked 60 games
+as Updated by mistake. Save files keep their own record: the version in the save, and whether it
+was a manual save or an autosave.
+
+**Why autosaves mean Skimmed:** Ren'Py autosaves before choices whether or not anyone is reading
+closely, but a manual save is deliberate. A game with only autosaves was skimmed.
+
+**Why match updates by thread ID:** titles collide (two different games are called "Guilty
+Pleasure") and differ in punctuation. Thread IDs don't. Title search accepts only one exact match,
+because a wrong link is worse than none.
+
+**Why Unfetched is a filter:** status describes how you've played a game, and a game can be
+Playing and Unfetched at once. As a status it would replace Playing or Skimmed.
+
+**Why the `.vnpf` rule:** it's the simplest check and matches what users expect. Games with text
+but no images count as fetched.
+
+---
+
 ## Design Decision — Feed Cards Are Text-Only
 
 The F95 feed data includes cover images, and the Feed tab deliberately strips them. This is
@@ -528,13 +550,13 @@ provider can supply them.
 
 ## Known Remaining Issues (as of 2026-10-30)
 
-Full detail in `PROGRESS.md` → Phase 16.
+Full detail in `PROGRESS.md` → Phase 17.
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
 | Scraping failures look like "no results" | ✅ Fixed | `d27c83a` — errors are shown; see Entry 16 |
 | No Cloudflare challenge-page detection | ✅ Fixed | `d27c83a` — challenge pages are waited out, then reported |
-| No real tests | ✅ Fixed | 19 tests (`metadata_service_test.dart`, `versioning_test.dart`) |
+| No real tests | ✅ Fixed | 34 tests in `test/` |
 | Transient scraping failures aren't retried | Low | Reported now, but nothing retries |
 | LewdCorner feed API needs a key | Medium | 403 "Invalid API key"; guest forum feeds (`games.6`, `games.119`) work |
 | Zip extraction loads the whole archive into RAM | Medium | Multi-GB archives; stream it in an isolate |
@@ -542,20 +564,12 @@ Full detail in `PROGRESS.md` → Phase 16.
 | `xenforoLogin()` in `metadata_service.dart` is dead code | Low | Never called; safe to delete in a cleanup pass |
 | Secrets stored as plain JSON | Low | Discord bot token + session cookies in `%APPDATA%\VN Pathfinder\` (local only) |
 | Patch toggle on paths with spaces | Unknown | `File.rename()` should handle spaces, but not tested end-to-end |
-| Dynamic accent color live hot-switch | Low | Provider wiring exists; ThemeData rebuild path not tested |
+| Theme settings barely apply | Medium | Widgets use fixed `AppColors`; see `BACKLOG.md` |
 | `webview_windows` is Windows-only | Deferred | Cross-platform needs `flutter_inappwebview` behind a platform conditional |
-
--------|----------|-------|
-| FeedScreen uses ScrapingService without session management | ✅ Fixed | `384bf5c` — see Entry 14 for the actual symptom |
-| Scraping failures look like "no results" | Medium | 14 `return [];` sites in `metadata_service.dart`, no retry, no error shown |
-| No Cloudflare challenge-page detection | Medium | A challenge page gets parsed as if it were content |
-| No real tests | Medium | `test/widget_test.dart` is a placeholder |
-| F95Zone feed relies on one endpoint | Low | `sam/latest_data.php`, no fallback |
-| `xenforoLogin()` in `metadata_service.dart` is dead code | Low | Never called; safe to delete in a cleanup pass |
-| Secrets stored as plain JSON | Low | Discord bot token + session cookies in `%APPDATA%\VN Pathfinder\` (local only) |
-| Patch toggle on paths with spaces | Unknown | `File.rename()` should handle spaces, but not tested end-to-end |
-| Dynamic accent color live hot-switch | Low | Provider wiring exists; ThemeData rebuild path not tested |
-| `webview_windows` is Windows-only | Deferred | Cross-platform needs `flutter_inappwebview` behind a platform conditional |
+| No published build | Medium | `v0.9.0` is a source tag; `pubspec.yaml` says `2.0.0+1` |
+| Network setting defaults | Low | Game Update Checks and Site Logins: off in `AppSettings()`, on in `fromJson` |
+| Properties can hide a game from Unfetched | Low | Rename, launch arguments and exe override create `.vnpf` |
+| `A.`-prefixed versions | Low | `Siblings Delights A.2.0.7.2` parses as a separate game |
 
 ---
 

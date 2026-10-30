@@ -1,274 +1,148 @@
-# VN Pathfinder 2.0 — Flutter Rewrite
+# VN Pathfinder
 
-> **Status:** 🎯 Feature-Complete through Phase 15 (`v0.9.0` tagged) | **Now:** Polish & reliability | **Platform:** Windows (macOS/Linux planned)
+A visual novel library manager for Windows. It finds the games in your library folder, keeps every version of a game together, fetches covers and details from the forums, manages mods, and tells you when a game has an update.
 
-VN Pathfinder 2.0 is a complete rewrite of the popular visual novel library management tool, built with **Flutter** for true cross-platform compatibility, modern UI/UX, and superior performance.
+> **Release status:** VN Pathfinder 2.0 is in pre-release and has no downloadable build yet, so for now you [build it from source](#build-from-source). The latest tagged version is `v0.9.0`. Everything added since then is listed under [Unreleased](CHANGELOG.md#unreleased).
+>
+> Want something ready to run today? The previous Python version is available as [VN Pathfinder v1.1.0-beta](https://github.com/NikoCloud/VN-Pathfinder/releases/tag/v1.1.0-beta).
 
----
+## Features
 
-## 📋 Overview
+### Library
 
-This is a **work-in-progress rebuild** of VN Pathfinder targeting **Windows, macOS, and Linux** with a refreshed codebase and beautiful new interface. The initial milestone is **feature parity with version 1.0** — once we achieve that, we'll build on it with new capabilities.
+- Finds Ren'Py games and other Windows games in your library folder
+- Groups every installed version of a game under one entry
+- List and grid views with cover art and screenshots
+- Search by title or creator
+- Filter by tags, engine, status, available updates or Unfetched
+- Sort by title, recently played or date added
+- Tracks playtime, play count and last played
+- Add your own notes, tags and cover art
+- Set launch options for each game
+- Automatic backups of your user data
 
-### Why Flutter? Why Now?
+### Game status
 
-**VN Pathfinder 1.0** (Python + Tkinter) was a proof-of-concept that worked well and built a small but dedicated community. However:
+Every game gets a status automatically, based on its save files and play history:
 
-- **Platform Lock-in:** Tkinter on Windows is clunky; native experiences on macOS and Linux were compromised
-- **UI/UX Ceiling:** Tkinter's limited theming and widget library made it hard to build something *beautiful*
-- **Performance:** Python startup times and GUI responsiveness suffered at scale (hundreds of games)
-- **Maintenance:** Single-language codebase tied to Python's ecosystem, making long-term maintenance harder
+| Status | Meaning |
+|--------|---------|
+| **Unplayed** | No saves or tracked playtime |
+| **Playing** | You've played it |
+| **Updated** | A newer version is installed than the one you played |
+| **Skimmed** | Only autosaves, with no manual saves or quicksaves |
 
-**Flutter solves these:**
-- ✅ **True Cross-Platform:** Single codebase compiles to native Windows, macOS, Linux binaries
-- ✅ **Beautiful UI:** Modern Material 3 design system with smooth animations, dark mode, responsive layouts
-- ✅ **Fast:** Compiled Dart with minimal startup time and buttery-smooth 60/120 FPS UI
-- ✅ **Future-Proof:** Growing ecosystem, backed by Google, used by major apps (Google Ads, eBay, BMW, etc.)
+Set a status yourself from the game banner or the right-click menu. You can also pick **On Hold**, **Completed** or **Abandoned**. Choosing **Auto** hands the game back to detection.
 
-This rewrite is an investment in **longevity and quality** — not just a port, but a thoughtful modernization.
+### Update alerts
 
----
+- A badge marks games with a newer version on F95Zone
+- The version chip opens the game's thread so you can download it
+- A filter shows only games with an update
+- Checks run when your library loads, at most once every 6 hours
 
-## 🎯 Feature Parity Goals (1.0 → 2.0)
+Games are matched by forum thread, using the link saved by Fetch Metadata. Games without a link are matched by exact title. LewdCorner and Azkosel's Corner updates are picked up from the Feed for games with a saved link to that forum.
 
-### Core Library Management
-- ✅ Add/remove games from your personal visual novel library
-- ✅ Recursive folder scanning with auto-detection of Ren'Py games
-- ✅ Customizable library root directory (per-device configuration)
-- ✅ Game metadata: title, developer, version, tags, notes, release date
-- ✅ Search & filter by title, developer, or custom tags
-- ✅ Sort by multiple fields (title, developer, date added, last played)
+### Metadata
 
-### Archive & Patch Management
-- ✅ Archive browser with ZIP/RAR/loose file (.rpa, .rpy) detection
-- ✅ Non-destructive patch/mod system with version tracking
-  - Extract patches to versioned `.patches/` folders
-  - Toggle patches on/off without deletion (pure move semantics)
-  - Per-version patch state (different game versions have independent patch sets)
-  - Collision detection and user-friendly rename dialogs
-- ✅ Extract RAR archives with optional 7-Zip backend
-- ✅ Version-aware extraction — names the extracted game from the best of the archive name and the folder inside it, and flattens that folder so the game is detected cleanly
-- ✅ Last-modified date display for archive files
+- Fetch details and images from **VNDB**, **F95Zone**, **LewdCorner**, **itch.io** and **Azkosel's Corner**
+- Take each field from a different source in one step
+- Log in to the forums through the built-in browser, including sites behind Cloudflare
+- The **Unfetched** filter shows games with no saved metadata yet
 
-### Content Fetching & Metadata
-- ✅ Multi-source metadata scraping:
-  - **VNDB** (public API, no login)
-  - **F95Zone** (games, tags, version info, ratings)
-  - **itch.io** (games, metadata)
-  - **Lewd Corner** (games, metadata, images)
-  - **Azkosel's Corner** (games + forbidden-games forums, searched together)
-- ✅ Pick each field (title, developer, synopsis, tags, images) from a different source in one apply
-- ✅ Site logins through an embedded browser (WebView2) — works behind Cloudflare
-- ✅ Fetch game banners, cover art, and in-game screenshots
-- ✅ Auto-populate tags from scraping sources
-- ✅ Manual metadata editing with local persistence
+### Archives and mods
 
-### Feed & Discovery
-- ✅ RSS feed aggregator (dedicated **Feed** tab)
-- ✅ Multi-source feed integration:
-  - **F95Zone** latest game updates (via SAM API)
-  - **LewdCorner** RSS feed
-  - **Azkosel's Corner** RSS feeds (opt-in)
-  - **Discord** bot integration (read from configured announcement channels)
-- ✅ Cross-source deduplication (first-published wins)
-- ✅ Configurable refresh schedule (6-24 hours)
-- ✅ Local caching for instant launch
-- ✅ Source filtering (view All or filter by source)
+- Browse the ZIP, RAR, RPA and RPY files in your library folder
+- Extract ZIP and RAR archives from inside the app
+- Extracted games are named from the best of the archive's name and the folder inside it
+- Turn mods on and off without deleting them, separately for each game version
+- Find leftover files and folders with the orphan cleanup tool
 
-### Gallery & Preview
-- ✅ Image carousel for game banners and screenshots
-- ✅ Full-screen image preview
+### Feed
 
-### User Interface & UX
-- ✅ Dark mode and light mode with system preference detection
-- ✅ Responsive layout (works on different screen sizes)
-- ✅ Orphan cleanup tool (finds files and folders in the library root that aren't recognized games or archives)
-- ✅ Per-game playtime, play count and last-played tracking
-- ✅ Settings panel with configurable options
+- Latest updates from **F95Zone**, **LewdCorner**, **Azkosel's Corner** and **Discord** channels
+- Removes duplicates across sources, or filter by one source
+- Refreshes every 6 or 12 hours, or only when you ask
+- Cards are text-only so that no source gets more attention than another
 
-### Data & Privacy
-- ✅ Local-first architecture — app data in `%APPDATA%\VN Pathfinder\`, per-game metadata and images in each game's `.vnpf\` folder
-- ✅ No telemetry, no tracking, no sign-ups required
-- ✅ Optional scraping toggle (can disable internet features entirely)
-- ✅ User data format: JSON with version migration support
-- ✅ Automatic backups of user data
+## Requirements
 
----
+- Windows 10 or 11, 64-bit (developed and tested on Windows 11)
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) for forum logins and fetching (included with Windows 11)
+- [7-Zip](https://www.7-zip.org/) to extract RAR archives
 
-## 🔄 What's Different in 2.0?
+## Getting started
 
-### Codebase Changes
-| Aspect | 1.0 (Python) | 2.0 (Flutter) |
-|--------|--------------|---------------|
-| **Language** | Python 3.11+ | Dart 3.x |
-| **GUI Framework** | Tkinter | Flutter + Material 3 |
-| **Rendering** | Software/Tk engine | Impeller (GPU-accelerated; Vulkan/Metal backends) |
-| **Data Serialization** | JSON (custom parsing) | JSON + Dart serialization |
-| **Threading** | Python threading | Dart async/await |
-| **Packaging** | PyInstaller | Flutter build system |
+1. Open **Settings → General** and choose your library folder.
+2. Lockdown Mode is on by default, so the app stays offline. To use online features, turn it off in **Settings → Network**.
+3. In **Settings → Network**, log in to the forums you use.
+4. Select a game and choose **Fetch Metadata**.
+5. Turn on **Game Update Checks** in **Settings → Network** to get update alerts.
 
-### Visual & UX Improvements
-- Modern, polished Material 3 design
-- Smooth transitions and animations
-- Better mobile-responsive layouts (future tablet support)
+## Privacy
+
+- **Offline by default.** Nothing goes online until you turn off Lockdown Mode.
+- **No accounts, telemetry or analytics.**
+- **Your data stays on your PC.** App data is in `%APPDATA%\VN Pathfinder\`, and each game's metadata and images are in a `.vnpf` folder inside the game.
+- **The app only contacts the services you use.** Fetch Metadata and the Feed contact the sites you've chosen. Update checks send F95Zone the forum thread IDs of your games, plus title searches for games without a saved link. To stop that, turn off Game Update Checks.
+- **Stored without encryption.** Forum sessions and your Discord bot token are kept on your PC as plain files.
+
+## Known issues
+
+- Some switches in Settings don't do anything yet: Update Checks, Metadata Scraping, Site Logins, Download Page Links and Simultaneous Extractions. To keep the app offline, use Lockdown Mode.
+- The light theme, accent color and font size settings only partly apply.
+- The READ, WRITE and DISK figures shown during extraction aren't real measurements.
+- The LewdCorner feed doesn't load at the moment because the site now rejects that request. LewdCorner metadata and images still work.
+- Update checks ask F95Zone directly. LewdCorner and Azkosel's Corner updates only show up through the Feed.
+- Failed searches report an error but aren't retried.
+- ZIP extraction loads the whole archive into memory, so very large games can use a lot of RAM.
+- Windows only for now. macOS and Linux need a different built-in browser.
+
+## Roadmap
+
+Planned, in no fixed order:
+
+- A published Windows build and a public beta
+- Game ratings, with sorting and filtering
+- Library statistics
+- Filtering by release date
+- Reordering gallery images
+- Automatic retries for failed searches
+- One consistent card format in the Feed
+- A backup metadata service for when sources are down
+- macOS and Linux versions
+- System tray support
+- Mod manager integration and community mod sharing
+- Translations
+- In-app help
 - Better keyboard navigation and accessibility
+- iOS and Android, after 2.0
 
-### Performance Gains
-- Instant startup (vs. ~3-5s Python initialization)
-- Smooth scrolling in large libraries (1000+ games)
-- Responsive UI under heavy scraping operations
-- Lower memory footprint
+The full list, including the VN Pathfinder 1.0 features still to bring across, is in the [feature backlog](docs/dev/BACKLOG.md).
 
----
+## Build from source
 
-## 🌍 Cross-Platform Compatibility
+You'll need:
 
-VN Pathfinder 2.0 targets:
+- [Flutter](https://flutter.dev/docs/get-started/install) 3.41.6
+- Visual Studio 2022 with the **Desktop development with C++** workload
+- Windows Developer Mode turned on
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Windows** 10+ | 🎯 Primary | Tested on Windows 10/11 |
-| **macOS** 11+ | 🔄 Planned | Intel & Apple Silicon support |
-| **Linux** (GTK 3+) | 🔄 Planned | Ubuntu, Fedora, Debian, etc. |
-| **iOS/Android** | ⏸️ Future (3.0+) | Out of scope for 2.0 launch, but codebase supports it |
-
-Most of the codebase is platform-neutral, but metadata scraping and site logins use `webview_windows` (WebView2), which is **Windows-only**. macOS and Linux builds need that swapped for a cross-platform WebView first.
-
----
-
-## 🚀 Development Roadmap
-
-### Current Status (Phase 15)
-✅ **Core library management** — fully functional
-✅ **Archive & patch system** — complete, with Steam-style extraction UI
-✅ **Multi-source metadata scraping** — VNDB, F95Zone, LewdCorner, itch.io, Azkosel's Corner
-✅ **Feed aggregator** — F95Zone, LewdCorner, Azkosel's Corner, Discord integration
-✅ **Gallery & image management** — carousel, lightbox
-✅ **Settings panel** — complete UI with all configuration options
-✅ **Search, filter, sort** — full-featured
-✅ **Dark mode & responsive layout** — system preference detection
-✅ **Low idle memory** — the embedded browser only runs while scraping
-✅ **Consistent versions** — one display format, sensible ordering (Demo < numbered < Final), metadata carried across updates
-✅ **Clear scraper errors** — "not logged in" or "blocked by Cloudflare" instead of empty results
-
-### Next Priorities
-- [ ] Scraping reliability — retry transient failures
-- [ ] More automated tests
-- [ ] Cross-platform testing (macOS, Linux)
-- [ ] Performance optimization and profiling
-- [ ] User documentation and help system
-- [ ] Beta testing with community feedback
-- [ ] Accessibility audit
-
-### Future Features (Post-Launch)
-- Feed normalization (standardized game title/version/tags)
-- Backend API infrastructure (Supabase + VNDB mirror for fallback)
-- Library statistics dashboard (totals, by developer, playtime)
-- Drag-to-reorder gallery images
-- System tray integration (minimize to tray)
-- Advanced filtering (by release date, rating, etc.)
-- Mod manager integration (ModDB, Nexus)
-- Community mod sharing
-- Localization (Japanese, Russian, etc.)
-- iOS/Android ports
-
----
-
-## 💾 Currently Ready? Use Version 1.0
-
-If you need a **production-ready** visual novel library manager **right now**, use **VN Pathfinder 1.0**:
-
-🔗 **[VN Pathfinder 1.0 on GitHub](https://github.com/NikoCloud/VN-Pathfinder)**
-
-Version 1.0 is feature-complete and stable. Grab the latest release and start managing your library today. We'll transition to 2.0 when it reaches parity — no rush.
-
----
-
-## 🛠️ Building from Source
-
-### Requirements
-- Flutter 3.x SDK ([Install Flutter](https://flutter.dev/docs/get-started/install)) — last built with Flutter 3.41.6
-- Dart 3.x (included with Flutter)
-- Git
-
-### Setup
 ```bash
 git clone https://github.com/NikoCloud/vn-pathfinder-flutter.git
 cd vn-pathfinder-flutter
 flutter pub get
+flutter build windows --release
 ```
 
-### Run (Development)
-```bash
-flutter run -d windows  # or -d macos, -d linux
-```
+The app is built to `build\windows\x64\runner\Release\vn_pathfinder.exe`.
 
-### Build (Release)
-```bash
-flutter build windows --release  # Creates .exe in build/windows/runner/Release/
-flutter build macos --release    # Creates .app
-flutter build linux --release    # Creates executable
-```
+Run the tests with `flutter test`. Developer notes are in [docs/dev](docs/dev).
 
----
+## Feedback
 
-## 📁 Project Structure
+Found a bug or have an idea? [Open an issue](https://github.com/NikoCloud/vn-pathfinder-flutter/issues).
 
-```
-vn-pathfinder-flutter/
-├── lib/
-│   ├── main.dart              # App entry point
-│   ├── models/                # Data models (Game, Patch, UserData, etc.)
-│   ├── providers/             # Riverpod state (library, filters, settings, feed)
-│   ├── screens/               # UI screens (Library, Archive, Feed)
-│   ├── services/              # Business logic (scraping, file I/O, patch management)
-│   ├── widgets/               # Reusable UI components
-│   └── utils/                 # Helpers (parsing, formatting, platform detection)
-├── test/                      # Unit and widget tests
-├── pubspec.yaml              # Dependency manifest
-└── README.md                 # This file
-```
+## License
 
----
-
-## 🔐 Privacy & Data
-
-- **No accounts required** — use immediately, no sign-ups
-- **All data stays local** — app data in `%APPDATA%\VN Pathfinder\`, game metadata in each game's `.vnpf\` folder
-- **No telemetry** — we don't track usage, errors, or analytics
-- **Open-source** — code is readable; audit if you like
-- **Optional scraping** — disable internet features if you prefer
-
----
-
-## 🤝 Contributing
-
-This is a **solo project** (personal passion project), but feedback and testing help immensely:
-
-- Found a bug? Have a feature idea? Open an issue
-- Used 1.0 and miss something? Let us know — we want parity first
-- Testing on macOS or Linux? Your feedback shapes the experience
-
----
-
-## 📝 License
-
-Apache License 2.0 — see [LICENSE](LICENSE).
-
----
-
-## 🔗 Links
-
-- **VN Pathfinder 1.0:** https://github.com/NikoCloud/VN-Pathfinder
-- **Flutter Docs:** https://flutter.dev
-- **Material 3 Design:** https://m3.material.io/
-
----
-
-## 📞 Status & Roadmap Updates
-
-For development updates and status, follow this repository's commit history and Issues tab.
-
----
-
-**Made with ❤️ by NikoCloud** — Building the best VN library manager, one version at a time.
+Apache License 2.0. See [LICENSE](LICENSE).
