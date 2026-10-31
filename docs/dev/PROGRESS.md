@@ -722,7 +722,8 @@ Fixes and cleanup only. Promised and planned features are in `BACKLOG.md`.
 ### Release
 - **Publish a Windows build** — `v0.9.0` is a source tag with no GitHub Release, `pubspec.yaml`
   says `2.0.0+1` and `appVersion` says `2.0.0-alpha`. Decide the version scheme before the first
-  published build. Inno Setup isn't on the build machine, so the installer has never been compiled
+  published build. The installer compiles and passed a silent install, launch, reinstall and
+  uninstall. What's left on it is in `BACKLOG.md`
 
 ### Reliability
 - **Older LewdCorner attachments** — `/attachments/…` answers 200 HTML, "This attachment cannot be

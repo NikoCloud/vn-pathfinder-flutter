@@ -48,7 +48,7 @@ On `master`, not yet tagged.
 - **VN Pathfinder update check.** A notification tells you when a newer release is on GitHub.
 - **Clean Up** in the Archive tab lists extracted archives so you can delete the ones you pick, and an **Orphans** button opens the cleanup tool.
 - **Rename prompt** when a mod's name is already taken, instead of adding `_2` to it.
-- **Packaging script** that builds a portable ZIP, plus an installer script for Inno Setup.
+- **Windows installer and portable ZIP.** The packaging script builds both. The installer needs no admin rights, offers Start Menu and desktop shortcuts, and leaves your settings and library alone when you uninstall.
 
 ### Changed
 

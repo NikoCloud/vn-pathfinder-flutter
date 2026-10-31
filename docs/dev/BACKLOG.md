@@ -4,7 +4,7 @@ Everything VN Pathfinder has promised or planned that isn't fully in the app yet
 
 Checked against the code on 2026-10-31. Sources: every past version of the README, the Settings screens, the design mockup in `mockup/`, the published 1.0 feature list and the developer notes. The last README with the old roadmap is in git at `6f0f566:README.md`.
 
-Bug fixes and cleanup are tracked in `PROGRESS.md` → Phase 17. What has shipped is in `CHANGELOG.md`.
+Bugs and requests from daily use are in [GitHub Issues](https://github.com/NikoCloud/vn-pathfinder-flutter/issues). Bug fixes and cleanup are tracked in `PROGRESS.md` → Phase 17. What has shipped is in `CHANGELOG.md`.
 
 ## Partly done
 
@@ -13,7 +13,7 @@ These are in the app, but something is still missing.
 | Item | What's in | What's left |
 |------|-----------|-------------|
 | **Ratings** | F95Zone and VNDB ratings are saved, shown on the game page and on hover, and can be sorted and filtered | LewdCorner's Latest Updates data has `rating`, `rating_count`, `view_count` and `like_score`, but none of the 87 games checked had a rating. F95Zone's `views`, `likes` and `watched` aren't used yet |
-| **Installer** | `installer/vn_pathfinder.iss` and `tool/package_windows.ps1` | Needs Inno Setup 6 to compile. It has never been compiled or run |
+| **Installer** | `installer/vn_pathfinder.iss` compiles through `tool/package_windows.ps1`. Install, shortcuts, launch, installing over the top and uninstalling all work, and uninstalling leaves app data alone | Those checks ran silently, so the wizard's pages still need clicking through by hand. It isn't code-signed, so Windows SmartScreen will warn people who download it. It doesn't check for the WebView2 Runtime |
 | **Light theme** | Every screen follows the theme | The light colors haven't had a design review |
 
 ## Listed as done in older READMEs
@@ -53,7 +53,7 @@ Never built.
 
 ## Release and community
 
-- **Publish a Windows build.** `v0.9.0` is a source tag with no GitHub Release. The packaging script makes a portable ZIP, but nothing has been published.
+- **Publish a Windows build.** `v0.9.0` is a source tag with no GitHub Release. The packaging script makes a portable ZIP and an installer, but nothing has been published.
 - **Settle the version number.** The tag says `0.9.0`, `pubspec.yaml` says `2.0.0+1`, and the app calls itself `2.0.0-alpha`.
 - **Beta release** and **community beta testing.**
 - **Talk to every provider about the app.** This is why the Feed stays neutral between sources.

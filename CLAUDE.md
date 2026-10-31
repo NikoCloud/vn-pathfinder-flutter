@@ -58,6 +58,7 @@ At the start of every session:
 
 **Labels to apply when creating issues:**
 - `bug` — always add this for defects
+- `enhancement` — feature requests and changes from daily use. These go in Issues too
 - `regression` — if this was previously working (prevents re-introduction loops)
 - `scraping` / `ui` / `crash` / `patches` / `library` / `archive` / `settings` / `performance` — area label
 - `wontfix` — if closing without a code change, explain why in a comment first
@@ -82,7 +83,7 @@ This is a release product, not a research repo. Write for the people using it.
 - Agent handoff notes never go in the repo or its docs.
 
 ## Packaging
-`tool/package_windows.ps1` builds the app and writes a portable ZIP to `dist/` (gitignored), plus an installer if Inno Setup 6 is installed. The version comes from `appVersion` in `lib/services/app_update_service.dart`.
+`tool/package_windows.ps1` builds the app and writes a portable ZIP to `dist/` (gitignored), plus an installer if Inno Setup 6 is installed (`winget install JRSoftware.InnoSetup`). `-SkipBuild` packages the existing build, so it works while the app is open. The version comes from `appVersion` in `lib/services/app_update_service.dart`.
 
 ## Mockup
 Located in `mockup/` folder. This is the design reference — implement Flutter to match it.
