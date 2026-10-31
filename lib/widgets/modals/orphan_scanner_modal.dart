@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import '../../theme.dart';
 import '../../providers/library_provider.dart';
@@ -72,14 +71,14 @@ class _OrphanScannerModalState extends ConsumerState<OrphanScannerModal> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgSecondary,
-        title: Text('Delete Files?', style: GoogleFonts.inter(color: Colors.white)),
+        title: Text('Delete Files?', style: AppText.ui(color: Colors.white)),
         content: Text('Are you sure you want to delete ${_selectedPaths.length} selected items? This cannot be undone.',
-            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+            style: AppText.ui(color: AppColors.textSecondary)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: AppColors.danger)),
+            child: Text('Delete', style: TextStyle(color: AppColors.danger)),
           ),
         ],
       ),
@@ -138,7 +137,7 @@ class _OrphanScannerModalState extends ConsumerState<OrphanScannerModal> {
                 // Content
                 Expanded(
                   child: _scanning
-                      ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+                      ? Center(child: CircularProgressIndicator(color: AppColors.accent))
                       : _orphans.isEmpty
                           ? _EmptyState()
                           : _OrphanList(
@@ -173,30 +172,30 @@ class _Header extends StatelessWidget {
     return Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.bgCard,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, size: 18, color: AppColors.accent),
+          Icon(Icons.search, size: 18, color: AppColors.accent),
           const SizedBox(width: 10),
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Orphaned File Scanner',
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textPrimary)),
               Text('Files in library root not recognized as games',
-                  style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted)),
+                  style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
             ],
           ),
           const Spacer(),
           IconButton(
-            icon: const Icon(Icons.refresh, size: 18, color: AppColors.textSecondary),
+            icon: Icon(Icons.refresh, size: 18, color: AppColors.textSecondary),
             onPressed: onRefresh,
             tooltip: 'Rescan',
           ),
@@ -304,13 +303,13 @@ class _OrphanTileState extends State<_OrphanTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(widget.name,
-                        style: GoogleFonts.inter(
+                        style: AppText.ui(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: AppColors.textPrimary)),
                     Text(widget.path,
-                        style: GoogleFonts.jetBrainsMono(
-                            fontSize: 10, color: AppColors.textMuted),
+                        style: AppText.mono(
+                            fontSize: 11, color: AppColors.textMuted),
                         overflow: TextOverflow.ellipsis),
                   ],
                 ),
@@ -333,10 +332,10 @@ class _EmptyState extends StatelessWidget {
           Icon(Icons.check_circle_outline, size: 48, color: AppColors.accent.withValues(alpha: 0.2)),
           const SizedBox(height: 16),
           Text('No orphaned files found',
-              style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary)),
+              style: AppText.ui(fontSize: 14, color: AppColors.textSecondary)),
           const SizedBox(height: 4),
           Text('Everything in your library root is accounted for.',
-              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+              style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
         ],
       ),
     );
@@ -353,14 +352,14 @@ class _Footer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.bgCard,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
           Text('$selectedCount items selected',
-              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+              style: AppText.ui(fontSize: 12, color: AppColors.textSecondary)),
           const Spacer(),
           ElevatedButton.icon(
             onPressed: selectedCount > 0 ? onDelete : null,
@@ -371,7 +370,7 @@ class _Footer extends StatelessWidget {
               foregroundColor: Colors.white,
               disabledBackgroundColor: AppColors.bgHover,
               disabledForegroundColor: AppColors.textMuted,
-              textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+              textStyle: AppText.ui(fontSize: 12, fontWeight: FontWeight.w600),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: AppRadius.borderSm),
             ),
@@ -403,7 +402,7 @@ class _CloseXState extends State<_CloseX> {
           duration: const Duration(milliseconds: 120),
           width: 28, height: 28,
           decoration: BoxDecoration(
-            color: _hovered ? const Color(0x33C94040) : Colors.transparent,
+            color: _hovered ? AppColors.danger.withValues(alpha: 0.2) : Colors.transparent,
             borderRadius: AppRadius.borderXs,
           ),
           child: Icon(Icons.close, size: 16,

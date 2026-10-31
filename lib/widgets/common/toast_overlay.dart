@@ -10,13 +10,10 @@ class ToastOverlay extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final notifications = ref.watch(notificationProvider);
 
-    return Positioned(
-      bottom: 24,
-      right: 24,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: notifications.map((n) => _ToastItem(notification: n)).toList(),
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: notifications.map((n) => _ToastItem(notification: n)).toList(),
     );
   }
 }
@@ -76,7 +73,7 @@ class _ToastItem extends StatelessWidget {
               Expanded(
                 child: Text(
                   notification.message,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -92,8 +89,8 @@ class _ToastItem extends StatelessWidget {
 
   Color _getColor() {
     return switch (notification.type) {
-      NotificationType.success => AppColors.playGreen,
-      NotificationType.warning => Colors.orange,
+      NotificationType.success => AppColors.accent,
+      NotificationType.warning => AppColors.warning,
       NotificationType.error   => AppColors.danger,
       _                        => AppColors.accent,
     };

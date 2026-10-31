@@ -2,84 +2,48 @@
 
 Everything VN Pathfinder has promised or planned that isn't fully in the app yet. Nothing here has been dropped. These are all candidates to build.
 
-Checked against the code on 2026-10-30. Sources: every past version of the README, the Settings screens, the design mockup in `mockup/`, the published 1.0 feature list and the developer notes. The last README with the old roadmap is in git at `6f0f566:README.md`.
+Checked against the code on 2026-10-31. Sources: every past version of the README, the Settings screens, the design mockup in `mockup/`, the published 1.0 feature list and the developer notes. The last README with the old roadmap is in git at `6f0f566:README.md`.
 
 Bug fixes and cleanup are tracked in `PROGRESS.md` → Phase 17. What has shipped is in `CHANGELOG.md`.
 
-## Ratings
+## Partly done
 
-Promised in the old README as F95Zone ratings, plus filtering by rating. Not built, but most of the data work is done.
+These are in the app, but something is still missing.
 
-- **What exists:** F95Zone returns a rating out of 5 in the same `latest_data.php` response the Feed and update checks already read. The same response also has `views`, `likes` and `watched`.
-- **What's missing:** the rating only appears as text on Feed cards. Nothing saves it to a game or shows it in the library.
-- **To build:** save the rating with each game, show it on the game details, then add sorting and filtering. VNDB's API also publishes ratings.
-
-## Looks built but isn't
-
-These appear in the app today but don't do what they say. Users can see them, so they matter most.
-
-| Where | What it says | What actually happens |
-|-------|--------------|-----------------------|
-| Settings → Network → **Update Checks** | "Check for VN Pathfinder updates on startup" | Saved, never read. The app has no update check for itself. |
-| Settings → Network → **Metadata Scraping** | "Fetch game info from F95Zone, LewdCorner, itch.io" | Saved, never read. Turning it off doesn't stop fetching. Only Lockdown Mode does. |
-| Settings → Network → **Site Logins** | "Enable authentication to access restricted content" | Saved, never read. Logins work either way. |
-| Settings → Network → **Download Page Links** | "Show links to game source pages" | Saved, never read. The source buttons always show. |
-| Settings → Archives → **Simultaneous Extractions** | "Number of concurrent extraction jobs" | Saved, never read. Extractions always run one at a time. |
-| Settings → Appearance → **Color Theme** | Dark, Light or System | Light changes the page background and default text, but the widgets use 811 fixed dark colors. Only one reads the theme. |
-| Settings → Appearance → **Accent Color** | Changes the accent color | Same problem. Most of the app uses the fixed accent. |
-| Settings → Appearance → **Font Size** | Changes the text size | Only changes the default text style. Most widgets set their own size. |
-| Archives → extraction panel → **READ, WRITE, DISK** | Speed in MB/s and disk use | Made up: file count × 0.5, × 0.3 and × 2. Nothing is measured. |
+| Item | What's in | What's left |
+|------|-----------|-------------|
+| **Ratings** | F95Zone and VNDB ratings are saved, shown on the game page and on hover, and can be sorted and filtered | LewdCorner's Latest Updates data has `rating`, `rating_count`, `view_count` and `like_score`, but none of the 87 games checked had a rating. F95Zone's `views`, `likes` and `watched` aren't used yet |
+| **Installer** | `installer/vn_pathfinder.iss` and `tool/package_windows.ps1` | Needs Inno Setup 6 to compile. It has never been compiled or run |
+| **Light theme** | Every screen follows the theme | The light colors haven't had a design review |
 
 ## Listed as done in older READMEs
 
 Older READMEs marked these as finished or in the app. They aren't.
 
-- **Game stats dashboard** (total games, by developer, playtime). Once marked done, later moved to the future list. Playtime is tracked, but the screen doesn't exist.
-- **Drag-to-reorder gallery images.** Once marked done, later moved to the future list.
-- **Sort by developer.** Sorting is by title, recently played or date added.
-- **F95Zone ratings in fetched metadata.** See [Ratings](#ratings).
-- **Feed refresh up to 24 hours.** The options are 6 hours, 12 hours or manual.
-- **Better keyboard navigation.** The only shortcut is Ctrl+, for Settings.
-- **Accessibility.** Screen reader labels aren't set up.
+- **Accessibility.** The shared controls have labels, focus rings and keyboard use, and the app honours Windows' animation setting. Older dialogs (Settings, Properties, Fetch Metadata, Archive) haven't been through this yet.
 - **Tablet and responsive layouts.** Described as a benefit of the rewrite, never built as a feature.
-- **Smooth scrolling with 1000+ games.** Never measured. The test library has about 214 games.
-
-## VN Pathfinder 1.0 features still to bring across
-
-The first goal for 2.0 was full parity with 1.0. These are the gaps.
-
-| 1.0 feature | 2.0 today |
-|-------------|-----------|
-| Installer and portable EXE | No published build |
-| Update check for the app itself | A switch exists but does nothing |
-| Real extraction progress with MB/s and ETA | Progress bar, but no ETA and made-up speeds |
-| Cancel a running extraction | Only queued extractions can be removed |
-| Image manager in Fetch Metadata: see every image in a numbered list and promote any of them to cover | You choose a source for the images, and its first image is the cover |
-| "Change Image" on hover, with multi-file select | Custom art in Properties → Art |
-| Resizable art area | Fixed size |
-| Arrow keys in the full-screen image view | Not supported |
-| Colored tag chips with built-in genre and status presets | Plain tags |
-| User-promoted tag presets | Saved 1.0 presets are kept in user data, but there's no screen for them |
-| Rename dialog when a mod's name clashes | Adds `_2`, `_3` to the name without asking |
-| Lockdown indicator opens Settings when clicked | Indicator only |
-| Delete Extracted Archives checklist | Delete per archive, and Clear & Delete All for completed extractions |
 
 ## Planned features
 
 Never built.
 
-- **Feed normalization.** One consistent card format across sources. The Feed settings still show a note promising this.
+- **Mute a developer.** Muting works per game today.
+- **The rest of the Archive redesign.** Cards are in. The extraction banner, queue sections and table still have the old layout, and NikoCloud has that on the back burner.
+- **7z archives.** They're listed but can't be extracted, though 7-Zip could do it.
+- **Clearing saved game data nothing uses.** A card whose file was deleted in Explorer stays in `.vnpf-archives` so it can be assigned again.
+- **Snap Layouts on the maximize button.** The custom title bar loses the Windows 11 flyout. It needs a native hit-test change in the runner. Edge snapping and Win+Z work.
+- **Discord in the Feed.** Settings shows it as Coming soon. It needs an easier setup than a personal bot token, typed channel lines and a bot invited to every server. The first version is in git at `a23b0b8`.
 - **Backend API.** Supabase plus a VNDB mirror, as a fallback when sources are down.
-- **System tray.** Minimize to tray.
-- **Advanced filtering.** By release date and rating.
 - **Mod manager integration.** ModDB and Nexus.
 - **Community mod sharing.**
 - **Localization.** Japanese, Russian and others.
-- **In-app help and user documentation.**
-- **Feed cover images.** Only if every provider can supply them, so that no source gets more attention than another.
-- **Orphan cleanup button.** It's only reachable from Settings → General today.
-- **Direct update checks for LewdCorner and Azkosel's Corner.** They only come through the Feed today.
-- **Update checks while the app stays open.** Checks only run when the library loads.
+- **Patch toggles on the game page.** Patches stay in Properties for now.
+- **Direct update checks for LewdCorner and Azkosel's Corner.** They only come through the Feed today. LewdCorner's Latest Updates data could look up a whole tier, which would catch games that drop out of the 60-game feed.
+- **A LewdCorner tier filter in the Feed.** The data supports All, Standard, Plus, AI and AI+.
+- **Follow MEGA downloads made through the MEGA desktop app.** The page hands the link straight to that app, so the browser never sees a download. Updates to a game you own already show its art. For a new game, a file landing in the library while a Get is open could be matched to that game and keep its data.
+- **Resume a stopped download.** The browser retries a dropped download by itself, 5 times, resuming only if the host allows it and otherwise starting from zero, which is costly on hosts with a daily limit. Once it gives up, the file is gone. WebView2 has `CanResume` and `Resume` on the download operation for a Resume button.
+- **Staging folder.** A folder you choose on a fast drive, apart from where your games are stored. A game unpacks there so you can play it right away, then moves to storage in the background while you're doing something else, such as playing another game. It suits a library that's slow to reach, like a NAS or a hard drive, and a system with a small fast drive and plenty of slower storage. It never moves a game that's running, and an archive stays put until its game has finished moving, so a disconnected drive loses nothing. It needs a second library location (`libraryDir` is used across 11 files), a move queue that survives a crash, free-space checks, and a plan for games on a drive that's been unplugged. Play data follows the game, but custom art stores a full path and would need updating.
+- **Fix wrong saved forum links.** Older auto-picks saved some links to a different game, which can affect update alerts. A check of 219 links found about seven suspects. Fetch Metadata could flag a thread whose title or developer doesn't match.
 
 ## Platforms
 
@@ -89,8 +53,8 @@ Never built.
 
 ## Release and community
 
-- **Publish a Windows build.** `v0.9.0` is a source tag with no GitHub Release.
-- **Settle the version number.** The tag says `0.9.0`, but `pubspec.yaml` says `2.0.0+1`.
+- **Publish a Windows build.** `v0.9.0` is a source tag with no GitHub Release. The packaging script makes a portable ZIP, but nothing has been published.
+- **Settle the version number.** The tag says `0.9.0`, `pubspec.yaml` says `2.0.0+1`, and the app calls itself `2.0.0-alpha`.
 - **Beta release** and **community beta testing.**
 - **Talk to every provider about the app.** This is why the Feed stays neutral between sources.
 - **Accessibility audit.**

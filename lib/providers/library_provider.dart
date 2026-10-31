@@ -27,8 +27,9 @@ File _userdataFile() {
 class UserDataNotifier extends StateNotifier<UserData> {
   final Ref _ref;
 
-  UserDataNotifier(this._ref) : super(UserData.empty()) {
-    _load();
+  /// Loads from disk unless given [initial] data.
+  UserDataNotifier(this._ref, {UserData? initial}) : super(initial ?? UserData.empty()) {
+    if (initial == null) _load();
   }
 
   void _load() {
@@ -121,9 +122,18 @@ class UserDataNotifier extends StateNotifier<UserData> {
         lastPlayedVersion: versionStr == null
             ? null
             : {...ud.lastPlayedVersion, baseKey: versionStr},
+        sessions: [...ud.sessions, PlaySession(baseKey, DateTime.now(), seconds)],
       );
     });
   }
+
+  void setWatching(String titleKey, bool watching) => update((ud) => ud.copyWith(
+        watching: watching ? {...ud.watching, titleKey} : ud.watching.difference({titleKey}),
+      ));
+
+  void setMuted(String titleKey, bool muted) => update((ud) => ud.copyWith(
+        muted: muted ? {...ud.muted, titleKey} : ud.muted.difference({titleKey}),
+      ));
 
   void setPatchState(String metaKey, String patchName, bool active) {
     update((ud) {
@@ -163,6 +173,30 @@ class UserDataNotifier extends StateNotifier<UserData> {
     } else {
       _ref.read(notificationProvider.notifier).success('Game restored to library');
     }
+  }
+
+  /// Remembers [tag] as a preset offered when adding tags.
+  void addCustomPreset(String tag) {
+    if (state.customPresets.contains(tag)) return;
+    update((ud) => ud.copyWith(customPresets: [...ud.customPresets, tag]));
+  }
+
+  /// Stops suggesting that games [a] and [b] are duplicates.
+  void markNotDuplicate(String a, String b) => update((ud) =>
+      ud.copyWith(notDuplicates: {...ud.notDuplicates, UserData.pairKey(a, b)}));
+
+  /// Makes game [source] part of game [target]. No files move.
+  void mergeGames(String source, String target) {
+    update((ud) => ud.withGameMerged(source, target));
+    _ref.read(libraryProvider.notifier).scan();
+  }
+
+  /// Undoes a merge: [source]'s folders are their own game again. Play
+  /// history stays with the game it was merged into.
+  void unmergeGame(String source) {
+    update((ud) => ud.copyWith(gameMerges: {...ud.gameMerges}..remove(source)));
+    _ref.read(libraryProvider.notifier).scan();
+    _ref.read(notificationProvider.notifier).success('Game separated');
   }
 
   /// Sets a game's status by GameStatus id; '' clears it so the status is
@@ -235,8 +269,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }
     state = state.copyWith(loading: true, error: null);
     try {
-      final groups = await ScannerService.scanAll(Directory(libDir));
       final ud = _ref.read(userDataProvider);
+      final groups = await ScannerService.scanAll(Directory(libDir), merges: ud.gameMerges);
       ScannerService.autoDetectPatches(groups, ud);
       state = state.copyWith(groups: groups, loading: false);
     } catch (e) {
@@ -256,6 +290,11 @@ final libraryProvider =
 );
 
 // Auto-scan on startup and whenever the library dir changes
+/// The games alone, so selecting one doesn't recompute what depends on the list.
+final libraryGroupsProvider = Provider<List<GameGroup>>((ref) {
+  return ref.watch(libraryProvider.select((s) => s.groups));
+});
+
 final libraryScanProvider = Provider<void>((ref) {
   // Initial scan if dir is already configured
   final dir = ref.read(libraryDirProvider);

@@ -3,19 +3,35 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:xml/xml.dart';
 import '../models/feed_item.dart';
+import '../utils/formatters.dart';
 import '../providers/settings_provider.dart';
+import 'feed_history.dart';
 import 'scraping_service.dart';
 
+/// How a refresh went. The rows themselves arrive as each page is read.
+/// [problems] says which sites need a look, by source key: 'public' means only
+/// the logged-out feed answered, 'behind' means the site stopped answering
+/// partway back, 'failed' means nothing did. [sites] says how far back each
+/// site's list has now been read.
+class FeedFetch {
+  final problems = <String, String>{};
+  final sites = <String, SiteCatchUp>{};
+}
+
 /// Fetches raw feed items from all configured sources.
-/// Returns items sorted newest-first.
 ///
 /// F95Zone is fetched via the SAM JSON API (/sam/latest_alpha/latest_data.php)
 /// which requires login cookies — routed through [ScrapingService].
 ///
-/// LewdCorner uses a public RSS endpoint — tried via plain HTTP first.
-///
-/// Discord sources are polled via the REST API using the stored bot token.
+/// LewdCorner's Latest Updates data needs a login, so it's also routed through
+/// [ScrapingService]; logged out, the public forum feeds stand in.
 class FeedService {
+  /// The wait between opening one thread and the next.
+  static const threadGap = Duration(seconds: 2);
+
+  /// F95Zone's prefix number for a finished game.
+  static const _f95Completed = 18;
+
   static const _ua = 'VN-Pathfinder/2.0 (https://github.com/NikoCloud/vn-pathfinder-flutter)';
 
   /// JS returning a loaded document's source: the XML itself for an XML
@@ -85,96 +101,131 @@ class FeedService {
 
   // ── Public entry point ────────────────────────────────────────────────────
 
-  static Future<List<RawFeedItem>> fetchAll(
+  /// Reads every enabled site, handing rows to [onRows] as each page arrives.
+  /// [sites] says how far back each one was last caught up.
+  static Future<FeedFetch> fetchAll(
     ScrapingService scraping,
-    AppSettings settings,
-  ) async {
-    final futures = <Future<List<RawFeedItem>>>[];
+    AppSettings settings, {
+    required void Function(List<RawFeedItem>) onRows,
+    Map<String, SiteCatchUp> sites = const {},
+  }) async {
+    final fetch = FeedFetch();
+    if (settings.lockdown) return fetch;
 
-    if (!settings.lockdown) {
-      // F95Zone — SAM JSON API (requires login cookies via ScrapingService)
-      if (settings.feedSourceF95) {
-        futures.add(_fetchF95ZoneJson(scraping));
+    Future<void> catchUp(
+      String site,
+      Future<List<RawFeedItem>> Function(int page) readPage,
+      Future<List<RawFeedItem>> Function() public,
+    ) async {
+      final read = await readBack(
+        sites[site] ?? const SiteCatchUp(),
+        readPage: readPage,
+        onRows: onRows,
+        now: DateTime.now(),
+      );
+      if (read != null) {
+        fetch.sites[site] = read;
+        if (read.stoppedEarly) fetch.problems[site] = 'behind';
+        return;
       }
-      if (settings.feedSourceLC) {
-        // LewdCorner's dedicated latest-updates RSS API — returns rich
-        // structured descriptions including developer, version, clean tags,
-        // platforms, cover image (enclosure), and screenshot URLs.
-        // Does not appear to require authentication (public API endpoint).
-        futures.add(_fetchRss(
-          scraping,
-          'https://lewdcorner.com/latest-updates.php?api=1&action=rss',
-          source: 'lewdcorner',
-          label: 'LewdCorner',
-          requiresAuth: false, // public API endpoint, no login cookies needed
-        ));
-      }
-      if (settings.feedSourceAzc) {
-        // Azkosel's Corner — XenForo forum with two relevant categories:
-        //   Node 13: regular games   /forums/games.13/index.rss
-        //   Node 32: forbidden games /forums/forbidden-haven-games.32/index.rss
-        // Both are fetched and merged under the single 'azc' source key.
-        // Tried via plain HTTP first; falls back to ScrapingService if blocked.
-        futures.add(_fetchRss(
-          scraping,
-          'https://azkoselscorner.com/index.php?forums/games.13/index.rss',
-          source: 'azc',
-          label: "AzC",
-          requiresAuth: false,
-        ));
-        futures.add(_fetchRss(
-          scraping,
-          'https://azkoselscorner.com/index.php?forums/forbidden-haven-games.32/index.rss',
-          source: 'azc',
-          label: "AzC",
-          requiresAuth: false,
-        ));
-      }
-
-      // Discord sources
-      final token = settings.discordBotToken;
-      if (token.isNotEmpty) {
-        for (final ch in settings.discordChannelIds) {
-          final parts = ch.split(':'); // format: "channelId:ServerName:#channelName"
-          final channelId = parts[0].trim();
-          final serverName = parts.length > 1 ? parts[1].trim() : 'Discord';
-          final channelName = parts.length > 2 ? parts[2].trim() : channelId;
-          if (channelId.isNotEmpty) {
-            futures.add(_fetchDiscord(
-              channelId: channelId,
-              token: token,
-              serverName: serverName,
-              channelName: channelName,
-            ));
-          }
-        }
-      }
+      final rows = await public();
+      onRows(rows);
+      fetch.problems[site] = rows.isEmpty ? 'failed' : 'public';
     }
 
-    final results = await Future.wait(futures, eagerError: false);
-    final all = results.expand((r) => r).toList();
+    await Future.wait([
+      // F95Zone — SAM JSON API (requires login cookies via ScrapingService)
+      if (settings.feedSourceF95)
+        catchUp('f95zone', (page) => _fetchF95ZoneJson(scraping, page), () => _f95ZonePublic(scraping)),
+      if (settings.feedSourceLC)
+        catchUp('lewdcorner', (page) => _fetchLewdCornerPage(scraping, page), () => _lewdCornerPublic(scraping)),
+      // Azkosel's Corner — XenForo forum with two relevant categories:
+      //   Node 13: regular games   /forums/games.13/index.rss
+      //   Node 32: forbidden games /forums/forbidden-haven-games.32/index.rss
+      // Both are fetched and merged under the single 'azc' source key.
+      // Tried via plain HTTP first; falls back to ScrapingService if blocked.
+      if (settings.feedSourceAzc) _fetchAzc(scraping, fetch, onRows),
+    ]);
+    return fetch;
+  }
 
-    // Sort newest first
-    all.sort((a, b) {
-      final ta = a.publishedAt;
-      final tb = b.publishedAt;
-      if (ta == null && tb == null) return 0;
-      if (ta == null) return 1;
-      if (tb == null) return -1;
-      return tb.compareTo(ta);
-    });
+  /// JS returning a thread's first post dates as JSON, or nothing if the page
+  /// isn't a readable thread.
+  static const _threadDatesJs = '''
+(() => {
+  const first = document.querySelector('article.message');
+  if (!first) return '';
+  const posted = first.querySelector('.message-attribution time, header time');
+  const edited = first.querySelector('.message-lastEdit time');
+  return JSON.stringify({
+    posted: posted ? posted.getAttribute('datetime') : null,
+    edited: edited ? edited.getAttribute('datetime') : null,
+  });
+})()''';
 
-    return all;
+  /// When a thread's first post went up and was last edited, or null if the
+  /// thread can't be read.
+  static Future<ThreadDates?> readThreadDates(ScrapingService scraping, String url) async {
+    try {
+      final raw = await scraping.evalOnPage(url, _threadDatesJs);
+      return parseThreadDates(raw is String ? raw : '');
+    } catch (e) {
+      debugPrint('FeedService thread dates failed: $e');
+      return null;
+    }
+  }
+
+  static ThreadDates? parseThreadDates(String body) {
+    final Object? json;
+    try {
+      json = jsonDecode(body);
+    } catch (_) {
+      return null;
+    }
+    if (json is! Map) return null;
+    final posted = DateTime.tryParse('${json['posted']}');
+    if (posted == null) return null;
+    return ThreadDates(posted, DateTime.tryParse('${json['edited']}'));
+  }
+
+  static Future<void> _fetchAzc(
+    ScrapingService scraping,
+    FeedFetch fetch,
+    void Function(List<RawFeedItem>) onRows,
+  ) async {
+    final forums = await Future.wait([
+      for (final forum in ['games.13', 'forbidden-haven-games.32'])
+        _fetchRss(
+          scraping,
+          'https://azkoselscorner.com/index.php?forums/$forum/index.rss',
+          source: 'azc',
+          label: 'AzC',
+          requiresAuth: false,
+        ),
+    ]);
+    final items = forums.expand((i) => i).toList();
+    if (items.isEmpty) fetch.problems['azc'] = 'failed';
+    onRows(items);
   }
 
   // ── F95Zone JSON API ─────────────────────────────────────────────────────
 
+  /// F95Zone's public forum feed, for when its Latest Updates data fails.
+  static Future<List<RawFeedItem>> _f95ZonePublic(ScrapingService scraping) => _fetchRss(
+        scraping,
+        'https://f95zone.to/forums/games.2/index.rss',
+        source: 'f95zone',
+        label: 'F95Zone',
+        requiresAuth: false,
+      );
+
   static Future<List<RawFeedItem>> _fetchF95ZoneJson(
     ScrapingService scraping,
+    int page,
   ) async {
-    const apiUrl =
+    final apiUrl =
         'https://f95zone.to/sam/latest_alpha/latest_data.php'
-        '?cmd=list&cat=games&page=1&sort=date&rows=60';
+        '?cmd=list&cat=games&page=$page&sort=date&rows=60';
     try {
       // Use evalOnPage + document.body.innerText so we get the raw JSON string
       // rather than outerHTML (which wraps the JSON in <html><body><pre>…</pre></body></html>
@@ -187,69 +238,170 @@ class FeedService {
         return [];
       }
 
-      final json = jsonDecode(body) as Map<String, dynamic>;
-      if (json['status'] != 'ok') {
-        debugPrint('FeedService F95Zone JSON status: ${json['status']} — full: $json');
-        return [];
-      }
-
-      final msgData = (json['msg'] as Map<String, dynamic>?)?['data'] as List?;
-      if (msgData == null) return [];
-
-      return msgData.map((raw) {
-        final m = raw as Map<String, dynamic>;
-        final threadId = m['thread_id'];
-        final title = (m['title'] as String? ?? '').trim();
-        final creator = (m['creator'] as String? ?? '').trim();
-        final version = (m['version'] as String? ?? '').trim();
-        final cover = (m['cover'] as String? ?? '').trim();
-        final ts = m['ts'] as int? ?? 0;
-        final dateLabel = (m['date'] as String? ?? '').trim();
-        final rating = m['rating'];
-
-        // Resolve tag IDs → names (skip meta/engine/status prefixes)
-        final tagIds = (m['tags'] as List? ?? []).whereType<int>();
-        final tagNames = tagIds
-            .map((id) => _f95Tags[id])
-            .whereType<String>()
-            .toList();
-
-        // Build a readable body for the raw card
-        final parts = <String>[];
-        if (version.isNotEmpty) parts.add('Version: $version');
-        if (creator.isNotEmpty) parts.add('Developer: $creator');
-        if (tagNames.isNotEmpty) parts.add('Tags: ${tagNames.join(', ')}');
-        if (rating != null) {
-          final r = (rating as num).toStringAsFixed(2);
-          parts.add('Rating: $r / 5');
-        }
-        if (dateLabel.isNotEmpty) parts.add('Updated: $dateLabel');
-        if (cover.isNotEmpty) parts.add('[cover] $cover');
-
-        final threadUrl = 'https://f95zone.to/threads/$threadId/';
-        final publishedAt = ts > 0
-            ? DateTime.fromMillisecondsSinceEpoch(ts * 1000, isUtc: true)
-            : null;
-
-        return RawFeedItem(
-          id: 'f95zone::$threadId',
-          source: 'f95zone',
-          sourceLabel: 'F95Zone',
-          title: title,
-          rawBody: parts.join('\n'),
-          url: threadUrl,
-          publishedAt: publishedAt,
-          author: creator,
-          channelName: 'Latest Updates',
-        );
-      }).toList();
+      return parseF95List(body);
     } catch (e) {
       debugPrint('FeedService F95Zone JSON failed: $e');
       return [];
     }
   }
 
+  /// Items from F95Zone's Latest Updates data. The site sends a field as a
+  /// number when it looks like one (a version of 1.5), so nothing here assumes
+  /// a type: one odd row must not cost the rest of the page.
+  static List<RawFeedItem> parseF95List(String body) {
+    final Object? json;
+    try {
+      json = jsonDecode(body);
+    } catch (_) {
+      return [];
+    }
+    if (json is! Map || json['status'] != 'ok') {
+      debugPrint('FeedService F95Zone JSON status: ${json is Map ? json['status'] : 'not an object'}');
+      return [];
+    }
+    final msg = json['msg'];
+    final rows = msg is Map ? msg['data'] : null;
+    if (rows is! List) return [];
+
+    return rows.whereType<Map>().map((m) {
+      final threadId = m['thread_id'];
+      final title = '${m['title'] ?? ''}'.trim();
+      final creator = '${m['creator'] ?? ''}'.trim();
+      final version = '${m['version'] ?? ''}'.trim();
+      final cover = '${m['cover'] ?? ''}'.trim();
+      final ts = m['ts'];
+      final rating = m['rating'];
+
+      // Resolve tag IDs → names (skip meta/engine/status prefixes)
+      final tagIds = (m['tags'] is List ? m['tags'] as List : const []).whereType<int>();
+      final tagNames = tagIds
+          .map((id) => _f95Tags[id])
+          .whereType<String>()
+          .toList();
+
+      // Build a readable body for the raw card
+      final parts = <String>[];
+      if (version.isNotEmpty) parts.add('Version: $version');
+      if (creator.isNotEmpty) parts.add('Developer: $creator');
+      if (tagNames.isNotEmpty) parts.add('Tags: ${tagNames.join(', ')}');
+      if (rating is num) parts.add('Rating: ${rating.toStringAsFixed(2)} / 5');
+      if (m['new'] == true) parts.add('Kind: new');
+      if (m['prefixes'] is List && (m['prefixes'] as List).contains(_f95Completed)) parts.add('Kind: complete');
+      if (cover.isNotEmpty) parts.add('[cover] $cover');
+
+      final threadUrl = 'https://f95zone.to/threads/$threadId/';
+      final publishedAt = ts is num && ts > 0
+          ? DateTime.fromMillisecondsSinceEpoch(ts.toInt() * 1000, isUtc: true)
+          : null;
+
+      return RawFeedItem(
+        id: 'f95zone::$threadId',
+        source: 'f95zone',
+        sourceLabel: 'F95Zone',
+        title: title,
+        rawBody: parts.join('\n'),
+        url: threadUrl,
+        publishedAt: publishedAt,
+        author: creator,
+        channelName: 'Latest Updates',
+      );
+    }).toList();
+  }
+
   // ── RSS ───────────────────────────────────────────────────────────────────
+
+  /// LewdCorner's Latest Updates data is the best source (version, developer,
+  /// tags, tier) but needs a login: logged out it answers 403 "Invalid API
+  /// key".
+  static Future<List<RawFeedItem>> _fetchLewdCornerPage(ScrapingService scraping, int page) async {
+    try {
+      final raw = await scraping.evalOnPage(
+        'https://lewdcorner.com/latest-updates.php?api=1&action=list&perPage=60&page=$page',
+        _documentSourceJs,
+      );
+      return parseLewdCornerList(raw is String ? raw : '');
+    } catch (e) {
+      debugPrint('FeedService LewdCorner list failed: $e');
+      return [];
+    }
+  }
+
+  /// The public feeds of the open forums are the fallback, with versions in
+  /// their titles. Games+ also has a public feed, but it's left out: those
+  /// games need a forum role, so a logged-out reader couldn't use them.
+  static Future<List<RawFeedItem>> _lewdCornerPublic(ScrapingService scraping) async {
+    final forums = await Future.wait([
+      for (final forum in ['games.6', 'ai-games.212'])
+        _fetchRss(
+          scraping,
+          'https://lewdcorner.com/forums/$forum/index.rss',
+          source: 'lewdcorner',
+          label: 'LewdCorner',
+          requiresAuth: false,
+        ),
+    ]);
+    return forums.expand((items) => items).toList();
+  }
+
+  /// Items from LewdCorner's Latest Updates data, written as the same plain
+  /// lines as F95Zone's. Plus and AI+ games need a forum role, which the site
+  /// doesn't report, so they're labelled for anyone who can't open them.
+  static List<RawFeedItem> parseLewdCornerList(String body) {
+    final Object? json;
+    try {
+      json = jsonDecode(body);
+    } catch (_) {
+      return [];
+    }
+    final payload = json is Map ? (json['data'] ?? json) : null;
+    final rows = payload is Map ? payload['items'] : null;
+    if (rows is! List) return [];
+
+    final items = <RawFeedItem>[];
+    for (final r in rows.whereType<Map>()) {
+      final title = _cleanFeedTitle('${r['title'] ?? ''}');
+      var link = '${r['link'] ?? ''}'.trim();
+      if (link.startsWith('/')) link = 'https://lewdcorner.com$link';
+      if (title.isEmpty || !link.startsWith('http')) continue;
+
+      final version = '${r['version'] ?? ''}'.trim();
+      final developer = '${r['developer'] ?? ''}'.trim();
+      final platforms = (r['platforms'] as List?)?.join(', ') ?? '';
+      final tags = (r['tags'] as List?)?.join(', ') ?? '';
+      final rating = r['rating'];
+      final timestamp = r['timestamp'];
+      final posted = r['posted_ts'];
+      var cover = '${r['image'] ?? ''}'.trim();
+      if (cover.startsWith('/')) cover = 'https://lewdcorner.com$cover';
+      final completed = (r['badges'] as List?)?.any((b) => b is Map && '${b['name']}'.toLowerCase() == 'completed') ?? false;
+      items.add(RawFeedItem(
+        id: 'lewdcorner::$link',
+        source: 'lewdcorner',
+        sourceLabel: r['is_premium'] == true ? 'LewdCorner Plus' : 'LewdCorner',
+        title: title,
+        rawBody: [
+          if (version.isNotEmpty) 'Version: $version',
+          if (developer.isNotEmpty) 'Developer: $developer',
+          if (platforms.isNotEmpty) 'Platforms: $platforms',
+          if (tags.isNotEmpty) 'Tags: $tags',
+          if (rating is num && rating > 0) 'Rating: ${rating.toStringAsFixed(2)} / 5',
+          // is_new_game was false on all 60 rows sampled; is_new is what the
+          // site itself shows as NEW.
+          if (r['is_new'] == true || r['is_new_game'] == true) 'Kind: new',
+          if (completed) 'Kind: complete',
+          if (posted is int && posted > 0) 'Posted: $posted',
+          if (cover.startsWith('http')) '[cover] $cover',
+        ].join('\n'),
+        url: link,
+        publishedAt: timestamp is int
+            ? DateTime.fromMillisecondsSinceEpoch(timestamp * 1000, isUtc: true)
+            : null,
+        author: developer,
+        channelName: 'Latest Updates - LewdCorner',
+      ));
+    }
+    return items;
+  }
 
   static Future<List<RawFeedItem>> _fetchRss(
     ScrapingService scraping,
@@ -283,14 +435,14 @@ class FeedService {
       }
 
       if (body.isEmpty) return [];
-      return _parseRss(body, source: source, label: label, feedUrl: feedUrl);
+      return parseRss(body, source: source, label: label, feedUrl: feedUrl);
     } catch (e) {
       debugPrint('FeedService RSS ($source) failed: $e');
       return [];
     }
   }
 
-  static List<RawFeedItem> _parseRss(
+  static List<RawFeedItem> parseRss(
     String xmlBody, {
     required String source,
     required String label,
@@ -310,18 +462,26 @@ class FeedService {
         final titleVersion = _extractTitleVersion(rawTitle);
         final title = _cleanFeedTitle(rawTitle);
         final link = el.findElements('link').firstOrNull?.innerText.trim() ?? '';
-        final rawDesc = el.findElements('description').firstOrNull?.innerText.trim() ?? '';
+        // XenForo sends the post in content:encoded, and no description.
+        final rawDesc = (el.findAllElements('encoded', namespace: '*').firstOrNull?.innerText ??
+                el.findElements('description').firstOrNull?.innerText ??
+                '')
+            .trim();
         // Prepend "Version: X" to rawBody if found in title brackets and not
         // already present — this lets the version badge logic work for RSS
         // sources (AzC, LewdCorner) the same way it does for F95Zone.
-        final desc = (titleVersion != null && !rawDesc.contains('Version:'))
-            ? 'Version: $titleVersion\n$rawDesc'
-            : rawDesc;
+        final titleDeveloper = _titleDeveloper(rawTitle);
+        final desc = [
+          if (titleVersion != null && !rawDesc.contains('Version:')) 'Version: $titleVersion',
+          if (titleDeveloper.isNotEmpty) 'Developer: $titleDeveloper',
+          rawDesc,
+        ].join('\n');
         final pubDateRaw = el.findElements('pubDate').firstOrNull?.innerText.trim() ?? '';
 
         // dc:creator (XenForo uses this for the poster name)
-        final creator = el.findAllElements('creator').firstOrNull?.innerText.trim() ??
-            el.findAllElements('author').firstOrNull?.innerText.trim() ??
+        // <author> is "invalid@example.com (Name)" when it's there at all.
+        final creator = el.findAllElements('creator', namespace: '*').firstOrNull?.innerText.trim() ??
+            RegExp(r'\((.+)\)\s*$').firstMatch(el.findElements('author').firstOrNull?.innerText ?? '')?.group(1) ??
             '';
 
         final published = _parseRssDate(pubDateRaw);
@@ -345,87 +505,6 @@ class FeedService {
     }
   }
 
-  // ── Discord REST API ──────────────────────────────────────────────────────
-
-  static Future<List<RawFeedItem>> _fetchDiscord({
-    required String channelId,
-    required String token,
-    required String serverName,
-    required String channelName,
-  }) async {
-    try {
-      final resp = await http.get(
-        Uri.parse(
-            'https://discord.com/api/v10/channels/$channelId/messages?limit=50'),
-        headers: {
-          'Authorization': 'Bot $token',
-          'User-Agent': _ua,
-        },
-      ).timeout(const Duration(seconds: 15));
-
-      if (resp.statusCode != 200) {
-        debugPrint('Discord channel $channelId returned ${resp.statusCode}: ${resp.body}');
-        return [];
-      }
-
-      final messages = jsonDecode(resp.body) as List;
-      return messages.map((m) {
-        final msg = m as Map<String, dynamic>;
-        final id = msg['id'] as String? ?? '';
-        final content = msg['content'] as String? ?? '';
-        final timestamp = msg['timestamp'] as String? ?? '';
-        final authorObj = msg['author'] as Map? ?? {};
-        final username = authorObj['username'] as String? ?? '';
-        final globalName = authorObj['global_name'] as String? ?? username;
-
-        // Embeds: Discord bots often post game info in embeds
-        final embeds = (msg['embeds'] as List?) ?? [];
-        String embedText = '';
-        for (final e in embeds) {
-          final em = e as Map<String, dynamic>;
-          final eTitle = em['title'] as String? ?? '';
-          final eDesc = em['description'] as String? ?? '';
-          if (eTitle.isNotEmpty || eDesc.isNotEmpty) {
-            embedText += '${eTitle.isNotEmpty ? "[$eTitle] " : ""}$eDesc\n';
-          }
-        }
-
-        // Attachments: list their filenames
-        final attachments = (msg['attachments'] as List?) ?? [];
-        final attachText = attachments.isEmpty
-            ? ''
-            : '\n📎 ${attachments.map((a) => (a as Map)['filename'] ?? '').join(', ')}';
-
-        final body = [content, embedText.trim(), attachText.trim()]
-            .where((s) => s.isNotEmpty)
-            .join('\n\n');
-
-        // Title: first line of content or embed title, capped at 120 chars
-        final firstLine = content.split('\n').first.trim();
-        final titleText = firstLine.isNotEmpty
-            ? (firstLine.length > 120 ? '${firstLine.substring(0, 117)}…' : firstLine)
-            : (embeds.isNotEmpty
-                ? ((embeds.first as Map)['title'] as String? ?? 'Discord post')
-                : 'Discord post');
-
-        return RawFeedItem(
-          id: 'discord::$channelId::$id',
-          source: 'discord',
-          sourceLabel: serverName,
-          title: titleText,
-          rawBody: body,
-          url: 'https://discord.com/channels/@me/$channelId/$id',
-          publishedAt: timestamp.isNotEmpty ? DateTime.tryParse(timestamp) : null,
-          author: globalName,
-          channelName: channelName,
-        );
-      }).toList();
-    } catch (e) {
-      debugPrint('FeedService Discord $channelId failed: $e');
-      return [];
-    }
-  }
-
   // ── Title cleaning ────────────────────────────────────────────────────────
 
   /// Extract a version string from XenForo title bracket tags.
@@ -435,10 +514,24 @@ class FeedService {
   /// Returns null if no version-like bracket is found.
   static String? _extractTitleVersion(String rawTitle) {
     final m = RegExp(
-      r'\[(v[\d.]+[^\]]*|ch(?:apter)?\.?\s*\d+[^\]]*|episode\s*\d+[^\]]*)\]',
+      r'\[(v[\d.]+[^\]]*|\d+(?:\.\d+)+[^\]]*|ch(?:apter)?\.?\s*\d+[^\]]*|episode\s*\d+[^\]]*)\]',
       caseSensitive: false,
     ).firstMatch(rawTitle);
     return m?.group(1)?.trim();
+  }
+
+  /// Forum threads are titled "Game [v0.1] [Studio]", so the last bracket is
+  /// the developer unless it's the version. Mod threads can name the modder
+  /// there, which is still closer than the poster.
+  static String _titleDeveloper(String rawTitle) {
+    final brackets = RegExp(r'\[([^\]]*)\]').allMatches(rawTitle).map((m) => m.group(1)!.trim()).toList();
+    if (brackets.length < 2) return '';
+    final last = brackets.last;
+    if (last == _extractTitleVersion(rawTitle)) return '';
+    if (RegExp(r'^(?:v|ver|ch|chapter|ep|episode|season|part|final|demo|completed?)?[\s.]*\d', caseSensitive: false).hasMatch(last)) {
+      return '';
+    }
+    return cleanDeveloperName(last);
   }
 
   /// Strip XenForo thread-prefix labels and bracket tags from an RSS title.
@@ -474,16 +567,13 @@ class FeedService {
 
   // ── Cross-source deduplication ───────────────────────────────────────────
 
-  /// Deduplicates non-Discord items by normalized title.
-  /// When two sources cover the same game, the one published FIRST wins —
-  /// fair race condition, no platform bias.
-  /// Discord posts are never deduplicated (they're announcements, not indexes).
+  /// One row per release. When several sites post the same version of a game,
+  /// the one published FIRST wins: a fair race, no platform bias. A different
+  /// version is a different release, so it keeps its own row.
   static List<RawFeedItem> deduplicate(List<RawFeedItem> items) {
-    // Pass 1: find the earliest-published item for each normalized title.
     final winners = <String, RawFeedItem>{};
     for (final item in items) {
-      if (item.source == 'discord') continue;
-      final key = _normalizeTitle(item.title);
+      final key = releaseKey(item);
       if (key.isEmpty) continue;
       final current = winners[key];
       if (current == null) {
@@ -498,26 +588,17 @@ class FeedService {
         }
       }
     }
-
-    // Pass 2: keep winner entries + all Discord posts (preserving sort order).
     return items.where((item) {
-      if (item.source == 'discord') return true;
-      final key = _normalizeTitle(item.title);
-      if (key.isEmpty) return true;
-      return identical(winners[key], item);
+      final key = releaseKey(item);
+      return key.isEmpty || identical(winners[key], item);
     }).toList();
   }
 
-  /// Normalize a title for dedup comparison:
-  /// lowercase → strip version strings → strip punctuation → collapse spaces.
-  static String _normalizeTitle(String title) {
-    return title
-        .toLowerCase()
-        .replaceAll(RegExp(r"v?\d+[\d.]*[a-z]?(\s*(alpha|beta|rc)\s*\d*)?",
-            caseSensitive: false), '')  // strip version numbers
-        .replaceAll(RegExp(r"[^a-z0-9\s]"), '')   // strip punctuation
-        .replaceAll(RegExp(r'\s+'), ' ')            // collapse whitespace
-        .trim();
+  /// Identifies a release across sites: the game's title plus its version.
+  static String releaseKey(RawFeedItem item) {
+    final title = feedTitleKey(item.title);
+    if (title.isEmpty) return '';
+    return '$title|${feedVersionKey(item)}';
   }
 
   // ── Date parsing ──────────────────────────────────────────────────────────

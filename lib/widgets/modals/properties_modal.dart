@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import '../../theme.dart';
 import '../../utils/formatters.dart';
@@ -10,15 +9,16 @@ import '../../models/game_group.dart';
 import '../../models/game_version.dart';
 import '../../models/user_data.dart';
 import '../../providers/library_provider.dart';
+import '../../services/gallery_service.dart';
 import '../../services/scanner_service.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-void showPropertiesModal(BuildContext context, GameGroup group) {
+void showPropertiesModal(BuildContext context, GameGroup group, {bool openArt = false}) {
   showDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.6),
-    builder: (_) => PropertiesModal(group: group),
+    builder: (_) => PropertiesModal(group: group, openArt: openArt),
   );
 }
 
@@ -30,14 +30,15 @@ enum _Tab { general, launch, versions, patches, art }
 
 class PropertiesModal extends ConsumerStatefulWidget {
   final GameGroup group;
-  const PropertiesModal({super.key, required this.group});
+  final bool openArt;
+  const PropertiesModal({super.key, required this.group, this.openArt = false});
 
   @override
   ConsumerState<PropertiesModal> createState() => _PropertiesModalState();
 }
 
 class _PropertiesModalState extends ConsumerState<PropertiesModal> {
-  _Tab _tab = _Tab.general;
+  late _Tab _tab = widget.openArt ? _Tab.art : _Tab.general;
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +85,7 @@ class _PropertiesModalState extends ConsumerState<PropertiesModal> {
                         selected: _tab,
                         onSelect: (t) => setState(() => _tab = t),
                       ),
-                      const VerticalDivider(
+                      VerticalDivider(
                           width: 1, thickness: 1, color: AppColors.border),
                       Expanded(child: _buildPanel(group, ud)),
                     ],
@@ -121,17 +122,17 @@ class _ModalHeader extends StatelessWidget {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.bgCard,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.tune_outlined, size: 15, color: AppColors.textMuted),
+          Icon(Icons.tune_outlined, size: 15, color: AppColors.textMuted),
           const SizedBox(width: 8),
           Text(
             'Properties',
-            style: GoogleFonts.inter(
+            style: AppText.ui(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary),
@@ -146,7 +147,7 @@ class _ModalHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 12, color: AppColors.textSecondary),
               overflow: TextOverflow.ellipsis,
             ),
@@ -180,7 +181,7 @@ class _CloseBtnState extends State<_CloseBtn> {
           width: 24,
           height: 24,
           decoration: BoxDecoration(
-            color: _hovered ? const Color(0x33C94040) : Colors.transparent,
+            color: _hovered ? AppColors.danger.withValues(alpha: 0.2) : Colors.transparent,
             borderRadius: AppRadius.borderXs,
           ),
           child: Icon(Icons.close,
@@ -277,7 +278,7 @@ class _SidebarTabState extends State<_SidebarTab> {
                 child: Text(widget.label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
+                    style: AppText.ui(
                       fontSize: 12,
                       fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w400,
                       color: fg,
@@ -316,8 +317,8 @@ class _FieldLabel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 5),
       child: Text(text,
-          style: GoogleFonts.inter(
-              fontSize: 10,
+          style: AppText.ui(
+              fontSize: 11,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
               color: AppColors.textMuted)),
@@ -346,10 +347,10 @@ class _StyledField extends StatelessWidget {
         controller: controller,
         maxLines: 1,
         onEditingComplete: onEditingComplete,
-        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+        style: AppText.ui(fontSize: 12, color: AppColors.textPrimary),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          hintStyle: AppText.ui(fontSize: 12, color: AppColors.textMuted),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           border: InputBorder.none,
@@ -405,7 +406,7 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
 
     return _PanelScroll(children: [
       // Display Name
-      const _FieldLabel('DISPLAY NAME'),
+      const _FieldLabel('Display name'),
       _StyledField(
         controller: _nameCtrl,
         hint: g.displayName,
@@ -420,7 +421,7 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
       _sectionGap(),
 
       // Folder info
-      const _FieldLabel('FOLDER'),
+      const _FieldLabel('Folder'),
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
@@ -430,7 +431,7 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
         ),
         child: Text(
           v?.folderPath.path ?? '—',
-          style: GoogleFonts.jetBrainsMono(
+          style: AppText.mono(
               fontSize: 11, color: AppColors.textSecondary),
         ),
       ),
@@ -445,11 +446,11 @@ class _GeneralPanelState extends ConsumerState<_GeneralPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Hide from Library',
-                    style: GoogleFonts.inter(
+                    style: AppText.ui(
                         fontSize: 13, color: AppColors.textPrimary)),
                 const SizedBox(height: 2),
                 Text('Hidden games are excluded from all views',
-                    style: GoogleFonts.inter(
+                    style: AppText.ui(
                         fontSize: 11, color: AppColors.textMuted)),
               ],
             ),
@@ -521,7 +522,7 @@ class _LaunchPanelState extends ConsumerState<_LaunchPanel> {
 
     return _PanelScroll(children: [
       // Executable Path
-      const _FieldLabel('EXECUTABLE PATH'),
+      const _FieldLabel('Executable path'),
       Row(
         children: [
           Expanded(
@@ -534,7 +535,7 @@ class _LaunchPanelState extends ConsumerState<_LaunchPanel> {
               ),
               child: Text(
                 v?.exePath?.path ?? 'Auto-detected',
-                style: GoogleFonts.jetBrainsMono(
+                style: AppText.mono(
                   fontSize: 11,
                   color: v?.exePath != null
                       ? AppColors.textSecondary
@@ -551,13 +552,13 @@ class _LaunchPanelState extends ConsumerState<_LaunchPanel> {
       const SizedBox(height: 6),
       Text(
         'The main executable used to launch this game. If not specified, we will attempt to auto-detect it.',
-        style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+        style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
       ),
 
       _sectionGap(),
 
       // Launch Arguments
-      const _FieldLabel('LAUNCH ARGUMENTS'),
+      const _FieldLabel('Launch arguments'),
       _StyledField(
         controller: _argsCtrl,
         hint: 'e.g. -v --windowed',
@@ -569,7 +570,7 @@ class _LaunchPanelState extends ConsumerState<_LaunchPanel> {
           Expanded(
             child: Text(
               'Advanced users only. Arguments will be passed to the game executable on launch.',
-              style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+              style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
             ),
           ),
           const SizedBox(width: 8),
@@ -624,7 +625,7 @@ class _VersionsPanel extends ConsumerWidget {
     final versions = group.versions;
 
     if (versions.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('No versions installed.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
       );
@@ -653,7 +654,7 @@ class _VersionsPanel extends ConsumerWidget {
                       children: [
                         Text(
                           v.versionStr.isNotEmpty ? fmtVersion(v.versionStr) : 'Unknown version',
-                          style: GoogleFonts.inter(
+                          style: AppText.ui(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: AppColors.textPrimary,
@@ -668,9 +669,9 @@ class _VersionsPanel extends ConsumerWidget {
                               color: AppColors.accentGlow,
                               borderRadius: AppRadius.borderXs,
                             ),
-                            child: Text('LATEST',
-                                style: GoogleFonts.inter(
-                                    fontSize: 9,
+                            child: Text('Latest',
+                                style: AppText.ui(
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w700,
                                     color: AppColors.accentLight,
                                     letterSpacing: 0.5)),
@@ -681,22 +682,33 @@ class _VersionsPanel extends ConsumerWidget {
                     const SizedBox(height: 2),
                     Text(
                       v.folderPath.path,
-                      style: GoogleFonts.jetBrainsMono(
-                          fontSize: 10, color: AppColors.textMuted),
+                      style: AppText.mono(
+                          fontSize: 11, color: AppColors.textMuted),
                       overflow: TextOverflow.ellipsis,
                     ),
                     if (v.exePath != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         '▶ ${p.basename(v.exePath!.path)}',
-                        style: GoogleFonts.inter(
-                            fontSize: 10, color: AppColors.textSecondary),
+                        style: AppText.ui(
+                            fontSize: 11, color: AppColors.textSecondary),
                       ),
                     ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
+              // A version merged in from another game can be split back out.
+              if (v.baseKey != group.baseKey) ...[
+                _SmBtn(
+                  'Separate',
+                  onTap: () {
+                    ref.read(userDataProvider.notifier).unmergeGame(v.baseKey);
+                    Navigator.of(context).pop();
+                  },
+                ),
+                const SizedBox(width: 6),
+              ],
               _SmBtn(
                 'Open Folder',
                 onTap: () async {
@@ -725,7 +737,7 @@ class _PatchesPanel extends ConsumerWidget {
     final versions = group.versions;
 
     if (versions.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('No versions installed.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
       );
@@ -776,7 +788,7 @@ class _PatchesPanel extends ConsumerWidget {
           padding: const EdgeInsets.only(bottom: 6, top: 4),
           child: Text(
             v.versionStr.isNotEmpty ? fmtVersion(v.versionStr) : 'Unknown version',
-            style: GoogleFonts.inter(
+            style: AppText.ui(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textMuted,
@@ -821,7 +833,7 @@ class _PatchesPanel extends ConsumerWidget {
             versions: scanTargets,
             onScan: (targets) => _runScan(targets, ref),
           ),
-          const Expanded(
+          Expanded(
             child: Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -986,19 +998,19 @@ class _ScanBarState extends State<_ScanBar> {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.radar_outlined, size: 13, color: AppColors.textMuted),
+          Icon(Icons.radar_outlined, size: 13, color: AppColors.textMuted),
           const SizedBox(width: 6),
           if (_result != null)
             Expanded(
               child: Text(
                 _result!,
-                style: GoogleFonts.inter(
-                  fontSize: 10,
+                style: AppText.ui(
+                  fontSize: 11,
                   color: _isError ? AppColors.danger : AppColors.textMuted,
                 ),
               ),
@@ -1007,7 +1019,7 @@ class _ScanBarState extends State<_ScanBar> {
             Expanded(
               child: Text(
                 'Reconcile on-disk state with app database',
-                style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
               ),
             ),
           const SizedBox(width: 12),
@@ -1022,15 +1034,15 @@ class _ScanBarState extends State<_ScanBar> {
                 border: Border.all(color: AppColors.border),
               ),
               child: _scanning
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 10, height: 10,
                       child: CircularProgressIndicator(
                           strokeWidth: 1.5, color: AppColors.accent),
                     )
                   : Text(
                       'Scan',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
+                      style: AppText.ui(
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textSecondary,
                       ),
@@ -1063,7 +1075,7 @@ class _PatchRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: isActive
-            ? const Color(0x0A4A9E6E)
+            ? AppColors.accent.withValues(alpha: 0.04)
             : AppColors.bgCard,
         border: Border.all(
           color: isActive ? AppColors.accentDim : AppColors.border,
@@ -1081,7 +1093,7 @@ class _PatchRow extends StatelessWidget {
           Expanded(
             child: Text(
               patchName,
-              style: GoogleFonts.jetBrainsMono(
+              style: AppText.mono(
                 fontSize: 11,
                 color: isActive ? AppColors.textPrimary : AppColors.textSecondary,
               ),
@@ -1114,7 +1126,7 @@ class _ArtPanel extends ConsumerWidget {
     final autoCover = autoImages.isEmpty ? null : autoImages.first;
 
     return _PanelScroll(children: [
-      const _FieldLabel('CUSTOM COVER ART'),
+      const _FieldLabel('Custom cover art'),
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1132,7 +1144,7 @@ class _ArtPanel extends ConsumerWidget {
                 ? Image.file(customArtFile, fit: BoxFit.cover)
                 : autoCover != null
                     ? Image.file(autoCover, fit: BoxFit.cover)
-                    : const Icon(Icons.image_not_supported_outlined,
+                    : Icon(Icons.image_not_supported_outlined,
                         color: AppColors.textMuted, size: 32),
           ),
           const SizedBox(width: 16),
@@ -1142,15 +1154,15 @@ class _ArtPanel extends ConsumerWidget {
               children: [
                 Text(
                   hasCustom ? 'Custom art set' : 'Using auto-detected art',
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 12, color: AppColors.textSecondary),
                 ),
                 if (hasCustom) ...[
                   const SizedBox(height: 4),
                   Text(
                     customArtPath!,
-                    style: GoogleFonts.jetBrainsMono(
-                        fontSize: 10, color: AppColors.textMuted),
+                    style: AppText.mono(
+                        fontSize: 11, color: AppColors.textMuted),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -1177,8 +1189,8 @@ class _ArtPanel extends ConsumerWidget {
                 const SizedBox(height: 16),
                 Text(
                   'Supported: JPG, PNG, WEBP',
-                  style: GoogleFonts.inter(
-                      fontSize: 10, color: AppColors.textMuted),
+                  style: AppText.ui(
+                      fontSize: 11, color: AppColors.textMuted),
                 ),
               ],
             ),
@@ -1187,10 +1199,14 @@ class _ArtPanel extends ConsumerWidget {
       ),
 
       _sectionGap(),
-      const _FieldLabel('AUTO-DETECTED IMAGES'),
+      const _FieldLabel('Gallery'),
+      _GalleryEditor(group: group),
+
+      _sectionGap(),
+      const _FieldLabel('Auto-detected images'),
       if (autoImages.isEmpty)
         Text('No images found in game folder.',
-            style: GoogleFonts.inter(
+            style: AppText.ui(
                 fontSize: 11, color: AppColors.textMuted))
       else
         SizedBox(
@@ -1233,6 +1249,157 @@ class _ArtPanel extends ConsumerWidget {
   }
 }
 
+/// Reorder the saved images, pick the cover, remove some, or add your own.
+class _GalleryEditor extends ConsumerStatefulWidget {
+  final GameGroup group;
+  const _GalleryEditor({required this.group});
+
+  @override
+  ConsumerState<_GalleryEditor> createState() => _GalleryEditorState();
+}
+
+class _GalleryEditorState extends ConsumerState<_GalleryEditor> {
+  /// Files keep their names when reordered, so decoded images must be dropped.
+  Future<void> _changed() async {
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
+    await ref.read(libraryProvider.notifier).scan();
+    ref.read(imageEpochProvider.notifier).state++;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _add(Directory dir) async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Add images',
+      type: FileType.image,
+      allowMultiple: true,
+      lockParentWindow: true,
+    );
+    final files = result?.paths.whereType<String>().map(File.new).toList() ?? [];
+    if (files.isEmpty) return;
+    GalleryService.add(dir, files);
+    await _changed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dir = GalleryService.folderFor(widget.group);
+    final shots = GalleryService.screenshots(dir);
+    final epoch = ref.watch(imageEpochProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (shots.isNotEmpty)
+          SizedBox(
+            height: 92,
+            child: ReorderableListView(
+              scrollDirection: Axis.horizontal,
+              buildDefaultDragHandles: true,
+              onReorder: (from, to) {
+                final order = [...shots];
+                final moved = order.removeAt(from);
+                order.insert(to > from ? to - 1 : to, moved);
+                GalleryService.reorder(dir, order);
+                _changed();
+              },
+              children: [
+                for (final f in shots)
+                  Padding(
+                    key: ValueKey(f.path),
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: AppRadius.borderSm,
+                          child: Image.file(f,
+                              key: ValueKey('${f.path}$epoch'),
+                              width: 132,
+                              height: 80,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stack) =>
+                                  Container(width: 132, height: 80, color: AppColors.bgCard)),
+                        ),
+                        Positioned(
+                          top: 3,
+                          right: 3,
+                          child: Row(
+                            children: [
+                              _GalleryAction(
+                                icon: Icons.star_outline,
+                                tooltip: 'Make this the cover',
+                                onTap: () {
+                                  GalleryService.setCover(dir, f);
+                                  _changed();
+                                },
+                              ),
+                              const SizedBox(width: 3),
+                              _GalleryAction(
+                                icon: Icons.close,
+                                tooltip: 'Delete this image',
+                                onTap: () {
+                                  GalleryService.remove(dir, f);
+                                  _changed();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _SmBtn('Add Images…', onTap: () => _add(dir)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                shots.isEmpty
+                    ? 'With no cover yet, the first image you add becomes the cover.'
+                    : 'Drag images to reorder them.',
+                style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _GalleryAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  const _GalleryAction({required this.icon, required this.tooltip, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.65),
+              borderRadius: AppRadius.borderSm,
+            ),
+            child: Icon(icon, size: 12, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Shared tiny widgets ───────────────────────────────────────────────────────
 
 class _SmBtn extends StatefulWidget {
@@ -1270,7 +1437,7 @@ class _SmBtnState extends State<_SmBtn> {
             border: Border.all(color: border),
           ),
           child: Text(widget.label,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 12, fontWeight: FontWeight.w500, color: fg)),
         ),
       ),

@@ -42,8 +42,10 @@ dependencies:
   # URL launcher (open browser, open folder in Explorer)
   url_launcher: ^6.3.1
 
-  # Embedded WebView2 browser (itch.io authenticated login — Windows only)
-  webview_windows: ^0.4.0
+  # Embedded WebView2 browser. A copy of 0.4.0 that also reports downloads,
+  # see third_party/webview_windows/PATCHES.md
+  webview_windows:
+    path: third_party/webview_windows
 
   # Archive extraction (zip)
   archive: ^4.0.4
@@ -63,8 +65,7 @@ dependencies:
   # Equatable (value equality on models)
   equatable: ^2.0.7
 
-  # Fonts (Inter UI + JetBrains Mono)
-  google_fonts: ^6.2.1
+  tray_manager: ^0.5.3
 
 dev_dependencies:
   flutter_test:
@@ -78,3 +79,41 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/tray_icon.ico
+  # Bundled so that nothing is fetched at runtime. Licences are in assets/fonts.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Inter-ExtraBold.ttf
+          weight: 800
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/JetBrainsMono-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+    - family: Newsreader
+      fonts:
+        - asset: assets/fonts/Newsreader-Display-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Newsreader-Display-SemiBold.ttf
+          weight: 600
+    - family: Newsreader Text
+      fonts:
+        - asset: assets/fonts/NewsreaderText-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NewsreaderText-Medium.ttf
+          weight: 500

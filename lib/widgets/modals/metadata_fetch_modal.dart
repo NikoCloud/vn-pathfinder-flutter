@@ -1,20 +1,20 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme.dart';
 import '../../models/game_group.dart';
 import '../../providers/library_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/metadata_service.dart';
-import '../../services/scraping_service.dart' show ScrapingService, scrapingServiceProvider, scrapingSessionProvider;
+import '../../services/scraping_service.dart' show ScrapingException, ScrapingService, scrapingServiceProvider, scrapingSessionProvider;
 import '../../services/scanner_service.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-void showMetadataFetchModal(BuildContext context, GameGroup group) {
-  showDialog<void>(
+Future<void> showMetadataFetchModal(BuildContext context, GameGroup group) {
+  return showDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.7),
     builder: (_) => MetadataFetchModal(group: group),
@@ -99,6 +99,10 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
     for (final f in _kFields) f: null,
   };
 
+  // Which image is the cover and which are left out, for the images source.
+  String? _coverPick;
+  final Set<String> _removedImages = {};
+
   // ── Convenience getters for the active tab ────────────────────────────────
   List<MetadataResult> get _tabResults => _resultsByProvider[_activeTab] ?? [];
   bool get _tabLoading => _loadingByProvider[_activeTab] ?? false;
@@ -164,11 +168,12 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
     if (query.isEmpty) return;
 
     final settings = ref.read(settingsProvider);
-    if (settings.lockdown) {
+    if (settings.lockdown || !settings.fetchMetadata) {
       setState(() {
         for (final p in _Provider.values) {
-          _errorByProvider[p] =
-              'Network locked down. Enable it in Settings → Network.';
+          _errorByProvider[p] = settings.lockdown
+              ? 'Network locked down. Enable it in Settings → Network.'
+              : 'Metadata Scraping is off. Enable it in Settings → Network.';
           _loadingByProvider[p] = false;
         }
       });
@@ -197,13 +202,19 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   Future<void> _searchOne(
       _Provider prov, String query, ScrapingService scraping) async {
     try {
-      final results = switch (prov) {
+      // The forums need the login cookies, so they're skipped with logins off.
+      final needsLogin = prov == _Provider.f95zone || prov == _Provider.lewdcorner || prov == _Provider.azc;
+      if (needsLogin && !ref.read(settingsProvider).allowProviderLogin) {
+        throw const ScrapingException('Site Logins are off. Enable them in Settings → Network.');
+      }
+
+      final results = await MetadataService.retryOnce(() async => switch (prov) {
         _Provider.vndb       => await MetadataService.searchVndb(query),
         _Provider.f95zone    => await MetadataService.searchF95Zone(query, scraping),
         _Provider.lewdcorner => await MetadataService.searchLewdCorner(query, scraping),
         _Provider.azc        => await MetadataService.searchAzkosel(query, scraping),
         _Provider.itchio     => await MetadataService.searchItchio(query, scraping),
-      };
+      });
 
       if (!mounted) return;
       setState(() {
@@ -221,7 +232,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       if (!mounted) return;
       setState(() {
         _loadingByProvider[prov] = false;
-        _errorByProvider[prov] = 'Search failed: $e';
+        _errorByProvider[prov] = e is ScrapingException ? e.message : 'Search failed: $e';
       });
     }
   }
@@ -250,6 +261,11 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
             _enrichingByProvider[prov] = false;
             if (autoAssign) _autoAssignFields(prov, enriched);
           });
+          if (enriched.imagesLocked) {
+            ref.read(notificationProvider.notifier).warning(
+                'This thread hides its images from your account. '
+                'Log in, or check you have the forum role it needs.');
+          }
         }
       } catch (_) {
         if (mounted) setState(() => _enrichingByProvider[prov] = false);
@@ -326,6 +342,13 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         }
       }
 
+      // Rating — F95Zone's when it has one, it's the most used
+      final rated = [
+        _pickedByProvider[_Provider.f95zone],
+        ..._pickedByProvider.values,
+      ].whereType<MetadataResult>().where((r) => r.rating > 0);
+      if (rated.isNotEmpty) meta['rating'] = rated.first.rating;
+
       // Store source URLs for every picked provider
       for (final entry in _pickedByProvider.entries) {
         final r = entry.value;
@@ -351,22 +374,33 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
 
       // Download images from chosen images source
       final imgResult = imgSrc != null ? _pickedByProvider[imgSrc] : null;
-      if (_downloadImages && imgResult != null &&
-          (imgResult.coverUrl.isNotEmpty || imgResult.screenshotUrls.isNotEmpty)) {
+      bool hasImages(MetadataResult r) =>
+          r.coverUrl.isNotEmpty || r.screenshotUrls.isNotEmpty;
+      if (_downloadImages && imgResult != null && hasImages(imgResult)) {
         setState(() {
           _dlDone = 0;
           _dlTotal = (imgResult.coverUrl.isNotEmpty ? 1 : 0) +
               imgResult.screenshotUrls.length;
         });
-        await MetadataService.downloadImages(
+        final images = await MetadataService.downloadBestImages(
           gameFolder: v.folderPath,
-          coverUrl: imgResult.coverUrl,
-          screenshotUrls: imgResult.screenshotUrls,
+          sources: [
+            imgResult.withImages(cover: _coverPick, removed: _removedImages),
+            ..._pickedByProvider.values
+                .whereType<MetadataResult>()
+                .where((r) => !identical(r, imgResult) && hasImages(r)),
+          ],
           scrapingService: ref.read(scrapingServiceProvider),
           onProgress: (done, total) {
             if (mounted) setState(() { _dlDone = done; _dlTotal = total; });
           },
         );
+        final notes = ref.read(notificationProvider.notifier);
+        if (images.saved == 0) {
+          notes.warning("The images couldn't be downloaded. Try another source.");
+        } else if (images.thumbnails > 0) {
+          notes.warning('Some full-size images are unavailable, so small thumbnails were saved.');
+        }
       }
 
       await ref.read(libraryProvider.notifier).scan();
@@ -389,7 +423,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
-    final locked = settings.lockdown;
+    final locked = settings.lockdown || !settings.fetchMetadata;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -423,11 +457,13 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     color: AppColors.danger.withValues(alpha: 0.12),
                     child: Row(children: [
-                      const Icon(Icons.lock_outline, size: 14, color: AppColors.danger),
+                      Icon(Icons.lock_outline, size: 14, color: AppColors.danger),
                       const SizedBox(width: 8),
                       Text(
-                        'Network lockdown is active — metadata search is disabled.',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.danger),
+                        settings.lockdown
+                            ? 'Network lockdown is active — metadata search is disabled.'
+                            : 'Metadata Scraping is off in Settings → Network.',
+                        style: AppText.ui(fontSize: 12, color: AppColors.danger),
                       ),
                     ]),
                   ),
@@ -437,7 +473,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                     children: [
                       // ── Left: search + provider tabs + results ──────────
                       SizedBox(
-                        width: 270,
+                        width: 340,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
@@ -464,7 +500,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                               pickedByProvider: _pickedByProvider,
                               onSelect: (p) => setState(() => _activeTab = p),
                             ),
-                            const Divider(height: 1, color: AppColors.border),
+                            Divider(height: 1, color: AppColors.border),
                             Expanded(
                               child: _ResultsList(
                                 loading: _tabLoading,
@@ -477,17 +513,27 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                           ],
                         ),
                       ),
-                      const VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                      VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
                       // ── Right: field mixer ──────────────────────────────
                       Expanded(
                         child: _FieldMixer(
+                          locked: locked,
                           pickedByProvider: _pickedByProvider,
                           enrichingByProvider: _enrichingByProvider,
                           fieldSource: _fieldSource,
                           downloadImages: _downloadImages,
                           loginImageBytes: _loginImageBytes,
-                          onSourceChange: (field, prov) =>
-                              setState(() => _fieldSource[field] = prov),
+                          onSourceChange: (field, prov) => setState(() {
+                            _fieldSource[field] = prov;
+                            if (field == 'images') {
+                              _coverPick = null;
+                              _removedImages.clear();
+                            }
+                          }),
+                          coverPick: _coverPick,
+                          removedImages: _removedImages,
+                          onPickCover: (url) => setState(() => _coverPick = url),
+                          onRemoveImage: (url) => setState(() => _removedImages.add(url)),
                           onToggleDownload: (v) =>
                               setState(() => _downloadImages = v),
                         ),
@@ -495,7 +541,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.border),
+                Divider(height: 1, color: AppColors.border),
                 _Footer(
                   anyPicked: _anyPicked,
                   applying: _applying,
@@ -526,20 +572,20 @@ class _Header extends StatelessWidget {
     return Container(
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(children: [
-        const Icon(Icons.tune_outlined, size: 16, color: AppColors.accent),
+        Icon(Icons.tune_outlined, size: 16, color: AppColors.accent),
         const SizedBox(width: 10),
         Text('Fetch Metadata',
-            style: GoogleFonts.inter(
+            style: AppText.ui(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary)),
         const SizedBox(width: 6),
         Text('— $title',
-            style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
+            style: AppText.ui(fontSize: 13, color: AppColors.textMuted),
             overflow: TextOverflow.ellipsis),
         const Spacer(),
         IconButton(
@@ -572,7 +618,7 @@ class _SearchField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
-        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+        style: AppText.ui(fontSize: 12, color: AppColors.textPrimary),
         decoration: const InputDecoration(
           filled: false,
           border: InputBorder.none,
@@ -655,7 +701,10 @@ class _ProviderTabs extends StatelessWidget {
           final loading = loadingByProvider[prov] ?? false;
           final picked = pickedByProvider[prov] != null;
 
-          return Expanded(
+          // Widths follow the labels, so no provider name gets cut off.
+          return Flexible(
+            flex: prov.label.length + 4,
+            fit: FlexFit.tight,
             child: GestureDetector(
               onTap: () => onSelect(prov),
               child: Container(
@@ -675,8 +724,8 @@ class _ProviderTabs extends StatelessWidget {
                       child: Text(
                         prov.label,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
+                        style: AppText.ui(
+                          fontSize: 11,
                           fontWeight: active ? FontWeight.w600 : FontWeight.w400,
                           color: active ? AppColors.accent : AppColors.textSecondary,
                         ),
@@ -685,7 +734,7 @@ class _ProviderTabs extends StatelessWidget {
                     const SizedBox(width: 3),
                     // Loading spinner or picked dot or lock
                     if (loading)
-                      const SizedBox(
+                      SizedBox(
                         width: 8, height: 8,
                         child: CircularProgressIndicator(
                             strokeWidth: 1.5, color: AppColors.accent),
@@ -733,7 +782,7 @@ class _ResultsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Center(
+      return Center(
         child: SizedBox(
           width: 24, height: 24,
           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
@@ -745,14 +794,14 @@ class _ResultsList extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Text(error!,
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
       );
     }
 
     if (results.isEmpty) {
       return Center(
         child: Text('Search to find metadata',
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
       );
     }
 
@@ -816,7 +865,7 @@ class _ResultItemState extends State<_ResultItem> {
             children: [
               Text(
                 r.title,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                   fontSize: 12,
                   fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
                   color: sel ? AppColors.textPrimary : AppColors.textSecondary,
@@ -829,8 +878,8 @@ class _ResultItemState extends State<_ResultItem> {
                 if (r.developer.isNotEmpty) ...[
                   Flexible(
                     child: Text(r.developer,
-                        style: GoogleFonts.inter(
-                            fontSize: 10, color: AppColors.textMuted),
+                        style: AppText.ui(
+                            fontSize: 11, color: AppColors.textMuted),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                   ),
@@ -838,8 +887,8 @@ class _ResultItemState extends State<_ResultItem> {
                 ],
                 if (r.releaseDate.isNotEmpty)
                   Text(r.releaseDate,
-                      style: GoogleFonts.inter(
-                          fontSize: 10, color: AppColors.textMuted)),
+                      style: AppText.ui(
+                          fontSize: 11, color: AppColors.textMuted)),
               ]),
             ],
           ),
@@ -859,8 +908,19 @@ class _FieldMixer extends StatelessWidget {
   final void Function(String field, _Provider? prov) onSourceChange;
   final ValueChanged<bool> onToggleDownload;
   final Future<Uint8List?> Function(String url) loginImageBytes;
+  final String? coverPick;
+  final Set<String> removedImages;
+  final ValueChanged<String> onPickCover;
+  final ValueChanged<String> onRemoveImage;
+
+  final bool locked;
 
   const _FieldMixer({
+    required this.locked,
+    required this.coverPick,
+    required this.removedImages,
+    required this.onPickCover,
+    required this.onRemoveImage,
     required this.pickedByProvider,
     required this.enrichingByProvider,
     required this.fieldSource,
@@ -888,13 +948,13 @@ class _FieldMixer extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.tune_outlined, size: 32, color: AppColors.textMuted),
+            Icon(Icons.tune_outlined, size: 32, color: AppColors.textMuted),
             const SizedBox(height: 12),
-            Text('Searching all providers…',
-                style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
+            Text(locked ? 'Metadata search is off' : 'Searching all providers…',
+                style: AppText.ui(fontSize: 13, color: AppColors.textMuted)),
             const SizedBox(height: 4),
-            Text('Field mixer will populate as results arrive',
-                style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
+            Text(locked ? 'Go online in Settings to compare sources.' : 'Field mixer will populate as results arrive',
+                style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
           ],
         ),
       );
@@ -918,11 +978,11 @@ class _FieldMixer extends StatelessWidget {
               border: Border.all(color: AppColors.border),
             ),
             child: Row(children: [
-              const Icon(Icons.info_outline, size: 12, color: AppColors.textMuted),
+              Icon(Icons.info_outline, size: 12, color: AppColors.textMuted),
               const SizedBox(width: 6),
               Text(
                 'Click a provider pill to change the source for that field.',
-                style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
+                style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
               ),
             ]),
           ),
@@ -930,7 +990,7 @@ class _FieldMixer extends StatelessWidget {
           // ── Text field rows ────────────────────────────────────────────────
           _MixerRow(
             field: 'title',
-            label: 'TITLE',
+            label: 'Title',
             pickedByProvider: pickedByProvider,
             enrichingByProvider: enrichingByProvider,
             fieldSource: fieldSource,
@@ -938,7 +998,7 @@ class _FieldMixer extends StatelessWidget {
             onSourceChange: onSourceChange,
             valueWidget: (r) => Text(
               r.title,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary),
@@ -951,7 +1011,7 @@ class _FieldMixer extends StatelessWidget {
 
           _MixerRow(
             field: 'developer',
-            label: 'DEVELOPER',
+            label: 'Developer',
             pickedByProvider: pickedByProvider,
             enrichingByProvider: enrichingByProvider,
             fieldSource: fieldSource,
@@ -959,7 +1019,7 @@ class _FieldMixer extends StatelessWidget {
             onSourceChange: onSourceChange,
             valueWidget: (r) => Text(
               r.developer,
-              style: GoogleFonts.inter(fontSize: 12, color: AppColors.accentSilver),
+              style: AppText.ui(fontSize: 12, color: AppColors.textSecondary),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -969,7 +1029,7 @@ class _FieldMixer extends StatelessWidget {
 
           _MixerRow(
             field: 'synopsis',
-            label: 'SYNOPSIS',
+            label: 'Synopsis',
             pickedByProvider: pickedByProvider,
             enrichingByProvider: enrichingByProvider,
             fieldSource: fieldSource,
@@ -977,7 +1037,7 @@ class _FieldMixer extends StatelessWidget {
             onSourceChange: onSourceChange,
             valueWidget: (r) => Text(
               r.synopsis,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 12, height: 1.5, color: AppColors.textSecondary),
               maxLines: 5,
               overflow: TextOverflow.ellipsis,
@@ -988,7 +1048,7 @@ class _FieldMixer extends StatelessWidget {
 
           _MixerRow(
             field: 'tags',
-            label: 'TAGS',
+            label: 'Tags',
             pickedByProvider: pickedByProvider,
             enrichingByProvider: enrichingByProvider,
             fieldSource: fieldSource,
@@ -1018,6 +1078,10 @@ class _FieldMixer extends StatelessWidget {
             onSourceChange: onSourceChange,
             onToggleDownload: onToggleDownload,
             loginImageBytes: loginImageBytes,
+            coverPick: coverPick,
+            removedImages: removedImages,
+            onPickCover: onPickCover,
+            onRemoveImage: onRemoveImage,
           ),
 
           // ── Source links ───────────────────────────────────────────────────
@@ -1071,8 +1135,8 @@ class _MixerRow extends StatelessWidget {
                 width: 76,
                 child: Text(
                   label,
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
+                  style: AppText.ui(
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textMuted,
                     letterSpacing: 0.8,
@@ -1095,7 +1159,7 @@ class _MixerRow extends StatelessWidget {
                   )),
               if (isEnrichingCurrent) ...[
                 const SizedBox(width: 6),
-                const SizedBox(
+                SizedBox(
                   width: 10, height: 10,
                   child: CircularProgressIndicator(
                       strokeWidth: 1.5, color: AppColors.accent),
@@ -1109,7 +1173,7 @@ class _MixerRow extends StatelessWidget {
             valueWidget(currentResult)
           else
             Text('—',
-                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+                style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
         ],
       ),
     );
@@ -1129,8 +1193,16 @@ class _ImagesRow extends StatelessWidget {
   final void Function(String field, _Provider? prov) onSourceChange;
   final ValueChanged<bool> onToggleDownload;
   final Future<Uint8List?> Function(String url) loginImageBytes;
+  final String? coverPick;
+  final Set<String> removedImages;
+  final ValueChanged<String> onPickCover;
+  final ValueChanged<String> onRemoveImage;
 
   const _ImagesRow({
+    required this.coverPick,
+    required this.removedImages,
+    required this.onPickCover,
+    required this.onRemoveImage,
     required this.pickedByProvider,
     required this.enrichingByProvider,
     required this.fieldSource,
@@ -1152,7 +1224,7 @@ class _ImagesRow extends StatelessWidget {
           width: width,
           height: height,
           color: AppColors.bgCard,
-          child: const Icon(Icons.broken_image_outlined,
+          child: Icon(Icons.broken_image_outlined,
               size: 18, color: AppColors.textMuted),
         );
 
@@ -1175,7 +1247,7 @@ class _ImagesRow extends StatelessWidget {
               height: height,
               color: AppColors.bgCard,
               alignment: Alignment.center,
-              child: const SizedBox(
+              child: SizedBox(
                 width: 14,
                 height: 14,
                 child: CircularProgressIndicator(
@@ -1197,9 +1269,10 @@ class _ImagesRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isEnriching = imgSrc != null && (enrichingByProvider[imgSrc] ?? false);
+    final arranged = imgResult?.withImages(cover: coverPick, removed: removedImages);
     final allUrls = [
-      if (imgResult?.coverUrl.isNotEmpty == true) imgResult!.coverUrl,
-      ...?imgResult?.screenshotUrls,
+      if (arranged?.coverUrl.isNotEmpty == true) arranged!.coverUrl,
+      ...?arranged?.screenshotUrls,
     ];
 
     return Padding(
@@ -1211,9 +1284,9 @@ class _ImagesRow extends StatelessWidget {
             SizedBox(
               width: 76,
               child: Text(
-                'IMAGES',
-                style: GoogleFonts.inter(
-                  fontSize: 9,
+                'Images',
+                style: AppText.ui(
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
                   letterSpacing: 0.8,
@@ -1236,7 +1309,7 @@ class _ImagesRow extends StatelessWidget {
                 )),
             if (isEnriching) ...[
               const SizedBox(width: 6),
-              const SizedBox(
+              SizedBox(
                 width: 10, height: 10,
                 child: CircularProgressIndicator(
                     strokeWidth: 1.5, color: AppColors.accent),
@@ -1253,19 +1326,25 @@ class _ImagesRow extends StatelessWidget {
                     value: downloadImages,
                     onChanged: (v) => onToggleDownload(v ?? true),
                     activeColor: AppColors.accent,
-                    side: const BorderSide(color: AppColors.border, width: 1),
+                    side: BorderSide(color: AppColors.border, width: 1),
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
                 const SizedBox(width: 5),
                 Text('Download',
-                    style: GoogleFonts.inter(
-                        fontSize: 10, color: AppColors.textSecondary)),
+                    style: AppText.ui(
+                        fontSize: 11, color: AppColors.textSecondary)),
               ]),
             ),
           ]),
           const SizedBox(height: 8),
+          if (allUrls.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text('Click an image to make it the cover. ✕ leaves it out.',
+                  style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
+            ),
           if (allUrls.isNotEmpty)
             SizedBox(
               height: 200,
@@ -1274,14 +1353,41 @@ class _ImagesRow extends StatelessWidget {
                   spacing: 6,
                   runSpacing: 6,
                   children: List.generate(allUrls.length, (i) {
-                    final isCover = i == 0 && imgResult?.coverUrl.isNotEmpty == true;
+                    final isCover = i == 0;
                     const imgH = 110.0;
                     final imgW = isCover ? 78.0 : 156.0;
                     return Stack(
                       children: [
-                        ClipRRect(
-                          borderRadius: AppRadius.borderSm,
-                          child: _previewImage(allUrls[i], imgW, imgH),
+                        MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: GestureDetector(
+                            onTap: () => onPickCover(allUrls[i]),
+                            child: ClipRRect(
+                              borderRadius: AppRadius.borderSm,
+                              child: _previewImage(allUrls[i], imgW, imgH),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 3,
+                          right: 3,
+                          child: Tooltip(
+                            message: 'Leave this image out',
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: GestureDetector(
+                                onTap: () => onRemoveImage(allUrls[i]),
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.65),
+                                    borderRadius: AppRadius.borderSm,
+                                  ),
+                                  child: const Icon(Icons.close, size: 11, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                         if (isCover)
                           Positioned(
@@ -1293,8 +1399,8 @@ class _ImagesRow extends StatelessWidget {
                                 color: Colors.black.withValues(alpha: 0.65),
                                 borderRadius: AppRadius.borderSm,
                               ),
-                              child: Text('COVER',
-                                  style: GoogleFonts.inter(
+                              child: Text('Cover',
+                                  style: AppText.ui(
                                       fontSize: 7,
                                       fontWeight: FontWeight.w700,
                                       color: Colors.white)),
@@ -1310,18 +1416,18 @@ class _ImagesRow extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(children: [
-                const SizedBox(
+                SizedBox(
                     width: 12, height: 12,
                     child: CircularProgressIndicator(
                         strokeWidth: 1.5, color: AppColors.accent)),
                 const SizedBox(width: 8),
                 Text('Fetching images…',
-                    style: GoogleFonts.inter(
+                    style: AppText.ui(
                         fontSize: 11, color: AppColors.textMuted)),
               ]),
             )
           else
-            Text('—', style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted)),
+            Text('—', style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
         ],
       ),
     );
@@ -1361,9 +1467,9 @@ class _NonePill extends StatelessWidget {
           ),
         ),
         child: Text(
-          'NONE',
-          style: GoogleFonts.inter(
-            fontSize: 9,
+          'None',
+          style: AppText.ui(
+            fontSize: 11,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
             color: isSelected
                 ? AppColors.textSecondary
@@ -1441,8 +1547,8 @@ class _ProviderPill extends StatelessWidget {
               )
             : Text(
                 prov.shortLabel,
-                style: GoogleFonts.inter(
-                  fontSize: 9,
+                style: AppText.ui(
+                  fontSize: 11,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                   color: isSelected
                       ? Colors.white
@@ -1478,9 +1584,9 @@ class _SourceLinks extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('SOURCES',
-              style: GoogleFonts.inter(
-                  fontSize: 9,
+          Text('Sources',
+              style: AppText.ui(
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textMuted,
                   letterSpacing: 0.8)),
@@ -1495,7 +1601,7 @@ class _SourceLinks extends StatelessWidget {
               },
               child: Text(
                 l.label,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                     fontSize: 11,
                     color: AppColors.accent,
                     decoration: TextDecoration.underline,
@@ -1516,7 +1622,7 @@ class _MixerDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      const Divider(height: 1, color: AppColors.border);
+      Divider(height: 1, color: AppColors.border);
 }
 
 // ── Tag chip ──────────────────────────────────────────────────────────────────
@@ -1535,7 +1641,7 @@ class _TagChip extends StatelessWidget {
         borderRadius: AppRadius.borderSm,
       ),
       child: Text(label,
-          style: GoogleFonts.inter(fontSize: 10, color: AppColors.textSecondary)),
+          style: AppText.ui(fontSize: 11, color: AppColors.textSecondary)),
     );
   }
 }
@@ -1580,11 +1686,11 @@ class _Footer extends StatelessWidget {
                 borderRadius: AppRadius.borderSm,
               ),
               child: Row(children: [
-                const Icon(Icons.error_outline, size: 13, color: AppColors.danger),
+                Icon(Icons.error_outline, size: 13, color: AppColors.danger),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(applyError!,
-                      style: GoogleFonts.inter(
+                      style: AppText.ui(
                           fontSize: 11, color: AppColors.danger)),
                 ),
               ]),
@@ -1603,7 +1709,7 @@ class _Footer extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text('$dlDone / $dlTotal images',
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 11, color: AppColors.textMuted)),
             ],
             const Spacer(),
@@ -1661,7 +1767,7 @@ class _FooterBtnState extends State<_FooterBtn> {
           ),
           child: Text(
             widget.label,
-            style: GoogleFonts.inter(
+            style: AppText.ui(
               fontSize: 13,
               fontWeight: FontWeight.w500,
               color: widget.primary && enabled

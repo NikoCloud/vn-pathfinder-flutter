@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../utils/formatters.dart';
 
 /// What a version's Ren'Py save files say — read at scan time.
 class SaveInfo {
@@ -63,7 +64,7 @@ class GameVersion {
 
   // Metadata convenience getters (sourced from .vnpf/metadata.json)
   String get metaTitle       => metadata['title'] as String? ?? '';
-  String get metaDeveloper   => metadata['developer'] as String? ?? '';
+  String get metaDeveloper   => cleanDeveloperName(metadata['developer'] as String? ?? '');
   String get metaSynopsis    => metadata['synopsis'] as String? ?? '';
   List<String> get metaImages => (metadata['images'] as List?)
       ?.map((e) => e.toString()).toList() ?? [];
@@ -75,6 +76,8 @@ class GameVersion {
   String get metaAzcUrl      => metadata['azc_url'] as String? ?? '';
   String get metaEngine      => metadata['engine'] as String? ?? '';
   String get metaLaunchArgs  => metadata['launch_arguments'] as String? ?? '';
+  String get metaReleaseDate => metadata['release_date'] as String? ?? '';
+  double get metaRating      => (metadata['rating'] as num?)?.toDouble() ?? 0;
 
   /// Tags fetched from metadata providers (stored in .vnpf/metadata.json).
   /// Reads both 'tags_fetched' (2.0 format) and 'tags' (1.0 legacy format).
@@ -88,6 +91,19 @@ class GameVersion {
     return [...fromFetched, ...fromTags]
         .where((t) => t.isNotEmpty && seen.add(t))
         .toList();
+  }
+
+  /// The engine as people write it, from the scan or the fetched metadata.
+  String get engineName {
+    if (isRenpy) return "Ren'Py";
+    return switch (metaEngine.toLowerCase()) {
+      'renpy' => "Ren'Py",
+      'rpgm' || 'rpg maker' => 'RPGM',
+      'unity' => 'Unity',
+      'html' || 'web' => 'HTML',
+      'unreal' => 'Unreal',
+      _ => metaEngine,
+    };
   }
 
   // Effective display name: custom metadata title > parsed display name

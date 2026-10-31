@@ -1,6 +1,23 @@
 // UserData — schema v4 (mirrors 1.0 exactly)
 // Persisted to %APPDATA%/VN Pathfinder/userdata.json
 
+/// One sitting with a game.
+class PlaySession {
+  final String baseKey;
+  final DateTime at;
+  final int seconds;
+
+  const PlaySession(this.baseKey, this.at, this.seconds);
+
+  factory PlaySession.fromJson(Map<String, dynamic> j) => PlaySession(
+        j['game'] as String? ?? '',
+        DateTime.tryParse(j['at'] as String? ?? '') ?? DateTime(2000),
+        j['seconds'] as int? ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {'game': baseKey, 'at': at.toIso8601String(), 'seconds': seconds};
+}
+
 class UserData {
   // v1
   final Map<String, String> notes;               // base_key → note text
@@ -30,6 +47,24 @@ class UserData {
   // app, so "Updated since last played" can compare versions.
   final Map<String, String> lastPlayedVersion;  // base_key → version_str
 
+  // 2.0 addition: entries the user merged, for games the scanner can't tell
+  // are the same. Folders with the first key join the game with the second.
+  final Map<String, String> gameMerges;         // base_key → base_key
+
+  // 2.0 addition: pairs the user said aren't duplicates (see pairKey).
+  final Set<String> notDuplicates;
+
+  // 2.0 addition: Feed games, by title key (see feedTitleKey).
+  final Set<String> watching;
+  final Set<String> muted;
+
+  // 2.0 addition: one entry per play session, newest last. 1.0 only kept
+  // totals, so the weekly chart starts when this does.
+  final List<PlaySession> sessions;
+
+  /// One key for a pair of games, whichever order they come in.
+  static String pairKey(String a, String b) => a.compareTo(b) < 0 ? '$a|$b' : '$b|$a';
+
   const UserData({
     this.notes = const {},
     this.hidden = const {},
@@ -46,6 +81,11 @@ class UserData {
     this.customPresets = const [],
     this.status = const {},
     this.lastPlayedVersion = const {},
+    this.gameMerges = const {},
+    this.notDuplicates = const {},
+    this.watching = const {},
+    this.muted = const {},
+    this.sessions = const [],
   });
 
   factory UserData.empty() => const UserData(
@@ -81,6 +121,13 @@ class UserData {
       status: Map<String, String>.from(json['status'] as Map? ?? {}),
       lastPlayedVersion: Map<String, String>.from(
           json['last_played_version'] as Map? ?? {}),
+      gameMerges: Map<String, String>.from(json['game_merges'] as Map? ?? {}),
+      notDuplicates: Set<String>.from(json['not_duplicates'] as List? ?? []),
+      watching: Set<String>.from(json['watching'] as List? ?? []),
+      muted: Set<String>.from(json['muted'] as List? ?? []),
+      sessions: (json['sessions'] as List? ?? [])
+          .map((e) => PlaySession.fromJson(e as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -101,6 +148,11 @@ class UserData {
     'custom_presets': customPresets,
     'status': status,
     'last_played_version': lastPlayedVersion,
+    'game_merges': gameMerges,
+    'not_duplicates': notDuplicates.toList()..sort(),
+    'watching': watching.toList()..sort(),
+    'muted': muted.toList()..sort(),
+    'sessions': sessions.map((s) => s.toJson()).toList(),
   };
 
   UserData copyWith({
@@ -119,6 +171,11 @@ class UserData {
     List<String>? customPresets,
     Map<String, String>? status,
     Map<String, String>? lastPlayedVersion,
+    Map<String, String>? gameMerges,
+    Set<String>? notDuplicates,
+    Set<String>? watching,
+    Set<String>? muted,
+    List<PlaySession>? sessions,
   }) => UserData(
     notes: notes ?? this.notes,
     hidden: hidden ?? this.hidden,
@@ -135,5 +192,56 @@ class UserData {
     customPresets: customPresets ?? this.customPresets,
     status: status ?? this.status,
     lastPlayedVersion: lastPlayedVersion ?? this.lastPlayedVersion,
+    gameMerges: gameMerges ?? this.gameMerges,
+    notDuplicates: notDuplicates ?? this.notDuplicates,
+    watching: watching ?? this.watching,
+    muted: muted ?? this.muted,
+    sessions: sessions ?? this.sessions,
   );
+
+  /// This data with game [source] made part of game [target]: its folders
+  /// join [target] from now on, and its play history, notes and tags move
+  /// across. Where both have one value (name, art, status), [target]'s stays.
+  UserData withGameMerged(String source, String target) {
+    Map<String, V> moved<V>(Map<String, V> map, V Function(V from, V to) combine) {
+      if (!map.containsKey(source)) return map;
+      final out = Map<String, V>.from(map);
+      final from = out.remove(source) as V;
+      out[target] = out.containsKey(target) ? combine(from, out[target] as V) : from;
+      return out;
+    }
+
+    String keepTarget(String from, String to) => to;
+    int add(int from, int to) => from + to;
+    final sourceIsNewer = (lastPlayed[source] ?? '').compareTo(lastPlayed[target] ?? '') > 0;
+
+    return copyWith(
+      gameMerges: {
+        for (final e in gameMerges.entries) e.key: e.value == source ? target : e.value,
+        source: target,
+      },
+      notes: moved(notes, (from, to) => to.isEmpty ? from : '$to\n\n$from'),
+      hidden: hidden.difference({source}),
+      customDisplayNames: moved(customDisplayNames, keepTarget),
+      playtime: moved(playtime, add),
+      playCount: moved(playCount, add),
+      lastPlayed: moved(lastPlayed, (from, to) => sourceIsNewer ? from : to),
+      lastPlayedVersion: moved(lastPlayedVersion, (from, to) => sourceIsNewer ? from : to),
+      tags: moved(tags, (from, to) => {...to, ...from}.toList()),
+      customArt: moved(customArt, keepTarget),
+      status: moved(status, keepTarget),
+      patchAssignments: {
+        for (final e in patchAssignments.entries) e.key: e.value == source ? target : e.value,
+      },
+      appliedPatches: {
+        for (final e in appliedPatches.entries)
+          e.key.startsWith('$source::')
+              ? '$target${e.key.substring(source.length)}'
+              : e.key: e.value,
+      },
+      sessions: [
+        for (final s in sessions) s.baseKey == source ? PlaySession(target, s.at, s.seconds) : s,
+      ],
+    );
+  }
 }

@@ -3,12 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
+import '../../models/archive_item.dart';
 import '../../models/game_group.dart';
 import '../../models/game_status.dart';
+import '../../models/game_version.dart';
+import '../../providers/downloads_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/play_tracker_provider.dart';
+import '../../utils/formatters.dart';
+import '../common/kit.dart';
 import '../common/status_menu.dart';
+import '../modals/merge_game_dialog.dart';
+import '../modals/metadata_fetch_modal.dart';
 import '../modals/properties_modal.dart';
 import '../../theme.dart';
 
@@ -35,13 +42,13 @@ void showGameContextMenu({
     elevation: 8,
     shape: RoundedRectangleBorder(
       borderRadius: AppRadius.borderMd,
-      side: const BorderSide(color: AppColors.border),
+      side: BorderSide(color: AppColors.border),
     ),
     items: [
       PopupMenuItem(
         value: 'play',
         height: 36,
-        child: _MenuRow(icon: Icons.play_arrow, label: 'PLAY', color: AppColors.playGreen),
+        child: _MenuRow(icon: Icons.play_arrow, label: 'Play', color: AppColors.accent),
       ),
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
@@ -51,9 +58,19 @@ void showGameContextMenu({
       ),
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
+        value: 'fetch',
+        height: 36,
+        child: _MenuRow(icon: Icons.download_outlined, label: 'Fetch Metadata'),
+      ),
+      PopupMenuItem(
         value: 'properties',
         height: 36,
         child: _MenuRow(icon: Icons.tune_outlined, label: 'Properties'),
+      ),
+      PopupMenuItem(
+        value: 'image',
+        height: 36,
+        child: _MenuRow(icon: Icons.image_outlined, label: 'Change Image'),
       ),
       PopupMenuItem(
         value: 'folder',
@@ -70,11 +87,24 @@ void showGameContextMenu({
         height: 36,
         child: _MenuRow(icon: Icons.content_copy_outlined, label: 'Copy Path'),
       ),
+      PopupMenuItem(
+        value: 'merge',
+        height: 36,
+        child: _MenuRow(icon: Icons.call_merge, label: 'Merge into Another Game…'),
+      ),
+      if (group.archives.isNotEmpty)
+        PopupMenuItem(
+          value: 'archives',
+          height: 36,
+          child: _MenuRow(icon: Icons.delete_outline, label: 'Delete Archive…'),
+        ),
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
-        value: 'remove',
+        value: 'hide',
         height: 36,
-        child: _MenuRow(icon: Icons.delete_outline, label: 'Remove from Library', color: AppColors.danger),
+        child: ref.read(userDataProvider).hidden.contains(group.baseKey)
+            ? _MenuRow(icon: Icons.visibility_outlined, label: 'Unhide')
+            : _MenuRow(icon: Icons.visibility_off_outlined, label: 'Hide from Library'),
       ),
     ],
   );
@@ -91,7 +121,7 @@ void showGameContextMenu({
       color: AppColors.bgCard,
       shape: RoundedRectangleBorder(
         borderRadius: AppRadius.borderMd,
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
       ),
       items: () {
         final ud = ref.read(userDataProvider);
@@ -119,48 +149,103 @@ void showGameContextMenu({
       Process.run('explorer', [v.folderPath.path]);
       break;
     case 'saves':
-      _openSavesFolder(v.folderPath.path, ref);
+      _openSavesFolder(v, ref);
       break;
     case 'copy_path':
       Clipboard.setData(ClipboardData(text: v.folderPath.path));
       break;
-    case 'remove':
-      if (!context.mounted) return;
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.bgCard,
-          title: const Text('Remove from Library?', style: TextStyle(color: Colors.white)),
-          content: Text('This will hide "${group.effectiveTitle}" from your library. Files will not be deleted.',
-              style: const TextStyle(color: AppColors.textSecondary)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('CANCEL', style: TextStyle(color: AppColors.textMuted)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('REMOVE', style: TextStyle(color: AppColors.danger)),
-            ),
-          ],
-        ),
-      );
-      if (confirm == true) {
-        ref.read(userDataProvider.notifier).setHidden(group.baseKey, true);
-      }
+    case 'merge':
+      if (context.mounted) showMergeGameDialog(context, group);
+      break;
+    case 'fetch':
+      if (context.mounted) showMetadataFetchModal(context, group);
+      break;
+    case 'image':
+      if (context.mounted) showPropertiesModal(context, group, openArt: true);
+      break;
+    case 'archives':
+      if (context.mounted) await _deleteArchives(context, ref, group);
+      break;
+    case 'hide':
+      final notifier = ref.read(userDataProvider.notifier);
+      notifier.setHidden(group.baseKey, !ref.read(userDataProvider).hidden.contains(group.baseKey));
       break;
   }
 }
 
-void _openSavesFolder(String gameFolderPath, WidgetRef ref) {
-  // RenPy games store saves in one of two places:
-  //   1. game/saves/ inside the game root (most modern games)
-  //   2. %APPDATA%\RenPy\<GameName>\ (older / default RenPy behaviour)
-  // Try (1) first; fall back to opening %APPDATA%\RenPy\ so the user can navigate.
-  final inGame = Directory(p.join(gameFolderPath, 'game', 'saves'));
-  if (inGame.existsSync()) {
-    Process.run('explorer', [inGame.path]);
+/// A game's archive files, with anything being extracted held back. Nothing is
+/// ticked to begin with: deleting is the one thing here that can't be undone.
+Future<void> _deleteArchives(BuildContext context, WidgetRef ref, GameGroup group) async {
+  final status = ref.read(extractionStatusProvider);
+  final free = group.archives.where((a) {
+    final s = status[a.archivePath.path];
+    return s == null || !(s.running || s.queued);
+  }).toList();
+  if (free.isEmpty) {
+    ref.read(notificationProvider.notifier).warning('Its archives are being extracted. Cancel that first.');
     return;
+  }
+  final chosen = <ArchiveItem>{};
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDialog) => AlertDialog(
+        title: Text('Delete archives', style: AppText.heading()),
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final a in free)
+                CheckboxListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  activeColor: AppColors.accent,
+                  value: chosen.contains(a),
+                  onChanged: (v) => setDialog(() => v == true ? chosen.add(a) : chosen.remove(a)),
+                  title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.body()),
+                  secondary: Text(fmtBytes(a.sizeBytes ?? 0), style: AppText.data(color: AppColors.textMuted)),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          VpButton(label: 'Cancel', tone: VpTone.quiet, small: true, onTap: () => Navigator.of(ctx).pop(false)),
+          VpButton(
+            label: 'Delete',
+            tone: VpTone.danger,
+            small: true,
+            onTap: chosen.isEmpty ? null : () => Navigator.of(ctx).pop(true),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (ok != true) return;
+  final names = chosen.map((a) => a.name).toSet();
+  for (final a in chosen) {
+    try {
+      await a.archivePath.delete();
+    } catch (e) {
+      ref.read(notificationProvider.notifier).error('${a.name} could not be deleted: $e');
+    }
+  }
+  for (final card in ref.read(archiveCardsProvider)) {
+    if (names.contains(card.fileName)) card.delete();
+  }
+  ref.read(archiveCardsEpochProvider.notifier).update((n) => n + 1);
+  ref.read(libraryProvider.notifier).scan();
+}
+
+void _openSavesFolder(GameVersion version, WidgetRef ref) {
+  // Ren'Py writes saves to the game's own folder and to AppData. The scanner
+  // has already found both.
+  for (final dir in [version.localSaveDir, ?version.appdataSaveDir]) {
+    if (dir.existsSync()) {
+      Process.run('explorer', [dir.path]);
+      return;
+    }
   }
 
   final appdata = Platform.environment['APPDATA'] ?? '';

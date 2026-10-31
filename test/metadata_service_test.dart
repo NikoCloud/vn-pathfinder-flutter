@@ -29,6 +29,30 @@ $post
 </body></html>''';
 
 void main() {
+  test('an exact title outranks a chat thread that shares its tags', () async {
+    const html = '''
+<html data-logged-in="true"><body><ol>
+<li class="block-row"><h3 class="contentRow-title"><a href="/threads/chat.1/">The Official Off-Topic Thread [Plus] [Studio]</a></h3></li>
+<li class="block-row"><h3 class="contentRow-title"><a href="/threads/game.2/">Game Name [v1.0] [Studio]</a></h3></li>
+</ol></body></html>''';
+    final results = await MetadataService.searchLewdCorner('game name', FakeScraping(html));
+    expect(results.first.sourceUrl, endsWith('/threads/game.2/'));
+    expect(results.length, 2);
+  });
+
+  test('images hidden from the account are reported', () async {
+    String page(String body) => _page(h1: 'Game [v1] [Studio]', post: '''
+<article class="message message--post"><div class="message-userContent">
+<article class="message-body"><div class="bbWrapper">$body<b>Overview</b>: A game.<br />
+</div></article></div></article>''');
+    const hidden = '<div class="messageHide messageHide--attach">You must be registered to see attachments</div>';
+
+    final locked = await MetadataService.fetchThreadDetails(_seed('lewdcorner'), FakeScraping(page(hidden)));
+    expect(locked.imagesLocked, isTrue);
+    final open = await MetadataService.fetchThreadDetails(_seed('lewdcorner'), FakeScraping(page('')));
+    expect(open.imagesLocked, isFalse);
+  });
+
   group('fetchThreadDetails', () {
     test('F95-style post: synopsis keeps "z", stops at the next label, developer drops links', () async {
       final html = _page(

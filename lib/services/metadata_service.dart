@@ -1,11 +1,14 @@
 import 'dart:convert'; // jsonDecode, jsonEncode, base64Decode
+import 'thread_parser.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as p;
+import '../utils/formatters.dart';
 import 'scraping_service.dart';
+import 'update_check_service.dart';
 
 // ── Result Model ──────────────────────────────────────────────────────────────
 
@@ -27,6 +30,13 @@ class MetadataResult {
   /// still what gets downloaded, through the logged-in WebView.
   final Map<String, String> previewUrls;
 
+  /// The forum hid this thread's images from the current account: logged out,
+  /// or without the role a LewdCorner Plus game needs.
+  final bool imagesLocked;
+
+  /// Out of 5; 0 means none.
+  final double rating;
+
   const MetadataResult({
     required this.provider,
     required this.id,
@@ -39,7 +49,36 @@ class MetadataResult {
     this.tags = const [],
     this.releaseDate = '',
     this.previewUrls = const {},
+    this.imagesLocked = false,
+    this.rating = 0,
   });
+
+  MetadataResult _copy({String? coverUrl, List<String>? screenshotUrls, double? rating}) => MetadataResult(
+        provider: provider,
+        id: id,
+        title: title,
+        developer: developer,
+        synopsis: synopsis,
+        coverUrl: coverUrl ?? this.coverUrl,
+        screenshotUrls: screenshotUrls ?? this.screenshotUrls,
+        sourceUrl: sourceUrl,
+        tags: tags,
+        releaseDate: releaseDate,
+        previewUrls: previewUrls,
+        imagesLocked: imagesLocked,
+        rating: rating ?? this.rating,
+      );
+
+  /// This result's images as the user arranged them: [cover] in the cover
+  /// spot and [removed] left out.
+  MetadataResult withImages({String? cover, Set<String> removed = const {}}) {
+    final images = [if (coverUrl.isNotEmpty) coverUrl, ...screenshotUrls]
+        .where((url) => !removed.contains(url))
+        .toList();
+    if (images.isEmpty) return _copy(coverUrl: '', screenshotUrls: const []);
+    final first = cover != null && images.contains(cover) ? cover : images.first;
+    return _copy(coverUrl: first, screenshotUrls: images.where((url) => url != first).toList());
+  }
 
   /// Converts this result to the .vnpf/metadata.json schema.
   Map<String, dynamic> toMetadataJson({Map<String, dynamic>? existing}) {
@@ -76,7 +115,7 @@ class MetadataService {
       'filters': ['search', '=', query],
       'fields':
           'title, alttitle, developers.name, description, image.url, '
-          'screenshots.url, released, tags.name',
+          'screenshots.url, released, tags.name, rating',
       'results': 15,
       'sort': 'searchrank',
     });
@@ -134,6 +173,7 @@ class MetadataService {
       provider: 'vndb',
       id: id,
       title: title,
+      rating: ((r['rating'] as num?)?.toDouble() ?? 0) / 20,
       developer: developer,
       synopsis: synopsis,
       coverUrl: coverUrl,
@@ -225,8 +265,17 @@ class MetadataService {
     final html = await scrapingService.getString(url);
     if (html.isEmpty) throw ScrapingException('$siteName returned an empty page.');
 
-    final results = _parseXenforoSearchHtml(html, provider: provider, baseUrl: baseUrl);
+    var results = _parseXenforoSearchHtml(html, provider: provider, baseUrl: baseUrl);
     debugPrint('$siteName search "$query": ${results.length} results');
+
+    // An exact title goes first: a game's chat thread carries the same
+    // bracket tags and can rank above the game, and the first result gets
+    // picked automatically.
+    final wanted = _loose(query);
+    results = [
+      ...results.where((r) => _loose(r.title) == wanted),
+      ...results.where((r) => _loose(r.title) != wanted),
+    ];
 
     // XenForo flags every page with data-logged-in. A members-only search that
     // comes back logged out is a login problem, not "no results".
@@ -406,6 +455,22 @@ class MetadataService {
     'demo', 'patch', 'fixed',
   };
 
+  /// Runs [call], and once more after [delay] if it fails. A login problem
+  /// isn't retried: it can't fix itself.
+  static Future<T> retryOnce<T>(
+    Future<T> Function() call, {
+    Duration delay = const Duration(seconds: 2),
+  }) async {
+    try {
+      return await call();
+    } catch (e) {
+      if (e is ScrapingException && e.message.startsWith('Not logged in')) rethrow;
+      debugPrint('Retrying after: $e');
+      await Future.delayed(delay);
+      return call();
+    }
+  }
+
   // ── Thread Detail Enrichment (F95Zone / LewdCorner) ───────────────────────
 
   /// Fetch the actual game thread page and extract cover image + screenshots.
@@ -417,10 +482,60 @@ class MetadataService {
     try {
       final html = await scrapingService.getString(result.sourceUrl);
       if (html.isEmpty) return result;
-      return _parseThreadPage(result, html);
+      final parsed = _parseThreadPage(result, html);
+      if (parsed.provider == 'lewdcorner') await _addGuestPreviews(parsed);
+      if (parsed.sourceUrl.contains('f95zone.to')) return _withF95Rating(parsed);
+      return parsed;
     } catch (e) {
       debugPrint('Thread detail fetch failed: $e');
       return result;
+    }
+  }
+
+  /// A thread as the game page shows it: what Fetch Metadata would read, plus
+  /// its download links and changelog.
+  static Future<(MetadataResult, ThreadDownloads)?> fetchThread(
+    String url,
+    ScrapingService scrapingService,
+  ) async {
+    final html = await scrapingService.getString(url);
+    if (html.isEmpty) return null;
+    final provider = url.contains('f95zone') ? 'f95zone' : url.contains('azkosel') ? 'azc' : 'lewdcorner';
+    final empty = MetadataResult(provider: provider, id: url, title: '', developer: '', sourceUrl: url);
+    return (_parseThreadPage(empty, html), ThreadParser.parse(html, url));
+  }
+
+  /// F95Zone's thread pages don't show a rating, but its title search does.
+  static Future<MetadataResult> _withF95Rating(MetadataResult r) async {
+    final id = UpdateCheckService.threadId(r.sourceUrl);
+    final queries = UpdateCheckService.searchQueries(r.title);
+    if (id == null || queries.isEmpty) return r;
+    try {
+      for (final row in await UpdateCheckService.searchF95(queries.first)) {
+        if (row.id == id && row.rating > 0) return r._copy(rating: row.rating);
+      }
+    } catch (e) {
+      debugPrint('F95Zone rating lookup failed: $e');
+    }
+    return r;
+  }
+
+  /// Logged in, LewdCorner embeds some images (usually the cover) at full size
+  /// with no thumbnail in the page. The logged-out page still links one, so
+  /// fill [r]'s missing previews from there.
+  static Future<void> _addGuestPreviews(MetadataResult r) async {
+    final needsThumbnail = [r.coverUrl, ...r.screenshotUrls]
+        .any((url) => isLoginOnlyImage(url) && !r.previewUrls.containsKey(url));
+    if (!needsThumbnail) return;
+    try {
+      final resp = await http
+          .get(Uri.parse(r.sourceUrl), headers: _baseHeaders)
+          .timeout(const Duration(seconds: 15));
+      if (resp.statusCode == 200) {
+        guestPreviews(resp.body).forEach((url, thumb) => r.previewUrls.putIfAbsent(url, () => thumb));
+      }
+    } catch (e) {
+      debugPrint('Logged-out thread fetch failed (${r.sourceUrl}): $e');
     }
   }
 
@@ -585,6 +700,13 @@ class MetadataService {
         .replaceAll(RegExp('\u0000[ \t]*\n?'), '\n')
         .replaceAll('​', '');
 
+    // The last bracket of a game thread's title is its developer:
+    // "Guilty Pleasure [v0.65] [Quonix]".
+    final titleEl = doc.querySelector('h1.p-title-value');
+    final rawTitle = titleEl == null ? '' : _threadTitleText(titleEl);
+    final titleDeveloper =
+        RegExp(r'\[([^\[\]]+)\]\s*$').firstMatch(rawTitle)?.group(1)?.trim() ?? '';
+
     // Developer: the theme's custom thread field when there is one
     // (LewdCorner "Developer Name", Azkosel's Corner "Developer/Studio"),
     // else a "Developer:" label anywhere in the OP text.
@@ -597,28 +719,24 @@ class MetadataService {
     }
     if (developer.isEmpty) {
       final devMatch = RegExp(
-        r'^Developer[:\s]+(.+)$',
+        r'^Developer(?:\s*/\s*Publisher)?[ \t]*:[ \t]*(.+)$',
         multiLine: true,
         caseSensitive: false,
       ).firstMatch(opText);
       if (devMatch != null) {
-        // "Leonave - Patreon - Discord": the developer's links follow a
-        // " - " or " | " separator on the same line; keep only the name.
-        developer = (devMatch.group(1) ?? '')
-            .split(RegExp(r'\s[-|–—]\s'))
-            .first
-            .replaceAll(RegExp(r'[\s\-|–—:]+$'), '')
-            .trim();
+        // F95Zone runs the developer's links straight into the name
+        // ("Quonix Patreon - Discord"). If the line starts with the title's
+        // developer, the rest is links, whatever they're called.
+        final line = devMatch.group(1) ?? '';
+        final startsWithTitle = titleDeveloper.isNotEmpty &&
+            '${line.toLowerCase()} '.startsWith('${titleDeveloper.toLowerCase()} ');
+        developer = startsWithTitle ? titleDeveloper : line;
       }
     }
-    // Fallback: last bracketed segment of the h1 title (e.g. "[DevName]").
-    // This is a weak signal — only use it if the OP text gave us nothing.
-    if (developer.isEmpty) {
-      final titleEl = doc.querySelector('h1.p-title-value');
-      final rawTitle = titleEl == null ? '' : _threadTitleText(titleEl);
-      final devMatch = RegExp(r'\[([^\[\]]+)\]\s*$').firstMatch(rawTitle);
-      if (devMatch != null) developer = devMatch.group(1)?.trim() ?? '';
-    }
+    // Fallback: the title's developer is a weak signal, so only use it if the
+    // OP text gave us nothing.
+    developer = cleanDeveloperName(developer);
+    if (developer.isEmpty) developer = cleanDeveloperName(titleDeveloper);
 
     // Synopsis: look for "Overview:" or "Synopsis:" labeled section.
     // Capture everything after the label until the next "Label:" header
@@ -695,6 +813,7 @@ class MetadataService {
           ? result.releaseDate
           : (fields['release date'] ?? ''),
       previewUrls: previews,
+      imagesLocked: (opArticle ?? opEl).querySelector('.messageHide--attach') != null,
     );
   }
 
@@ -716,91 +835,40 @@ class MetadataService {
     return fields;
   }
 
-  // ── XenForo Login (F95Zone / LewdCorner) ──────────────────────────────────
-
-  /// Log in to a XenForo-based site and return session cookies.
-  /// Returns null on failure (wrong credentials, network error, etc.)
-  static Future<Map<String, String>?> xenforoLogin({
-    required String baseUrl,
-    required String username,
-    required String password,
-  }) async {
-    try {
-      // 1) Fetch login page to get _xfToken
-      final pageResp = await http
-          .get(Uri.parse('$baseUrl/login/'), headers: _baseHeaders)
-          .timeout(const Duration(seconds: 10));
-
-      final doc = html_parser.parse(pageResp.body);
-      final tokenEl = doc.querySelector('input[name="_xfToken"]');
-      final xfToken = tokenEl?.attributes['value'] ?? '';
-
-      final cookies = <String, String>{};
-      _parseCookies(pageResp.headers['set-cookie'] ?? '', cookies);
-
-      // 2) POST login
-      final loginResp = await http.post(
-        Uri.parse('$baseUrl/login/login'),
-        headers: {
-          ..._baseHeaders,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie':
-              cookies.entries.map((e) => '${e.key}=${e.value}').join('; '),
-          'Referer': '$baseUrl/login/',
-          'Origin': baseUrl,
-        },
-        body: {
-          'login': username,
-          'password': password,
-          '_xfToken': xfToken,
-          'remember': '1',
-        },
-      ).timeout(const Duration(seconds: 15));
-
-      _parseCookies(loginResp.headers['set-cookie'] ?? '', cookies);
-
-      // Verify success: xf_user cookie must be non-empty and not '0'
-      final xfUser = cookies['xf_user'] ?? '';
-      if (xfUser.isEmpty || xfUser == '0') return null;
-      return cookies;
-    } catch (e) {
-      debugPrint('XenForo login failed for $baseUrl: $e');
-      return null;
-    }
-  }
-
-  static void _parseCookies(String header, Map<String, String> into) {
-    // Split on comma (each Set-Cookie header) then take first key=value
-    for (final chunk in header.split(RegExp(r',(?=\s*\w+=)'))) {
-      final segments = chunk.trim().split(';');
-      if (segments.isEmpty) continue;
-      final kv = segments.first.trim().split('=');
-      if (kv.length < 2) continue;
-      final key = kv[0].trim();
-      final value = kv.sublist(1).join('=').trim();
-      const skip = {'path', 'domain', 'expires', 'max-age', 'samesite'};
-      if (key.isNotEmpty && !skip.contains(key.toLowerCase())) {
-        into[key] = value;
-      }
-    }
-  }
-
   // ── Image Download ─────────────────────────────────────────────────────────
 
   /// Download and save cover image and screenshots to [gameFolder]/.vnpf/.
   /// Respects [maxScreenshots] limit (default 9 = 3×3 grid).
   /// [scrapingService] is optional — when provided, images from authenticated
   /// domains (F95Zone, LewdCorner) are fetched via the WebView cookie store.
-  static Future<void> downloadImages({
+  /// Returns how many images were saved, and how many of those are thumbnails.
+  static Future<({int saved, int thumbnails})> downloadImages({
     required Directory gameFolder,
     required String coverUrl,
     required List<String> screenshotUrls,
     int maxScreenshots = 9,
+    Map<String, String> previewUrls = const {},
+    bool useThumbnails = true,
     ScrapingService? scrapingService,
     void Function(int done, int total)? onProgress,
   }) async {
     final vnpfDir = Directory(p.join(gameFolder.path, '.vnpf'));
     vnpfDir.createSync(recursive: true);
+
+    // A forum can lose a full-size file while its public thumbnail (what the
+    // modal previews) still loads. LewdCorner's thumbnails are only about
+    // 150 px tall, but a small image beats a missing one.
+    var thumbnails = 0;
+    Future<(List<int>, String)?> fetchImage(String url) async {
+      final bytes = await _fetchImageBytes(url, scrapingService);
+      if (bytes != null && bytes.isNotEmpty) return (bytes, url);
+      final thumb = useThumbnails ? previewUrls[url] : null;
+      if (thumb == null) return null;
+      final small = await _fetchImageBytes(thumb, scrapingService);
+      if (small == null || small.isEmpty) return null;
+      thumbnails++;
+      return (small, thumb);
+    }
 
     final shots = screenshotUrls.take(maxScreenshots).toList();
     final total = (coverUrl.isNotEmpty ? 1 : 0) + shots.length;
@@ -813,10 +881,10 @@ class MetadataService {
 
     if (coverUrl.isNotEmpty) {
       try {
-        final bytes = await _fetchImageBytes(coverUrl, scrapingService);
-        if (bytes != null && bytes.isNotEmpty) {
-          final f = File(p.join(vnpfDir.path, 'cover_new${_ext(coverUrl)}'));
-          await f.writeAsBytes(bytes);
+        final image = await fetchImage(coverUrl);
+        if (image != null) {
+          final f = File(p.join(vnpfDir.path, 'cover_new${_ext(image.$2)}'));
+          await f.writeAsBytes(image.$1);
           written.add(f);
         } else {
           debugPrint('Cover download returned no bytes: $coverUrl');
@@ -829,10 +897,10 @@ class MetadataService {
 
     for (var i = 0; i < shots.length; i++) {
       try {
-        final bytes = await _fetchImageBytes(shots[i], scrapingService);
-        if (bytes != null && bytes.isNotEmpty) {
-          final f = File(p.join(vnpfDir.path, 'screenshot_new_${i + 1}${_ext(shots[i])}'));
-          await f.writeAsBytes(bytes);
+        final image = await fetchImage(shots[i]);
+        if (image != null) {
+          final f = File(p.join(vnpfDir.path, 'screenshot_new_${i + 1}${_ext(image.$2)}'));
+          await f.writeAsBytes(image.$1);
           written.add(f);
         } else {
           debugPrint('Screenshot ${i + 1} returned no bytes: ${shots[i]}');
@@ -846,15 +914,19 @@ class MetadataService {
     // ── Only clear old pack if at least one new image was downloaded ──────
     if (written.isEmpty) {
       debugPrint('downloadImages: no images downloaded — keeping existing pack');
-      return;
+      return (saved: 0, thumbnails: 0);
     }
 
-    // Delete old cover + screenshots
+    // Replace only what was downloaded: a re-fetch that gets screenshots but
+    // no cover keeps the old cover.
+    final gotCover = written.any((f) => p.basename(f.path).startsWith('cover_new'));
+    final gotShots = written.any((f) => p.basename(f.path).startsWith('screenshot_new'));
     try {
       for (final f in vnpfDir.listSync().whereType<File>()) {
         final name = p.basename(f.path);
-        if ((name.startsWith('cover.') || name.startsWith('screenshot_')) &&
-            !name.contains('_new')) {
+        if (name.contains('_new')) continue;
+        if ((gotCover && name.startsWith('cover.')) ||
+            (gotShots && name.startsWith('screenshot_'))) {
           f.deleteSync();
         }
       }
@@ -876,6 +948,53 @@ class MetadataService {
         debugPrint('Rename failed for $name: $e');
       }
     }
+    return (saved: written.length, thumbnails: thumbnails);
+  }
+
+  /// [s] with case, spaces and punctuation removed, for comparing names.
+  static String _loose(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  /// Whether two providers' results are the same game: the same title and the
+  /// same developer ("Some Studio" and "Some Studio Productions" count). A
+  /// title alone isn't enough: one link saved in Lost Daughter's metadata
+  /// leads to a different game called Long Lost Daughter, and two games are
+  /// called Guilty Pleasure. When unsure, the answer is no.
+  static bool sameGame(MetadataResult a, MetadataResult b) {
+    final devA = _loose(a.developer);
+    final devB = _loose(b.developer);
+    return _loose(a.title) == _loose(b.title) &&
+        devA.isNotEmpty &&
+        devB.isNotEmpty &&
+        (devA.startsWith(devB) || devB.startsWith(devA));
+  }
+
+  /// Downloads the images of [sources].first, the source the user chose. If
+  /// it can't supply full-size images, other sources for the same game (see
+  /// [sameGame]) are tried too, and their full-size images replace any
+  /// thumbnails. Same result as [downloadImages], for the images that ended
+  /// up saved.
+  static Future<({int saved, int thumbnails})> downloadBestImages({
+    required Directory gameFolder,
+    required List<MetadataResult> sources,
+    ScrapingService? scrapingService,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    var best = (saved: 0, thumbnails: 0);
+    for (final (i, source) in sources.indexed) {
+      if (i > 0 && !sameGame(sources.first, source)) continue;
+      final attempt = await downloadImages(
+        gameFolder: gameFolder,
+        coverUrl: source.coverUrl,
+        screenshotUrls: source.screenshotUrls,
+        previewUrls: source.previewUrls,
+        useThumbnails: i == 0,
+        scrapingService: scrapingService,
+        onProgress: onProgress,
+      );
+      if (attempt.saved > 0) best = attempt;
+      if (best.saved > 0 && best.thumbnails == 0) break;
+    }
+    return best;
   }
 
   /// Downloads image bytes. For authenticated domains (F95Zone / LewdCorner
@@ -884,12 +1003,24 @@ class MetadataService {
   /// XenForo attachment links (/attachments/title-png.864396/). On LewdCorner
   /// they need a logged-in session, so they can't be loaded with plain HTTP.
   static bool isLoginOnlyImage(String url) => _xfAttachmentRe.hasMatch(url);
+
+  /// Attachment links and their public thumbnails, from a logged-out thread page.
+  static Map<String, String> guestPreviews(String html) {
+    final previews = <String, String>{};
+    for (final a in html_parser.parse(html).querySelectorAll('.message-body a[href]')) {
+      final href = (a.attributes['href'] ?? '').trim();
+      final thumb = (a.querySelector('img')?.attributes['src'] ?? '').trim();
+      if (isLoginOnlyImage(href) && thumb.startsWith('http')) previews[href] = thumb;
+    }
+    return previews;
+  }
+
   static final _xfAttachmentRe = RegExp(r'/attachments/[^/?#]+\.\d+/?(\?|$)');
 
   /// Image bytes for previewing a login-only image (see [isLoginOnlyImage]),
   /// fetched through the logged-in WebView when plain HTTP is refused.
   static Future<Uint8List?> fetchImageBytes(
-      String url, ScrapingService scraping) async {
+      String url, ScrapingService? scraping) async {
     final bytes = await _fetchImageBytes(url, scraping);
     if (bytes == null) return null;
     return bytes is Uint8List ? bytes : Uint8List.fromList(bytes);

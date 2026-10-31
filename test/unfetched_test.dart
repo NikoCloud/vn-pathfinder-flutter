@@ -30,9 +30,10 @@ class _Library extends LibraryNotifier {
 }
 
 class _UserData extends UserDataNotifier {
-  _UserData(super.ref, UserData data) {
-    state = data;
-  }
+  _UserData(super.ref, UserData data) : super(initial: data);
+
+  @override
+  Future<void> save() async {}
 }
 
 void main() {

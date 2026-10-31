@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class ScreenshotLightbox extends StatefulWidget {
   final List<String> paths;
@@ -47,7 +48,15 @@ class _ScreenshotLightboxState extends State<ScreenshotLightbox> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowRight): _next,
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): _prev,
+        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.pop(context),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
@@ -139,6 +148,8 @@ class _ScreenshotLightboxState extends State<ScreenshotLightbox> {
             ),
           ),
         ],
+      ),
+        ),
       ),
     );
   }

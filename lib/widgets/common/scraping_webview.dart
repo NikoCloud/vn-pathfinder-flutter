@@ -48,13 +48,19 @@ class _ScrapingWebViewState extends ConsumerState<ScrapingWebView> {
     _busy = true;
     await service.initialize();
     _busy = false;
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    // Every session ended while it was starting.
+    if (ref.read(scrapingSessionProvider) == 0 && service.isInitialized) _disposeService(service);
   }
 
   Future<void> _disposeService(ScrapingService service) async {
     _busy = true;
     await service.dispose();
     _busy = false;
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    // A session opened while it was shutting down.
+    if (ref.read(scrapingSessionProvider) > 0) _init(service);
   }
 }

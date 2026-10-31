@@ -537,6 +537,56 @@ but no images count as fetched.
 
 ---
 
+## Entry 20 — Why Image Fallback Must Confirm the Game
+
+When LewdCorner lost a full-size file, the first fallback simply took images from the user's other
+picked sources. A real test looked perfect: nine tiny thumbnails became ten 1920×1080 images. They
+were the wrong game. Lost Daughter's saved F95Zone link was an old auto-pick of Long Lost Daughter,
+by a different developer.
+
+Wrong art is worse than small art, because nothing tells you it's wrong. So `sameGame` needs the
+title and the developer to match, and an unknown developer means no. It misses some real matches
+(Neko-Hime and NekoFairys), which only costs a thumbnail and a warning.
+
+---
+
+## Entry 21 — LewdCorner's Tiers
+
+LewdCorner sorts games into tiers. Standard and AI are public; Plus and AI+ need a forum role.
+Logged-out visitors can still read Plus titles and post text through public RSS, but the images are
+hidden, so a feed built on that RSS would list games its reader can't use. That's why the logged-out
+fallback reads the Games and AI Games forums only.
+
+**Why Plus games are labelled, not filtered:** the site doesn't report roles (`user_info` only says
+you're logged in), so the app can't know who has access. Hiding Plus would remove games from people
+who can open them.
+
+---
+
+## Entry 22 — Clearing the Backlog
+
+**Why the hovered card is drawn twice:** a grid paints its cards in order, so a card scaled in place
+ends up under the next one. Lifting it into an overlay solves that, and `IgnorePointer` means the
+real card underneath still takes the click.
+
+**Why Cancel uses a marker file:** killing the extraction isolate leaves its file handles open on
+Windows, so the half-finished folder can't be deleted. The worker checks for a marker file and stops
+by itself.
+
+**Why theme colors are getters:** there were more than 800 fixed color references. Turning them into
+getters on `AppColors` moved the whole app to the theme without touching each widget. The cost is
+that `const` widgets don't rebuild by themselves, so a theme change marks the whole tree for rebuild.
+
+**Why F95Zone ratings refresh a few at a time:** thread pages have no rating, and the bulk version
+checker doesn't return one. Only title search does, so a refresh is one request per game. Doing the
+whole library in one go made Cloudflare refuse that search for at least 10 minutes, so each check
+now does up to 20 games, 3 seconds apart, and stops at the first refusal.
+
+**Why the developer label needs a colon:** `Developer website: https://…` and `Developer Notes:` both
+start with "Developer". Accepting a space after the word turned them into developer names.
+
+---
+
 ## Design Decision — Feed Cards Are Text-Only
 
 The F95 feed data includes cover images, and the Feed tab deliberately strips them. This is
@@ -548,7 +598,20 @@ provider can supply them.
 
 ---
 
-## Known Remaining Issues (as of 2026-10-30)
+## Design Decision — Discord Is Coming Soon
+
+Discord channels were taken out of the Feed until there's a better way to set them up. They needed a
+personal bot token, typed `channelId:ServerName:#channel` lines, and a bot invited to every server,
+which most people can't do. The Feed focuses on the forum sites until then.
+
+Settings keeps a DISCORD (COMING SOON) section with no fields. The fetching code, filter pill and
+saved token fields were removed, not hidden, so nothing is left half-connected. The first version is
+in git at `a23b0b8` (`_fetchDiscord` in `feed_service.dart`). A separate dev build was considered and
+dropped, because it would have meant running two builds side by side.
+
+---
+
+## Known Remaining Issues (as of 2026-10-31)
 
 Full detail in `PROGRESS.md` → Phase 17.
 
@@ -556,20 +619,20 @@ Full detail in `PROGRESS.md` → Phase 17.
 |-------|----------|-------|
 | Scraping failures look like "no results" | ✅ Fixed | `d27c83a` — errors are shown; see Entry 16 |
 | No Cloudflare challenge-page detection | ✅ Fixed | `d27c83a` — challenge pages are waited out, then reported |
-| No real tests | ✅ Fixed | 34 tests in `test/` |
-| Transient scraping failures aren't retried | Low | Reported now, but nothing retries |
-| LewdCorner feed API needs a key | Medium | 403 "Invalid API key"; guest forum feeds (`games.6`, `games.119`) work |
-| Zip extraction loads the whole archive into RAM | Medium | Multi-GB archives; stream it in an isolate |
-| F95Zone feed relies on one endpoint | Low | `sam/latest_data.php`, no fallback |
-| `xenforoLogin()` in `metadata_service.dart` is dead code | Low | Never called; safe to delete in a cleanup pass |
-| Secrets stored as plain JSON | Low | Discord bot token + session cookies in `%APPDATA%\VN Pathfinder\` (local only) |
+| No real tests | ✅ Fixed | 291 tests in `test/` |
+| Transient scraping failures aren't retried | ✅ Fixed | `retryOnce` in Fetch Metadata |
+| Older LewdCorner attachments unavailable | Medium | Full-size files refused even logged in; thumbnails remain |
+| Zip extraction loads the whole archive into RAM | ✅ Fixed | Streams on an isolate (Entry 22), and each file inside is written as it unpacks (`unpackZipFile`) |
+| F95Zone feed relies on one endpoint | ✅ Fixed | Falls back to public RSS |
+| `xenforoLogin()` in `metadata_service.dart` is dead code | ✅ Fixed | Removed |
+| Secrets stored as plain JSON | Low | Session cookies in `%APPDATA%\VN Pathfinder\` (local only) |
 | Patch toggle on paths with spaces | Unknown | `File.rename()` should handle spaces, but not tested end-to-end |
-| Theme settings barely apply | Medium | Widgets use fixed `AppColors`; see `BACKLOG.md` |
+| Theme settings barely apply | ✅ Fixed | `AppColors` getters; see Entry 22 |
 | `webview_windows` is Windows-only | Deferred | Cross-platform needs `flutter_inappwebview` behind a platform conditional |
-| No published build | Medium | `v0.9.0` is a source tag; `pubspec.yaml` says `2.0.0+1` |
-| Network setting defaults | Low | Game Update Checks and Site Logins: off in `AppSettings()`, on in `fromJson` |
+| No published build | Medium | `v0.9.0` is a source tag; `pubspec.yaml` says `2.0.0+1`; the app says `2.0.0-alpha` |
+| Network setting defaults | ✅ Fixed | On in both, with Lockdown on by default |
 | Properties can hide a game from Unfetched | Low | Rename, launch arguments and exe override create `.vnpf` |
-| `A.`-prefixed versions | Low | `Siblings Delights A.2.0.7.2` parses as a separate game |
+| `A.`-prefixed versions | ✅ Fixed | Version regex |
 
 ---
 
@@ -580,3 +643,67 @@ The local Windows account name must never appear in commits, public docs, or URL
 `CLAUDE.md` enforces this — always check before pushing anything that touches paths or attribution.
 The repo-local git config must also be NikoCloud (`user.name NikoCloud` + the noreply email above).
 Entry 15 happened because it wasn't — check `git config user.name` in any fresh clone.
+
+---
+
+## Design Decision — The Midnight Redesign
+
+**Why cards went wide.** Of 114 real covers, 106 were wide, with a median ratio of 1.87. The old portrait grid kept about 35% of a typical cover; 16:9 keeps about 95%. Covers on forums are made wide, so the cards are too.
+
+**Why covers came back to the Feed.** Images were stripped so no site would get more attention than another, because not every source had them. Every site now has them: F95Zone's list, LewdCorner's list and the image in Azkosel's Corner posts. The neutrality rule itself hasn't changed: time order, the same card size and labels for every site, and the first post of a version wins.
+
+**Why amber means one thing.** It's only for a new version you don't have, so it can be spotted across a wall of art. Tags are neutral for the same reason: when everything is coloured, nothing stands out.
+
+**Why a download goes through the site's real page.** The sites and hosts are the ones doing the work, and their checks, waits and ads are how they stay up. Pathfinder opens the real page and leaves it alone. It adds nothing but noticing the file. Nothing in the app solves, skips or hides any of it.
+
+**Why title matches can't claim an update.** Titles collide (there are two Guilty Pleasures). A release matched on title alone says "In library". Only a thread match says "You have v0.8".
+
+**Why Archive looks the way it does.** NikoCloud called the proposed Archive bland and put it on the back burner, so it has the new tokens and nothing else until that's revisited.
+
+**Why a download brings its data with it.** NikoCloud's idea: the Feed already knows what a file is, so save that beside it and the Archive can show a card. The bigger gain is that the game arrives fetched, with the thread link right because it's the thread the file came from, unlike a title search. The data sits in the same shape as a game folder so nothing new had to learn to read it.
+
+**Why Assign keeps whole mods again.** 2.0 had narrowed Assign to loose files and refused anything nested, throwing away images and readmes. 1.0 kept the folder. NikoCloud asked for parity, and refusing a mod helps no one, so loose patch files still go in flat and anything else stays whole.
+
+## Design Decision — A Release Is a New Version
+
+A Feed date only means something if it means the same thing on every site, and it doesn't. Measured
+on the live sites in October 2026:
+
+- **F95Zone's list** can be trusted. Replies up to 19 hours newer than a row didn't move it, a later
+  first-post edit didn't move it, and 63 of 63 rows shared with a saved list kept their date.
+- **LewdCorner's list** follows any edit of the first post. `timestamp` equals `edited_ts` on edited
+  rows and `posted_ts` otherwise, and the rows that moved between two reads kept their version (3 of
+  3, a small sample). A new thread also flips from `new` to `upd` on its first edit.
+- **Azkosel's Corner's RSS** follows the latest reply, on 8 of 8 threads sampled, including threads
+  9 months old showing as minutes old. It's a list of busy threads, not of releases. Any XenForo
+  forum feed behaves this way.
+
+So the rule is that a release is a new version of a thread, and the Feed remembers each thread's
+version with its date, for longer than it shows the row. The same version keeps its date, which also
+means a re-dated old thread falls back out of the Feed's window. LewdCorner uses the post date for a
+new thread and the edit date when the version really changed. Azkosel's Corner has no usable date at
+all, so each new version's thread is opened once and its first post read. F95Zone keeps its own
+dates, because they earn it: a fix released under the same version still counts there.
+
+Threads are keyed by number, not by link: forum links carry the title, and the title carries the
+version, so a link changes at exactly the moment the history matters.
+
+What this costs, on purpose: a thread with no version keeps its first date, a LewdCorner row seen
+for the first time has no history so a small edit can pass once, and a same-version fix doesn't show
+on LewdCorner or Azkosel's Corner. Public feeds standing in for F95Zone or LewdCorner don't open
+threads, because they only stand in when that site has just refused a request.
+
+## Design Decision — Catching Up
+
+`lastRefreshed` can't say how far the Feed has read, because it moves even when a site failed. Each
+site now has its own caught-up date, which only moves when a catch-up finishes.
+
+A run reads page by page, 5 seconds apart, until it reaches that date or 10 days back. A refused
+page ends the run: what it got stays, and it notes where it stopped. Starting from page 1 every time
+would hit the same limit at the same depth and never get past it, so the next run reads down to
+where the last one started, then skips the pages it already has. New rows push everything down by
+the pages just read, which is how it knows where to land.
+
+The Feed goes before the update check, because they share an F95Zone address and a burst from one
+gets the other refused.
+

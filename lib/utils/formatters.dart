@@ -37,6 +37,35 @@ String fmtVersion(String version) {
   return spaced;
 }
 
+// Link labels forum posts run into a developer's name ("Quonix Patreon").
+const _developerLinks = r'patreon|subscribe ?star|itch(?:\.io)?|steam|discord|twitter|'
+    r'website|homepage|blog|boosty|ko-?fi|gumroad|linktree|fanbox|pixiv|facebook|'
+    r'instagram|youtube|reddit|tumblr|deviantart|bluesky|nutaku|dlsite|fantia|tipeee|paypal';
+final _linkSeparator = RegExp(r'\s[-–—|/]\s');
+final _onlyLink = RegExp('^(?:$_developerLinks)\$', caseSensitive: false);
+final _trailingLink =
+    RegExp('[\\s,:;|/(\\[-]+(?:$_developerLinks)[)\\]]?\$', caseSensitive: false);
+final _webAddress = RegExp(r'(?:https?://|www\.)\S+', caseSensitive: false);
+
+/// A developer's name without the links and page text scraped along with it:
+/// "Quonix Patreon - Discord" → "Quonix". Also used on saved metadata, so
+/// names fetched before this existed are cleaned without fetching again.
+String cleanDeveloperName(String raw) {
+  final firstLine = raw.trim().split(RegExp(r'[\r\n\t]')).first;
+  final line = firstLine.replaceAll(_webAddress, ' ').trim();
+  final parts = line.split(_linkSeparator).map((s) => s.trim()).where((s) => s.isNotEmpty);
+  if (parts.isEmpty) return '';
+  var name = parts.firstWhere((s) => !_onlyLink.hasMatch(s), orElse: () => parts.first);
+  while (true) {
+    final shorter = name.replaceFirst(_trailingLink, '').trim();
+    if (shorter == name || shorter.isEmpty) break;
+    name = shorter;
+  }
+  name = name.replaceAll(RegExp(r'[\s\-|–—:,]+$'), '').trim();
+  // "website: https://…" is a link with its label, not a name.
+  return _webAddress.hasMatch(firstLine) && _onlyLink.hasMatch(name) ? '' : name;
+}
+
 String fmtBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';

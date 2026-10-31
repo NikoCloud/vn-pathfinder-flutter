@@ -15,6 +15,7 @@ A complete rewrite of VN Pathfinder (visual novel library manager) in Flutter/Da
 - **Renderer:** Impeller (Vulkan on Windows)
 - **Platform target:** Windows FIRST. macOS/Linux later when user has access to test. Mobile is 3.0+ scope.
 - **Design source:** HTML mockup in `mockup/` folder — implement Flutter to match it
+- **WebView2:** `third_party/webview_windows`, a copy of 0.4.0 that reports downloads (see its `PATCHES.md`). Don't swap it back to the pub.dev package
 
 ## Architecture
 ```
@@ -22,9 +23,9 @@ lib/
   main.dart
   models/         # GameGroup, GameVersion, GameStatus, UserData, etc.
   providers/      # Riverpod providers and StateNotifiers
-  screens/        # Library, Archive and Feed screens
-  widgets/        # Reusable components, modals (settings, properties, metadata fetch)
-  services/       # Scanner, scraping, metadata, feed, update checks
+  screens/        # Home, Library, Archive, Feed and Stats screens
+  widgets/        # common/ (kit.dart controls, GameArt, ArtCard), game/ (game page), get/ (Get sheet, dock), modals
+  services/       # Scanner, scraping, metadata, feed, threads, site browser, update checks, extraction, gallery, tray
   utils/          # Helpers
 ```
 
@@ -79,6 +80,9 @@ This is a release product, not a research repo. Write for the people using it.
 - `docs/dev/` also holds developer reference: `PROGRESS.md` (phases, internals, fixes) and `KYUN.md` (design reasoning).
 - Only state what the code does. Check a claim before writing it.
 - Agent handoff notes never go in the repo or its docs.
+
+## Packaging
+`tool/package_windows.ps1` builds the app and writes a portable ZIP to `dist/` (gitignored), plus an installer if Inno Setup 6 is installed. The version comes from `appVersion` in `lib/services/app_update_service.dart`.
 
 ## Mockup
 Located in `mockup/` folder. This is the design reference — implement Flutter to match it.

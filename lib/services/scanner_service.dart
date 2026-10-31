@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import '../models/archive_item.dart';
 import '../models/game_group.dart';
+import 'gallery_service.dart';
 import '../models/game_version.dart';
 import '../models/user_data.dart';
 import 'package:archive/archive.dart';
@@ -26,8 +27,8 @@ const _platformSuffixes = {
 // a dotted one ("New in City 0.3.3", "BBUltimate v0.11") so titles like
 // "Persona 4" or "Cyberpunk 2077" keep their numbers.
 final _versionRe = RegExp(
-  r'(?:[-_]|\s(?=v?\.?\d+\.\d))'
-  r'(v\.?\d[\w.]*|\d+\.\d[\w.]*|\d{3,}|Demo|DEMO|demo'
+  r'(?:[-_]|\s(?=(?:v?\.?|a\.)\d+\.\d))'
+  r'(v\.?\d[\w.]*|a\.\d[\w.]*|\d+\.\d[\w.]*|\d{3,}|Demo|DEMO|demo'
   r'|Chapter[-_]?\d[\w.]*|Chapter\w*|Day\d+[\w_]*|Act\.[\w.]+|Final|FINAL'
   r'|VER_[\w.]+|Vers\.[\w.]+|Episode[-_]?\d[\w.]*|Episode\w*)'
   r'(?:[-_\s].+)?$',
@@ -295,6 +296,7 @@ File? findArtPath(Directory gamePath) {
   const artCandidates = [
     '../.vnpf/cover.jpg',
     '../.vnpf/cover.png',
+    '../.vnpf/cover.webp',
     'gui/main_menu.png',
     'gui/main_menu.jpg',
     'gui/game_menu.png',
@@ -336,7 +338,7 @@ List<File> groupCarouselPaths(GameGroup g, String? customArtPath) {
   // .vnpf cover
   for (final v in g.versions.reversed) {
     final vnpf = Directory(p.join(v.folderPath.path, _metadataDir));
-    for (final ext in ['cover.jpg', 'cover.png']) {
+    for (final ext in ['cover.jpg', 'cover.png', 'cover.webp']) {
       final cover = File(p.join(vnpf.path, ext));
       if (cover.existsSync()) {
         final paths = <File>[cover];
@@ -364,12 +366,7 @@ void _addScreenshots(GameGroup g, List<File> paths) {
   for (final v in g.versions.reversed) {
     final vnpf = Directory(p.join(v.folderPath.path, _metadataDir));
     if (!vnpf.existsSync()) continue;
-    final shots = vnpf.listSync()
-        .whereType<File>()
-        .where((f) => p.basename(f.path).startsWith('screenshot_'))
-        .toList()
-      ..sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
-    for (final s in shots) {
+    for (final s in GalleryService.screenshots(vnpf)) {
       if (!paths.contains(s)) paths.add(s);
     }
   }
@@ -506,7 +503,7 @@ List<String> _listNames(Directory dir) {
 /// The game version (config.version) a Ren'Py save was made in — the "json"
 /// entry of the save's zip, e.g. {"_version": "0.3.2", ...}.
 String? _saveGameVersion(File save) {
-  final bytes = _readZipEntry(save, 'json');
+  final bytes = readZipEntry(save, 'json');
   if (bytes == null) return null;
   try {
     final json = jsonDecode(utf8.decode(bytes, allowMalformed: true));
@@ -520,7 +517,7 @@ String? _saveGameVersion(File save) {
 /// Reads one entry of a zip without loading the rest — a Ren'Py save's tiny
 /// "json" sits next to a multi-megabyte pickled "log". Finds the entry via
 /// the central directory and inflates just that (stored or deflated).
-List<int>? _readZipEntry(File file, String entryName) {
+List<int>? readZipEntry(File file, String entryName) {
   RandomAccessFile? raf;
   try {
     raf = file.openSync();
@@ -597,11 +594,14 @@ ArchiveItem scanArchive(File file) {
 class ScannerService {
   /// Scans on a background isolate: it's all synchronous disk work (folder
   /// listings, metadata, save files) that would otherwise freeze the UI.
-  static Future<List<GameGroup>> scanAll(Directory libraryDir) {
-    return Isolate.run(() => _scanAllSync(libraryDir));
+  /// [merges] is UserData.gameMerges: folders with a key in it join the game
+  /// it points to.
+  static Future<List<GameGroup>> scanAll(Directory libraryDir,
+      {Map<String, String> merges = const {}}) {
+    return Isolate.run(() => _scanAllSync(libraryDir, merges));
   }
 
-  static List<GameGroup> _scanAllSync(Directory libraryDir) {
+  static List<GameGroup> _scanAllSync(Directory libraryDir, Map<String, String> merges) {
     final versions = <GameVersion>[];
     final archives = <ArchiveItem>[];
 
@@ -631,15 +631,15 @@ class ScannerService {
       }
     }
 
-    return _buildGroups(versions, archives);
+    return _buildGroups(versions, archives, merges);
   }
 
   static List<GameGroup> _buildGroups(
-      List<GameVersion> versions, List<ArchiveItem> archives) {
+      List<GameVersion> versions, List<ArchiveItem> archives, Map<String, String> merges) {
     final groups = <String, GameGroup>{};
 
     for (final v in versions) {
-      final k = v.baseKey;
+      final k = merges[v.baseKey] ?? v.baseKey;
       groups[k] = groups[k] == null
           ? GameGroup(baseKey: k, displayName: v.displayName, versions: [v])
           : () {
@@ -664,7 +664,7 @@ class ScannerService {
 
     // Attach archives
     for (final a in archives) {
-      final k = a.baseKey;
+      final k = merges[a.baseKey] ?? a.baseKey;
       if (groups.containsKey(k)) {
         final g = groups[k]!;
         // Try to match archive version to a game version

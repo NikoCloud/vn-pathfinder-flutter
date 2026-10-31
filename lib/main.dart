@@ -13,8 +13,9 @@ void main() async {
     minimumSize: Size(960, 600),
     center: true,
     title: 'VN Pathfinder',
-    backgroundColor: Color(0xFF1A1D23),
-    titleBarStyle: TitleBarStyle.normal,
+    backgroundColor: Color(0xFF0D1017),
+    titleBarStyle: TitleBarStyle.hidden,
+    windowButtonVisibility: false,
     skipTaskbar: false,
   );
 

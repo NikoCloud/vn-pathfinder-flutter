@@ -50,6 +50,14 @@ class GameGroup {
     return const [];
   }
 
+  /// Rating saved by Fetch Metadata, out of 5, from the newest version with one.
+  double get storedRating {
+    for (final v in versions.reversed) {
+      if (v.metaRating > 0) return v.metaRating;
+    }
+    return 0;
+  }
+
   /// No version has a .vnpf folder, so nothing has been saved for this game.
   /// One version is enough, since metadata and art fall back across versions.
   bool get isUnfetched => !versions.any((v) => v.hasVnpf);

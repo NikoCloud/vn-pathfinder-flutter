@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../theme.dart';
 import '../../models/game_status.dart';
 import '../../providers/filter_provider.dart';
+import '../../providers/library_provider.dart';
 import '../../providers/update_provider.dart';
 
 class FilterPanel extends ConsumerWidget {
@@ -14,58 +14,13 @@ class FilterPanel extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: const [
-        _SearchSection(),
         _TagIncludeSection(),
         _TagExcludeSection(),
         _EngineSection(),
         _StatusSection(),
         _UpdatesSection(),
         _MetadataSection(),
-        _SortRow(),
       ],
-    );
-  }
-}
-
-// ── Search ────────────────────────────────────────────────────────────────────
-
-class _SearchSection extends ConsumerStatefulWidget {
-  const _SearchSection();
-  @override
-  ConsumerState<_SearchSection> createState() => _SearchSectionState();
-}
-
-class _SearchSectionState extends ConsumerState<_SearchSection> {
-  final _ctrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final filter = ref.watch(filterProvider);
-    final notifier = ref.read(filterProvider.notifier);
-
-    return _Section(
-      label: 'SEARCH',
-      trailing: _PillToggleButton(
-        label: filter.searchMode == SearchMode.title ? 'TITLE' : 'CREATOR',
-        onTap: () => notifier.setSearchMode(
-          filter.searchMode == SearchMode.title
-              ? SearchMode.creator
-              : SearchMode.title,
-        ),
-      ),
-      child: _SearchInput(
-        controller: _ctrl,
-        placeholder: filter.searchMode == SearchMode.title
-            ? 'Search titles…'
-            : 'Search creators…',
-        onChanged: notifier.setQuery,
-      ),
     );
   }
 }
@@ -82,7 +37,7 @@ class _TagIncludeSection extends ConsumerWidget {
     final allTags = ref.watch(allTagsProvider);
 
     return _Section(
-      label: 'TAGS',
+      label: 'Tags',
       labelSuffix: ' (MAX 10)',
       trailing: _PillToggleButton(
         label: filter.tagMatchMode == TagMatchMode.any ? 'OR' : 'AND',
@@ -128,7 +83,7 @@ class _TagExcludeSection extends ConsumerWidget {
     final allTags = ref.watch(allTagsProvider);
 
     return _Section(
-      label: 'EXCLUDE TAGS',
+      label: 'Exclude tags',
       labelSuffix: ' (MAX 10)',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -173,7 +128,7 @@ class _EngineSection extends ConsumerWidget {
     final notifier = ref.read(filterProvider.notifier);
 
     return _Collapsible(
-      label: 'ENGINE',
+      label: 'Engine',
       children: _engines
           .map((e) => _FilterCheckbox(
                 label: e.$2,
@@ -196,7 +151,7 @@ class _StatusSection extends ConsumerWidget {
     final notifier = ref.read(filterProvider.notifier);
 
     return _Collapsible(
-      label: 'STATUS',
+      label: 'Status',
       children: GameStatus.values
           .map((s) => _FilterCheckbox(
                 label: s.label,
@@ -215,7 +170,7 @@ class _UpdatesSection extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(availableUpdatesProvider).length;
     return _Collapsible(
-      label: 'UPDATES',
+      label: 'Updates',
       children: [
         _FilterCheckbox(
           label: 'Update available ($count)',
@@ -233,62 +188,37 @@ class _MetadataSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final count = ref.watch(unfetchedCountProvider);
+    final filter = ref.watch(filterProvider);
+    final notifier = ref.read(filterProvider.notifier);
     return _Collapsible(
-      label: 'METADATA',
+      label: 'Metadata',
       children: [
         _FilterCheckbox(
           label: 'Unfetched ($count)',
-          value: ref.watch(filterProvider).unfetchedOnly,
-          onChanged: (v) => ref.read(filterProvider.notifier).setUnfetchedOnly(v),
+          value: filter.unfetchedOnly,
+          onChanged: notifier.setUnfetchedOnly,
+        ),
+        _FilterCheckbox(
+          label: 'Rated 3 or higher',
+          value: filter.minRating == 3,
+          onChanged: (v) => notifier.setMinRating(v ? 3 : 0),
+        ),
+        _FilterCheckbox(
+          label: 'Rated 4 or higher',
+          value: filter.minRating == 4,
+          onChanged: (v) => notifier.setMinRating(v ? 4 : 0),
+        ),
+        _FilterCheckbox(
+          label: 'Released in the last year',
+          value: filter.releasedWithinDays == 365,
+          onChanged: (v) => notifier.setReleasedWithinDays(v ? 365 : 0),
+        ),
+        _FilterCheckbox(
+          label: 'Hidden games (${ref.watch(userDataProvider).hidden.length})',
+          value: filter.showHidden,
+          onChanged: notifier.setShowHidden,
         ),
       ],
-    );
-  }
-}
-
-// ── Sort Row ──────────────────────────────────────────────────────────────────
-
-class _SortRow extends ConsumerWidget {
-  const _SortRow();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final filter = ref.watch(filterProvider);
-    final notifier = ref.read(filterProvider.notifier);
-    final count = ref.watch(filteredGroupsProvider).length;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(0, 5, 0, 0),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: [
-          Text(
-            '$count Result${count == 1 ? '' : 's'}',
-            style: GoogleFonts.inter(fontSize: 10, color: AppColors.textMuted),
-          ),
-          const Spacer(),
-          _SortButton(
-            tooltip: 'Sort A–Z',
-            label: 'A↓',
-            active: filter.sort == SortMode.alpha,
-            onTap: () => notifier.setSort(SortMode.alpha),
-          ),
-          _SortButton(
-            tooltip: 'Sort by Recently Played',
-            label: '🕐',
-            active: filter.sort == SortMode.recentlyPlayed,
-            onTap: () => notifier.setSort(SortMode.recentlyPlayed),
-          ),
-          _SortButton(
-            tooltip: 'Sort by Date Added',
-            label: '📅',
-            active: filter.sort == SortMode.dateAdded,
-            onTap: () => notifier.setSort(SortMode.dateAdded),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -322,8 +252,8 @@ class _Section extends StatelessWidget {
                   children: [
                     TextSpan(
                       text: label,
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
+                      style: AppText.ui(
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.8,
                         color: AppColors.textMuted,
@@ -332,8 +262,8 @@ class _Section extends StatelessWidget {
                     if (labelSuffix.isNotEmpty)
                       TextSpan(
                         text: labelSuffix,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
+                        style: AppText.ui(
+                          fontSize: 11,
                           color: AppColors.textMuted,
                         ),
                       ),
@@ -371,8 +301,8 @@ class _PillToggleButton extends StatelessWidget {
         ),
         child: Text(
           label,
-          style: GoogleFonts.inter(
-            fontSize: 9,
+          style: AppText.ui(
+            fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.5,
             color: AppColors.accent,
@@ -383,52 +313,6 @@ class _PillToggleButton extends StatelessWidget {
   }
 }
 
-class _SearchInput extends StatelessWidget {
-  final TextEditingController controller;
-  final String placeholder;
-  final ValueChanged<String> onChanged;
-
-  const _SearchInput({
-    required this.controller,
-    required this.placeholder,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 28,
-      decoration: BoxDecoration(
-        color: AppColors.bgInput,
-        border: Border.all(color: AppColors.border),
-        borderRadius: AppRadius.borderSm,
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          const Icon(Icons.search, size: 13, color: AppColors.textMuted),
-          const SizedBox(width: 4),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              style: GoogleFonts.inter(
-                  fontSize: 12, color: AppColors.textPrimary),
-              decoration: InputDecoration(
-                hintText: placeholder,
-                hintStyle: GoogleFonts.inter(
-                    fontSize: 12, color: AppColors.textMuted),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _TagDropdown extends StatefulWidget {
   final String placeholder;
@@ -532,12 +416,12 @@ class _TagDropdownState extends State<_TagDropdown> {
               Expanded(
                 child: Text(
                   widget.maxReached ? 'Max 10 selected' : widget.placeholder,
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 11, color: AppColors.textMuted),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Icon(Icons.expand_more, size: 14, color: AppColors.textMuted),
+              Icon(Icons.expand_more, size: 14, color: AppColors.textMuted),
             ],
           ),
         ),
@@ -571,7 +455,7 @@ class _DropdownMenu extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 8)],
         ),
         child: Text('No tags yet',
-            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted)),
+            style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
       );
     }
 
@@ -631,7 +515,7 @@ class _DropdownOptionState extends State<_DropdownOption> {
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: Text(
             widget.tag,
-            style: GoogleFonts.inter(
+            style: AppText.ui(
               fontSize: 11,
               color:
                   widget.selected ? AppColors.accent : AppColors.textSecondary,
@@ -684,12 +568,12 @@ class _FilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = exclude
-        ? const Color(0x1FC94040)
-        : const Color(0x264A9E6E);
+        ? AppColors.danger.withValues(alpha: 0.12)
+        : AppColors.accent.withValues(alpha: 0.15);
     final fg = exclude ? AppColors.danger : AppColors.accentLight;
     final border = exclude
-        ? const Color(0x40C94040)
-        : const Color(0x404A9E6E);
+        ? AppColors.danger.withValues(alpha: 0.25)
+        : AppColors.accent.withValues(alpha: 0.25);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(7, 1, 4, 1),
@@ -702,8 +586,8 @@ class _FilterChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(tag,
-              style: GoogleFonts.inter(
-                  fontSize: 10, fontWeight: FontWeight.w500, color: fg)),
+              style: AppText.ui(
+                  fontSize: 11, fontWeight: FontWeight.w500, color: fg)),
           const SizedBox(width: 3),
           GestureDetector(
             onTap: onRemove,
@@ -731,7 +615,7 @@ class _CollapsibleState extends State<_Collapsible> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
       child: Column(
@@ -747,14 +631,14 @@ class _CollapsibleState extends State<_Collapsible> {
                   AnimatedRotation(
                     turns: _expanded ? 0 : -0.25,
                     duration: const Duration(milliseconds: 200),
-                    child: const Icon(Icons.expand_more,
+                    child: Icon(Icons.expand_more,
                         size: 12, color: AppColors.textMuted),
                   ),
                   const SizedBox(width: 4),
                   Text(
                     widget.label,
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
+                    style: AppText.ui(
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.8,
                       color: AppColors.textMuted,
@@ -810,7 +694,7 @@ class _FilterCheckbox extends StatelessWidget {
                 value: value,
                 onChanged: (v) => onChanged(v ?? false),
                 activeColor: AppColors.accent,
-                side: const BorderSide(color: AppColors.textMuted, width: 1.5),
+                side: BorderSide(color: AppColors.textMuted, width: 1.5),
                 materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
               ),
@@ -819,7 +703,7 @@ class _FilterCheckbox extends StatelessWidget {
             Flexible(
               child: Text(
                 label,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                     fontSize: 11, color: AppColors.textSecondary),
                 overflow: TextOverflow.ellipsis,
               ),

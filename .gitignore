@@ -15,6 +15,7 @@
 
 # Build directories
 build/
+dist/
 .gradle/
 .idea/
 *.iml

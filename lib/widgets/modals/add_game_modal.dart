@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:path/path.dart' as p;
 import '../../theme.dart';
 import '../../utils/formatters.dart';
@@ -94,7 +93,7 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Folder picker
-                      _FieldLabel('GAME FOLDER'),
+                      _FieldLabel('Game folder'),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -111,7 +110,7 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
                                 _selectedFile != null
                                     ? p.basename(_selectedFile!.path)
                                     : (_selectedDir?.path ?? 'No selection'),
-                                style: GoogleFonts.jetBrainsMono(
+                                style: AppText.mono(
                                   fontSize: 11,
                                   color: (_selectedFile != null || _selectedDir != null)
                                       ? AppColors.textSecondary
@@ -147,7 +146,7 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
                       // Scan result
                       if (_scanning) ...[
                         const SizedBox(height: 16),
-                        const LinearProgressIndicator(
+                        LinearProgressIndicator(
                           color: AppColors.accent,
                           backgroundColor: AppColors.bgHover,
                         ),
@@ -162,14 +161,14 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
                           _StatusBox(message: _warning!, isError: false),
                         ],
                         const SizedBox(height: 16),
-                        _FieldLabel('DISPLAY NAME OVERRIDE'),
+                        _FieldLabel('Display name override'),
                         const SizedBox(height: 6),
                         _TextField(
                           controller: _nameCtrl,
                           hint: _detected!.effectiveTitle,
                         ),
                         const SizedBox(height: 12),
-                        _FieldLabel('VERSION OVERRIDE'),
+                        _FieldLabel('Version override'),
                         const SizedBox(height: 6),
                         _TextField(
                           controller: _versionCtrl,
@@ -185,7 +184,7 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
                 // Footer
                 Container(
                   padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     border: Border(top: BorderSide(color: AppColors.border)),
                   ),
                   child: Row(
@@ -308,10 +307,11 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
     }
 
     // Check for duplicate
+    final key = ref.read(userDataProvider).gameMerges[version.baseKey] ?? version.baseKey;
     final existing = ref
         .read(libraryProvider)
         .groups
-        .where((g) => g.baseKey == version.baseKey)
+        .where((g) => g.baseKey == key)
         .toList();
     if (existing.isNotEmpty) {
       warn =
@@ -410,16 +410,16 @@ class _Header extends StatelessWidget {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.bgCard,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.add_circle_outline, size: 15, color: AppColors.accent),
+          Icon(Icons.add_circle_outline, size: 15, color: AppColors.accent),
           const SizedBox(width: 8),
           Text('Add Game',
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary)),
@@ -452,7 +452,7 @@ class _CloseXState extends State<_CloseX> {
           duration: const Duration(milliseconds: 120),
           width: 24, height: 24,
           decoration: BoxDecoration(
-            color: _hovered ? const Color(0x33C94040) : Colors.transparent,
+            color: _hovered ? AppColors.danger.withValues(alpha: 0.2) : Colors.transparent,
             borderRadius: AppRadius.borderXs,
           ),
           child: Icon(Icons.close, size: 14,
@@ -468,8 +468,8 @@ class _FieldLabel extends StatelessWidget {
   const _FieldLabel(this.text);
   @override
   Widget build(BuildContext context) => Text(text,
-      style: GoogleFonts.inter(
-          fontSize: 9, fontWeight: FontWeight.w700,
+      style: AppText.ui(
+          fontSize: 11, fontWeight: FontWeight.w700,
           letterSpacing: 0.6, color: AppColors.textMuted));
 }
 
@@ -488,10 +488,10 @@ class _TextField extends StatelessWidget {
       ),
       child: TextField(
         controller: controller,
-        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+        style: AppText.ui(fontSize: 12, color: AppColors.textPrimary),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+          hintStyle: AppText.ui(fontSize: 12, color: AppColors.textMuted),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           border: InputBorder.none,
           isDense: true,
@@ -510,7 +510,7 @@ class _DetectedCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0x0A4A9E6E),
+        color: AppColors.accent.withValues(alpha: 0.04),
         border: Border.all(color: AppColors.accentDim),
         borderRadius: AppRadius.borderMd,
       ),
@@ -519,11 +519,11 @@ class _DetectedCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.check_circle_outline,
+              Icon(Icons.check_circle_outline,
                   size: 14, color: AppColors.accent),
               const SizedBox(width: 6),
               Text('Game detected',
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: AppColors.accentLight)),
@@ -554,12 +554,12 @@ class _InfoRow extends StatelessWidget {
           SizedBox(
             width: 60,
             child: Text(label,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                     fontSize: 11, color: AppColors.textMuted)),
           ),
           Expanded(
             child: Text(value,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                     fontSize: 11, color: AppColors.textSecondary),
                 overflow: TextOverflow.ellipsis),
           ),
@@ -584,7 +584,7 @@ class _StatusBox extends StatelessWidget {
         borderRadius: AppRadius.borderSm,
       ),
       child: Text(message,
-          style: GoogleFonts.inter(fontSize: 11, color: color, height: 1.5)),
+          style: AppText.ui(fontSize: 11, color: color, height: 1.5)),
     );
   }
 }
@@ -629,7 +629,7 @@ class _BtnState extends State<_Btn> {
             border: Border.all(color: border),
           ),
           child: Text(widget.label,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 12, fontWeight: FontWeight.w500, color: fg)),
         ),
       ),

@@ -3,6 +3,10 @@ import 'package:http/http.dart' as http;
 import '../models/feed_item.dart';
 import '../models/game_group.dart';
 import '../models/game_status.dart';
+import '../models/game_version.dart';
+
+/// One game from F95Zone's title search. [rating] is out of 5; 0 means none.
+typedef F95Row = ({int id, String title, String version, double rating});
 
 /// A newer version of a library game spotted on a forum.
 class AvailableUpdate {
@@ -88,8 +92,34 @@ class UpdateCheckService {
   /// "Grandmas House" both become "grandmashouse".
   static String looseTitle(String title) => title.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
+  /// Whether two library entries look like one game: they link to the same
+  /// forum thread, or have the same title.
+  static bool looksLikeSameGame(GameGroup a, GameGroup b) {
+    for (final link in <String Function(GameVersion)>[
+      (v) => v.metaF95Url,
+      (v) => v.metaLcUrl,
+      (v) => v.metaAzcUrl,
+    ]) {
+      final id = threadId(a.newestMeta(link));
+      if (id != null && id == threadId(b.newestMeta(link))) return true;
+    }
+    return looseTitle(a.effectiveTitle) == looseTitle(b.effectiveTitle);
+  }
+
+  /// Threads due a rating lookup: not looked up within [maxAge], longest wait
+  /// first.
+  static List<int> ratingsDue(
+      Iterable<int> threads, Map<int, DateTime> lookups, DateTime now, Duration maxAge) {
+    final never = DateTime.fromMillisecondsSinceEpoch(0);
+    final due = threads.where((id) {
+      final last = lookups[id];
+      return last == null || now.difference(last) >= maxAge;
+    }).toList();
+    return due..sort((a, b) => (lookups[a] ?? never).compareTo(lookups[b] ?? never));
+  }
+
   /// F95Zone's Latest Updates search — the endpoint the feed uses.
-  static Future<List<({int id, String title, String version})>> searchF95(String query) async {
+  static Future<List<F95Row>> searchF95(String query) async {
     final resp = await http
         .get(
             Uri.parse('https://f95zone.to/sam/latest_alpha/latest_data.php'
@@ -104,14 +134,19 @@ class UpdateCheckService {
     return [
       for (final r in rows.whereType<Map>())
         if (r['thread_id'] is int)
-          (id: r['thread_id'] as int, title: '${r['title'] ?? ''}', version: '${r['version'] ?? ''}'),
+          (
+            id: r['thread_id'] as int,
+            title: '${r['title'] ?? ''}',
+            version: '${r['version'] ?? ''}',
+            rating: (r['rating'] as num?)?.toDouble() ?? 0,
+          ),
     ];
   }
 
   /// The one F95Zone thread whose title is [title] (ignoring case and
   /// punctuation). Null when none — or several — match: a wrong link is worse
   /// than none (two different games are both called "Guilty Pleasure").
-  static Future<({int id, String title, String version})?> findF95Thread(String title) async {
+  static Future<F95Row?> findF95Thread(String title) async {
     final wanted = looseTitle(title);
     if (wanted.length < 3) return null;
     final queries = searchQueries(title);

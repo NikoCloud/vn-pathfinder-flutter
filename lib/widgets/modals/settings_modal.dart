@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:webview_windows/webview_windows.dart';
 import '../../theme.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/feed_provider.dart';
+import '../../services/app_update_service.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart';
 import 'orphan_scanner_modal.dart';
@@ -73,7 +73,7 @@ class _SettingsModalState extends ConsumerState<SettingsModal> {
                         selected: _tab,
                         onSelect: (t) => setState(() => _tab = t),
                       ),
-                      const VerticalDivider(
+                      VerticalDivider(
                           width: 1, thickness: 1, color: AppColors.border),
                       Expanded(child: _buildPanel()),
                     ],
@@ -110,18 +110,18 @@ class _ModalHeader extends StatelessWidget {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.bgCard,
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.settings_outlined,
+          Icon(Icons.settings_outlined,
               size: 16, color: AppColors.textMuted),
           const SizedBox(width: 8),
           Text(
             'Settings',
-            style: GoogleFonts.inter(
+            style: AppText.ui(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: AppColors.textPrimary,
@@ -159,7 +159,7 @@ class _CloseButtonState extends State<_CloseButton> {
           height: 24,
           decoration: BoxDecoration(
             color: _hovered
-                ? const Color(0x33C94040)
+                ? AppColors.danger.withValues(alpha: 0.2)
                 : Colors.transparent,
             borderRadius: AppRadius.borderXs,
           ),
@@ -267,7 +267,7 @@ class _SidebarTabState extends State<_SidebarTab> {
               const SizedBox(width: 8),
               Text(
                 widget.label,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                   fontSize: 12,
                   fontWeight:
                       widget.selected ? FontWeight.w600 : FontWeight.w400,
@@ -319,7 +319,7 @@ class _SettingGroup extends StatelessWidget {
       children: [
         Text(
           title,
-          style: GoogleFonts.inter(
+          style: AppText.ui(
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.5,
@@ -338,7 +338,7 @@ class _SettingGroup extends StatelessWidget {
                 .expand((w) sync* {
                   yield w;
                   if (w != children.last) {
-                    yield const Divider(
+                    yield Divider(
                         height: 1, thickness: 1, color: AppColors.border);
                   }
                 })
@@ -374,12 +374,12 @@ class _SettingRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(label,
-                    style: GoogleFonts.inter(
+                    style: AppText.ui(
                         fontSize: 13, color: AppColors.textPrimary)),
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(subtitle!,
-                      style: GoogleFonts.inter(
+                      style: AppText.ui(
                           fontSize: 11, color: AppColors.textMuted)),
                 ],
               ],
@@ -493,7 +493,7 @@ class _SmallButtonState extends State<_SmallButton> {
           ),
           child: Text(
             widget.label,
-            style: GoogleFonts.inter(
+            style: AppText.ui(
                 fontSize: 12, fontWeight: FontWeight.w500, color: fg),
           ),
         ),
@@ -515,7 +515,7 @@ class _GeneralPanel extends ConsumerWidget {
     final notifier = ref.read(settingsProvider.notifier);
 
     return _PanelScroll(children: [
-      _SettingGroup(title: 'LIBRARY', children: [
+      _SettingGroup(title: 'Library', children: [
         _SettingRow(
           label: 'Library Directory',
           subtitle: 'Root folder containing your visual novels',
@@ -528,7 +528,7 @@ class _GeneralPanel extends ConsumerWidget {
                   settings.libraryDir.isEmpty
                       ? 'Not set'
                       : settings.libraryDir,
-                  style: GoogleFonts.jetBrainsMono(
+                  style: AppText.mono(
                     fontSize: 11,
                     color: settings.libraryDir.isEmpty
                         ? AppColors.textMuted
@@ -574,13 +574,21 @@ class _GeneralPanel extends ConsumerWidget {
             onChanged: notifier.setAutoBackup,
           ),
         ),
+        _SettingRow(
+          label: 'Minimize to Tray',
+          subtitle: 'Minimizing hides the window to the system tray',
+          trailing: _ToggleSwitch(
+            value: settings.minimizeToTray,
+            onChanged: notifier.setMinimizeToTray,
+          ),
+        ),
       ]),
-      _SettingGroup(title: 'MAINTENANCE', children: [
+      _SettingGroup(title: 'Maintenance', children: [
         _SettingRow(
           label: 'Orphaned File Scanner',
           subtitle: 'Find unrecognised files in your library root',
           trailing: _SmallButton(
-            '🔍  Scan Now',
+            'Scan Now',
             onTap: () {
               showOrphanScannerModal(context);
             },
@@ -661,7 +669,7 @@ class _SliderRowState extends State<_SliderRow> {
           width: 42,
           child: Text(
             widget.label,
-            style: GoogleFonts.inter(
+            style: AppText.ui(
                 fontSize: 12, color: AppColors.textSecondary),
             textAlign: TextAlign.right,
           ),
@@ -685,19 +693,19 @@ class _NetworkPanel extends ConsumerWidget {
     final locked = settings.lockdown;
 
     return _PanelScroll(children: [
-      _SettingGroup(title: 'ACCESS CONTROL', children: [
+      _SettingGroup(title: 'Access control', children: [
         // Lockdown row — highlighted
         Container(
           margin: const EdgeInsets.all(8),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: locked
-                ? const Color(0x0FC94040)
+                ? AppColors.danger.withValues(alpha: 0.06)
                 : Colors.transparent,
             borderRadius: AppRadius.borderSm,
             border: Border.all(
               color: locked
-                  ? const Color(0x33C94040)
+                  ? AppColors.danger.withValues(alpha: 0.2)
                   : AppColors.border,
             ),
           ),
@@ -708,8 +716,8 @@ class _NetworkPanel extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'LOCKDOWN MODE',
-                      style: GoogleFonts.inter(
+                      'Lockdown mode',
+                      style: AppText.ui(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: locked
@@ -720,7 +728,7 @@ class _NetworkPanel extends ConsumerWidget {
                     const SizedBox(height: 2),
                     Text(
                       'Master kill-switch for all network access.',
-                      style: GoogleFonts.inter(
+                      style: AppText.ui(
                           fontSize: 11, color: AppColors.textMuted),
                     ),
                   ],
@@ -779,7 +787,7 @@ class _NetworkPanel extends ConsumerWidget {
           ),
         ),
       ]),
-      _SettingGroup(title: 'SITE LOGINS', children: [
+      if (settings.allowProviderLogin) _SettingGroup(title: 'Site logins', children: [
         const _VndbInfoCard(),
         _XenforoLoginCard(
           site: 'F95Zone',
@@ -864,7 +872,7 @@ class _XenforoLoginCardState extends ConsumerState<_XenforoLoginCard> {
             children: [
               Text(
                 widget.site,
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
@@ -874,14 +882,14 @@ class _XenforoLoginCardState extends ConsumerState<_XenforoLoginCard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0x1A4A9E6E),
+                  color: AppColors.accent.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   'Browser Login',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    color: AppColors.accentSilver,
+                  style: AppText.ui(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -894,13 +902,13 @@ class _XenforoLoginCardState extends ConsumerState<_XenforoLoginCard> {
                     width: 20,
                     height: 20,
                     child: _refreshing
-                        ? const CircularProgressIndicator(
+                        ? CircularProgressIndicator(
                             strokeWidth: 2,
                             color: AppColors.accent,
                           )
                         : IconButton(
                             padding: EdgeInsets.zero,
-                            icon: const Icon(Icons.refresh,
+                            icon: Icon(Icons.refresh,
                                 size: 16, color: AppColors.textMuted),
                             onPressed: widget.disabled ? null : _refreshSession,
                             tooltip: 'Refresh session',
@@ -911,14 +919,14 @@ class _XenforoLoginCardState extends ConsumerState<_XenforoLoginCard> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: _connected
-                      ? const Color(0x1A4A9E6E)
-                      : const Color(0x1AC94040),
+                      ? AppColors.accent.withValues(alpha: 0.10)
+                      : AppColors.danger.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(100),
                 ),
                 child: Text(
                    _connected ? '✓ $_displayName' : '✕ Not connected',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
+                  style: AppText.ui(
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: _connected ? AppColors.accent : AppColors.danger,
                   ),
@@ -930,7 +938,7 @@ class _XenforoLoginCardState extends ConsumerState<_XenforoLoginCard> {
           Text(
             '${widget.site} requires a logged-in browser session. '
             'Click "Login with browser" to open an in-app login window.',
-            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+            style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
           ),
           const SizedBox(height: 8),
           Row(
@@ -1055,7 +1063,7 @@ class _ItchioLoginCardState extends ConsumerState<_ItchioLoginCard> {
             children: [
               Text(
                 'itch.io',
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
@@ -1065,14 +1073,14 @@ class _ItchioLoginCardState extends ConsumerState<_ItchioLoginCard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0x1A4A9E6E),
+                  color: AppColors.accent.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   'Browser Login',
-                  style: GoogleFonts.inter(
-                      fontSize: 9,
-                      color: AppColors.accentSilver,
+                  style: AppText.ui(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
                       fontWeight: FontWeight.w600),
                 ),
               ),
@@ -1084,13 +1092,13 @@ class _ItchioLoginCardState extends ConsumerState<_ItchioLoginCard> {
                     width: 20,
                     height: 20,
                     child: _refreshing
-                        ? const CircularProgressIndicator(
+                        ? CircularProgressIndicator(
                             strokeWidth: 2,
                             color: AppColors.accent,
                           )
                         : IconButton(
                             padding: EdgeInsets.zero,
-                            icon: const Icon(Icons.refresh,
+                            icon: Icon(Icons.refresh,
                                 size: 16, color: AppColors.textMuted),
                             onPressed: widget.disabled ? null : _refreshSession,
                             tooltip: 'Refresh session',
@@ -1101,14 +1109,14 @@ class _ItchioLoginCardState extends ConsumerState<_ItchioLoginCard> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: _connected
-                      ? const Color(0x1A4A9E6E)
-                      : const Color(0x1AC94040),
+                      ? AppColors.accent.withValues(alpha: 0.10)
+                      : AppColors.danger.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(100),
                 ),
                 child: Text(
                   _connected ? '✓ Connected' : '✕ Not connected',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
+                  style: AppText.ui(
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color:
                         _connected ? AppColors.accent : AppColors.danger,
@@ -1121,7 +1129,7 @@ class _ItchioLoginCardState extends ConsumerState<_ItchioLoginCard> {
           Text(
             'itch.io requires a logged-in browser session to access adult content. '
             'Click "Login with browser" to open an in-app login window.',
-            style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+            style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
           ),
           const SizedBox(height: 8),
           Row(
@@ -1318,18 +1326,18 @@ class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
                 Container(
                   height: 48,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     border: Border(
                         bottom: BorderSide(color: AppColors.border)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.open_in_browser_outlined,
+                      Icon(Icons.open_in_browser_outlined,
                           size: 16, color: AppColors.accent),
                       const SizedBox(width: 10),
                       Text(
                         'itch.io — Login',
-                        style: GoogleFonts.inter(
+                        style: AppText.ui(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
@@ -1341,7 +1349,7 @@ class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
                           padding: const EdgeInsets.only(right: 12),
                           child: Row(
                             children: [
-                              const SizedBox(
+                              SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
@@ -1352,7 +1360,7 @@ class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
                               const SizedBox(width: 8),
                               Text(
                                 'Saving session…',
-                                style: GoogleFonts.inter(
+                                style: AppText.ui(
                                     fontSize: 11,
                                     color: AppColors.textMuted),
                               ),
@@ -1385,13 +1393,13 @@ class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
                     color: AppColors.accent.withValues(alpha: 0.08),
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline,
+                        Icon(Icons.info_outline,
                             size: 13, color: AppColors.accent),
                         const SizedBox(width: 8),
                         Text(
                           'Log in to your itch.io account. Click the checkmark icon above once you are connected.',
-                          style: GoogleFonts.inter(
-                              fontSize: 11, color: AppColors.accentSilver),
+                          style: AppText.ui(
+                              fontSize: 11, color: AppColors.textSecondary),
                         ),
                       ],
                     ),
@@ -1410,7 +1418,7 @@ class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
                                 const SizedBox(height: 16),
                                 Text(
                                   _error!,
-                                  style: GoogleFonts.inter(
+                                  style: AppText.ui(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,
                                     height: 1.6,
@@ -1441,7 +1449,7 @@ class _ItchioLoginDialogState extends State<_ItchioLoginDialog> {
                           ),
                         )
                       : !_ready
-                          ? const Center(
+                          ? Center(
                               child: CircularProgressIndicator(
                                 color: AppColors.accent,
                                 strokeWidth: 2,
@@ -1617,18 +1625,18 @@ class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
                 Container(
                   height: 48,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     border:
                         Border(bottom: BorderSide(color: AppColors.border)),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.open_in_browser_outlined,
+                      Icon(Icons.open_in_browser_outlined,
                           size: 16, color: AppColors.accent),
                       const SizedBox(width: 10),
                       Text(
                         '${widget.site} — Login',
-                        style: GoogleFonts.inter(
+                        style: AppText.ui(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
@@ -1640,7 +1648,7 @@ class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
                           padding: const EdgeInsets.only(right: 12),
                           child: Row(
                             children: [
-                              const SizedBox(
+                              SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
@@ -1651,7 +1659,7 @@ class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
                               const SizedBox(width: 8),
                               Text(
                                 'Saving session…',
-                                style: GoogleFonts.inter(
+                                style: AppText.ui(
                                     fontSize: 11,
                                     color: AppColors.textMuted),
                               ),
@@ -1684,13 +1692,13 @@ class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
                     color: AppColors.accent.withValues(alpha: 0.08),
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline,
+                        Icon(Icons.info_outline,
                             size: 13, color: AppColors.accent),
                         const SizedBox(width: 8),
                         Text(
                           'Log in to your ${widget.site} account. The app will detect it automatically, or you can click the checkmark icon above to finish.',
-                          style: GoogleFonts.inter(
-                              fontSize: 11, color: AppColors.accentSilver),
+                          style: AppText.ui(
+                              fontSize: 11, color: AppColors.textSecondary),
                         ),
                       ],
                     ),
@@ -1709,7 +1717,7 @@ class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
                                 const SizedBox(height: 16),
                                 Text(
                                   _error!,
-                                  style: GoogleFonts.inter(
+                                  style: AppText.ui(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,
                                     height: 1.6,
@@ -1741,7 +1749,7 @@ class _XenforoLoginDialogState extends State<_XenforoLoginDialog> {
                           ),
                         )
                       : !_ready
-                          ? const Center(
+                          ? Center(
                               child: CircularProgressIndicator(
                                 color: AppColors.accent,
                                 strokeWidth: 2,
@@ -1796,7 +1804,7 @@ class _VndbInfoCardState extends State<_VndbInfoCard> {
             children: [
               Text(
                 'VNDB',
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
@@ -1807,14 +1815,14 @@ class _VndbInfoCardState extends State<_VndbInfoCard> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0x1A4A9E6E),
+                  color: AppColors.accent.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   'Public API',
-                  style: GoogleFonts.inter(
-                    fontSize: 9,
-                    color: AppColors.accentSilver,
+                  style: AppText.ui(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1826,14 +1834,14 @@ class _VndbInfoCardState extends State<_VndbInfoCard> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: _ok!
-                        ? const Color(0x1A4A9E6E)
-                        : const Color(0x1AC94040),
+                        ? AppColors.accent.withValues(alpha: 0.10)
+                        : AppColors.danger.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(100),
                   ),
                   child: Text(
                     _ok! ? '✓ Reachable' : '✕ Unreachable',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
+                    style: AppText.ui(
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
                       color: _ok! ? AppColors.accent : AppColors.danger,
                     ),
@@ -1846,7 +1854,7 @@ class _VndbInfoCardState extends State<_VndbInfoCard> {
             'VNDB (Visual Novel Database) is a free public API — '
             'no account or login required.',
             style:
-                GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                AppText.ui(fontSize: 11, color: AppColors.textMuted),
           ),
           const SizedBox(height: 8),
           _SmallButton(
@@ -1866,12 +1874,12 @@ class _VndbInfoCardState extends State<_VndbInfoCard> {
 class _AppearancePanel extends ConsumerWidget {
   const _AppearancePanel();
 
-  static const _accentColors = [
-    (Color(0xFF4A9E6E), 'Emerald'),
-    (Color(0xFF4A90D9), 'Ocean Blue'),
-    (Color(0xFF9B59B6), 'Amethyst'),
-    (Color(0xFFE67E22), 'Amber'),
-    (Color(0xFFC94040), 'Ruby'),
+  static final _accentColors = [
+    (Color(0xFF4FD1A5), 'Mint'),
+    (Color(0xFF6CB8FF), 'Ocean Blue'),
+    (Color(0xFFBBA2FF), 'Amethyst'),
+    (Color(0xFFFF7FA6), 'Rose'),
+    (Color(0xFFF28B8B), 'Ruby'),
   ];
 
   @override
@@ -1880,7 +1888,7 @@ class _AppearancePanel extends ConsumerWidget {
     final notifier = ref.read(settingsProvider.notifier);
 
     return _PanelScroll(children: [
-      _SettingGroup(title: 'THEME', children: [
+      _SettingGroup(title: 'Theme', children: [
         _SettingRow(
           label: 'Color Theme',
           subtitle: 'Choose your preferred color scheme',
@@ -2018,10 +2026,10 @@ class _DropdownRow extends StatelessWidget {
         child: DropdownButton<String>(
           value: value,
           isDense: true,
-          style: GoogleFonts.inter(
+          style: AppText.ui(
               fontSize: 12, color: AppColors.textPrimary),
           dropdownColor: AppColors.bgCard,
-          icon: const Icon(Icons.expand_more,
+          icon: Icon(Icons.expand_more,
               size: 14, color: AppColors.textMuted),
           items: List.generate(
             items.length,
@@ -2051,24 +2059,24 @@ class _ArchivesPanel extends ConsumerWidget {
     final sevenZipOk = _check7zip();
 
     return _PanelScroll(children: [
-      _SettingGroup(title: 'REQUIREMENTS', children: [
+      _SettingGroup(title: 'Requirements', children: [
         _SettingRow(
           label: '7-Zip Status',
           subtitle: 'Required for .rar and .rpa formats',
           trailing: sevenZipOk
               ? Text('✓ Installed',
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: AppColors.accent))
               : Text('✕ Not found',
-                  style: GoogleFonts.inter(
+                  style: AppText.ui(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: AppColors.danger)),
         ),
       ]),
-      _SettingGroup(title: 'EXTRACTION', children: [
+      _SettingGroup(title: 'Extraction', children: [
         _SettingRow(
           label: 'Simultaneous Extractions',
           subtitle: 'Number of concurrent extraction jobs',
@@ -2109,39 +2117,16 @@ class _ArchivesPanel extends ConsumerWidget {
 // FEED PANEL
 // ══════════════════════════════════════════════════════════════════════════════
 
-class _FeedPanel extends ConsumerStatefulWidget {
+class _FeedPanel extends ConsumerWidget {
   const _FeedPanel();
 
   @override
-  ConsumerState<_FeedPanel> createState() => _FeedPanelState();
-}
-
-class _FeedPanelState extends ConsumerState<_FeedPanel> {
-  late TextEditingController _tokenCtrl;
-  late TextEditingController _channelsCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    final s = ref.read(settingsProvider);
-    _tokenCtrl = TextEditingController(text: s.discordBotToken);
-    _channelsCtrl = TextEditingController(text: s.discordChannelIds.join('\n'));
-  }
-
-  @override
-  void dispose() {
-    _tokenCtrl.dispose();
-    _channelsCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
     return _PanelScroll(children: [
-      _SettingGroup(title: 'FEED', children: [
+      _SettingGroup(title: 'Feed', children: [
         _SettingRow(
           label: 'Enable Feed',
           subtitle: 'Show the Feed tab and allow background refresh.',
@@ -2159,12 +2144,13 @@ class _FeedPanelState extends ConsumerState<_FeedPanel> {
           trailing: DropdownButton<int>(
             value: s.feedRefreshHours,
             dropdownColor: AppColors.bgCard,
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
+            style: AppText.ui(fontSize: 12, color: AppColors.textPrimary),
             underline: const SizedBox(),
             items: const [
               DropdownMenuItem(value: 0,  child: Text('Manual only')),
               DropdownMenuItem(value: 6,  child: Text('Every 6 hours')),
               DropdownMenuItem(value: 12, child: Text('Every 12 hours')),
+              DropdownMenuItem(value: 24, child: Text('Every 24 hours')),
             ],
             onChanged: (v) {
               if (v == null) return;
@@ -2175,10 +2161,10 @@ class _FeedPanelState extends ConsumerState<_FeedPanel> {
         ),
       ]),
 
-      _SettingGroup(title: 'RSS SOURCES', children: [
+      _SettingGroup(title: 'Sites', children: [
         _SettingRow(
           label: 'F95Zone',
-          subtitle: 'Adult Games forum (requires F95Zone login in Network tab).',
+          subtitle: 'Logging in under Network gives fuller details.',
           trailing: _ToggleSwitch(
             value: s.feedSourceF95,
             onChanged: notifier.setFeedSourceF95,
@@ -2186,7 +2172,7 @@ class _FeedPanelState extends ConsumerState<_FeedPanel> {
         ),
         _SettingRow(
           label: 'LewdCorner',
-          subtitle: 'Games forum (requires LewdCorner login in Network tab).',
+          subtitle: 'Logging in under Network gives fuller details.',
           trailing: _ToggleSwitch(
             value: s.feedSourceLC,
             onChanged: notifier.setFeedSourceLC,
@@ -2194,7 +2180,7 @@ class _FeedPanelState extends ConsumerState<_FeedPanel> {
         ),
         _SettingRow(
           label: "Azkosel's Corner",
-          subtitle: 'Games + Forbidden Haven forums (requires AzC login in Network tab).',
+          subtitle: 'Games and Forbidden Haven forums.',
           trailing: _ToggleSwitch(
             value: s.feedSourceAzc,
             onChanged: notifier.setFeedSourceAzc,
@@ -2202,125 +2188,15 @@ class _FeedPanelState extends ConsumerState<_FeedPanel> {
         ),
       ]),
 
-      _SettingGroup(title: 'DISCORD', children: [
-        // Info note
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Text(
-            'Use a registered bot token to read messages from announcement channels. '
-            'The bot must already be invited to the target server.',
-            style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, height: 1.5),
-          ),
-        ),
-        // Bot token
+      _SettingGroup(title: 'Discord (coming soon)', children: [
         _SettingRow(
-          label: 'Bot Token',
-          subtitle: 'Stored locally in settings.json.',
+          label: 'Discord channels',
+          subtitle: 'Announcements from Discord servers will join the Feed in a later release.',
           trailing: const SizedBox(),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _FeedTextField(
-            controller: _tokenCtrl,
-            hint: 'Bot XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
-            obscure: true,
-            onChanged: (v) => notifier.setDiscordBotToken(v.trim()),
-          ),
-        ),
-        // Channel IDs
-        _SettingRow(
-          label: 'Channel IDs',
-          subtitle: 'One per line — format: channelId:ServerName:#channelName',
-          trailing: const SizedBox(),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _FeedTextField(
-            controller: _channelsCtrl,
-            hint: '123456789012345678:ServerName:#announcements',
-            maxLines: 5,
-            onChanged: (v) {
-              final ids = v
-                  .split('\n')
-                  .map((l) => l.trim())
-                  .where((l) => l.isNotEmpty)
-                  .toList();
-              notifier.setDiscordChannelIds(ids);
-            },
-          ),
         ),
       ]),
 
-      // Normalization milestone note
-      _SettingGroup(title: 'NOTE', children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.accent.withValues(alpha: 0.08),
-            border: Border.all(color: AppColors.borderAccent),
-            borderRadius: AppRadius.borderMd,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.info_outline, size: 14, color: AppColors.accent),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Feed normalization (uniform card format across all sources) '
-                  'is planned for a future milestone. '
-                  'Current output is raw — use it to see what the data looks like '
-                  'before deciding on the final card design.',
-                  style: GoogleFonts.inter(
-                    fontSize: 11, color: AppColors.accentLight, height: 1.5),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ]),
     ]);
-  }
-}
-
-/// Simple text field for Feed panel inputs.
-class _FeedTextField extends StatelessWidget {
-  final TextEditingController controller;
-  final String hint;
-  final bool obscure;
-  final int maxLines;
-  final ValueChanged<String> onChanged;
-
-  const _FeedTextField({
-    required this.controller,
-    required this.hint,
-    this.obscure = false,
-    this.maxLines = 1,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.bgPrimary,
-        border: Border.all(color: AppColors.border),
-        borderRadius: AppRadius.borderMd,
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: obscure,
-        maxLines: maxLines,
-        onChanged: onChanged,
-        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textPrimary),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          border: InputBorder.none,
-        ),
-      ),
-    );
   }
 }
 
@@ -2342,7 +2218,7 @@ class _AboutPanel extends StatelessWidget {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [AppColors.accent, AppColors.accentDim],
@@ -2352,7 +2228,7 @@ class _AboutPanel extends StatelessWidget {
               alignment: Alignment.center,
               child: Text(
                 'VP',
-                style: GoogleFonts.inter(
+                style: AppText.ui(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
@@ -2362,7 +2238,7 @@ class _AboutPanel extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'VN Pathfinder',
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
@@ -2370,15 +2246,15 @@ class _AboutPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Version 2.0.0-alpha · Flutter Rewrite',
-              style: GoogleFonts.inter(
+              'Version $appVersion · Flutter Rewrite',
+              style: AppText.ui(
                   fontSize: 12, color: AppColors.textMuted),
             ),
             const SizedBox(height: 16),
             Text(
               'Your complete visual novel library manager.\nTrack, organise, launch, and maintain your collection.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                 fontSize: 13,
                 color: AppColors.textSecondary,
                 height: 1.6,
@@ -2388,7 +2264,7 @@ class _AboutPanel extends StatelessWidget {
             Text(
               'Made with ♥ by NikoCloud\nApache License 2.0 — No telemetry. No accounts. Zero network by default.',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
+              style: AppText.ui(
                   fontSize: 11, color: AppColors.textMuted, height: 1.8),
             ),
           ],
