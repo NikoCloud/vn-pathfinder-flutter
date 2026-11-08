@@ -131,7 +131,7 @@ void main() {
         );
         final container = ProviderContainer(overrides: [
           settingsProvider.overrideWith(
-              (ref) => _Settings(AppSettings(lockdown: true, feedEnabled: true, feedSourceAzc: true, theme: theme))),
+              (ref) => _Settings(AppSettings(lockdown: true, feedEnabled: true, feedSourceAzc: true, theme: theme, tutorialDone: true))),
           libraryProvider.overrideWith((ref) => _Library(ref, groups)),
           userDataProvider.overrideWith((ref) => _UserData(ref, data)),
           feedProvider.overrideWith((ref) => FeedNotifier.seeded(ref, FeedState(items: items))),

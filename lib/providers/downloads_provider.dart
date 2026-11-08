@@ -35,6 +35,10 @@ class DownloadJob {
   /// itself, from where it stopped if the host allows that, or else from zero.
   final int tries;
 
+  /// Shown in the corner dock. Dismissing hides it there; Archive's Downloads
+  /// list keeps it until it's cleared.
+  final bool docked;
+
   const DownloadJob({
     required this.id,
     required this.title,
@@ -49,6 +53,7 @@ class DownloadJob {
     this.extractProgress = 0,
     this.message = '',
     this.tries = 1,
+    this.docked = true,
   });
 
   /// 0 to 1, or null while the size isn't known.
@@ -69,6 +74,7 @@ class DownloadJob {
     String? message,
     String? baseKey,
     int? tries,
+    bool? docked,
   }) =>
       DownloadJob(
         id: id,
@@ -84,6 +90,7 @@ class DownloadJob {
         extractProgress: extractProgress ?? this.extractProgress,
         message: message ?? this.message,
         tries: tries ?? this.tries,
+        docked: docked ?? this.docked,
       );
 }
 
@@ -321,7 +328,11 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
 
   void cancel(DownloadJob job) => _ref.read(siteBrowserProvider).cancelDownload(job.id);
 
-  void dismiss(DownloadJob job) => state = state.where((j) => j.id != job.id).toList();
+  /// Takes it out of the dock. It stays in Archive's Downloads list.
+  void dismiss(DownloadJob job) => _update(job.id, (j) => j.copyWith(docked: false));
+
+  /// Forgets everything that's finished, failed or saved.
+  void clearFinished() => state = state.where((j) => j.active).toList();
 }
 
 final downloadsProvider = StateNotifierProvider<DownloadsNotifier, List<DownloadJob>>(

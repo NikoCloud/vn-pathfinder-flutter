@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/game_status.dart';
 
 /// This build's version, shown in Settings → About and compared with releases.
-const appVersion = '2.0.0-alpha';
+const appVersion = '2.0.0-alpha.2';
 
 /// Looks for a newer VN Pathfinder on GitHub. No account or login involved.
 class AppUpdateService {

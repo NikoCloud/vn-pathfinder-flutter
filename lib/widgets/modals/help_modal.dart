@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme.dart';
+import '../common/kit.dart';
+import '../tutorial_overlay.dart';
 
 void showHelpModal(BuildContext context) {
   showDialog<void>(context: context, builder: (_) => const _HelpModal());
@@ -65,6 +68,18 @@ class _HelpModal extends StatelessWidget {
                         style: AppText.ui(
                             fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                   ),
+                  Consumer(
+                    builder: (_, ref, _) => VpButton(
+                      label: 'Take the tour',
+                      tone: VpTone.quiet,
+                      small: true,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        ref.read(tutorialProvider.notifier).start();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   IconButton(
                     tooltip: 'Close',
                     icon: Icon(Icons.close, size: 16, color: AppColors.textMuted),

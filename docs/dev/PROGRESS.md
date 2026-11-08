@@ -825,3 +825,12 @@ Compared against `vn_pathfinder.py` in the 1.0 repo.
 - `_discardPartial` removes what a stopped download left and rescans. Partial files are never kept, because nothing can resume them yet.
 - A download has its final name from the first byte, so `downloadingPathsProvider` keeps it out of Archive until it's finished.
 - Chromium retries a dropped download 5 times, and each try fires `DownloadStarting`. Measured with a local server that hangs up: with validators and byte ranges it resumes with `Range`, and without them it asks for the whole file again. The plugin now treats a known address as the same download (see `third_party/webview_windows/PATCHES.md`) and the dock shows the try number. Earlier operations stay alive in `earlier_tries_` until the download ends, because releasing one silenced the events of the next try.
+
+### Alpha 2 round (issues #1 to #4, #8 to #10)
+
+- `showGameContextMenu` captured the card's own `context` and `ref`. The card can rebuild while the menu is up, so `context.mounted` was false afterwards and the window never opened, and `ref` would have thrown. It now takes the navigator's context and the `ProviderContainer` before the menu opens.
+- `LibraryCard` and the Feed card watched the whole `downloadsProvider`, which changes about four times a second during a download, so every card rebuilt. They now `select` their own job.
+- `launchFailureMessage` explains error 5 (access denied).
+- `_SizeSlider` in `library_screen.dart` replaces the Cards and Details switch: below 195 it snaps to Details. The wall is framed in `_Wall` (`_maxFrame`, `_inset`).
+- Archive's Downloads list watches `downloadsProvider` in its own `Consumer`, so progress doesn't rebuild the tab. `DownloadJob.docked` keeps a dismissed job in that list; `clearFinished` removes finished ones.
+- The tour (`widgets/tutorial_overlay.dart`, `services/tutorial_samples.dart`) swaps sample data into `libraryProvider` and `feedProvider` with `showSample`, and `endSample` puts the real state back. While samples show, scans wait, Feed refreshes, saves and thread dating stop, and a modal barrier blocks the app. It starts when `tutorialDone` is false and no library folder is set.

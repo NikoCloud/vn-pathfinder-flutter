@@ -6,9 +6,13 @@ No downloadable 2.0 build has been published yet. Tagged versions are source sna
 
 ## Unreleased
 
-On `master`, not yet tagged.
+On `master`, not yet tagged. The app reports itself as `2.0.0-alpha.2`.
 
 ### Added
+
+- **First-run tour.** The first time the app opens, a short tour walks through Home, Library, Feed and Archive with made-up games. Nothing about them is saved, and your real library and Feed are untouched. **Help** has Take the tour to see it again.
+- **Card size slider in the Library's top bar.** It replaces the Cards and Details switch: drag it to the left end for the Details list, or anywhere else for cards at that size. It used to be inside the Filters drawer.
+- **Downloads in Archive.** This session's downloads, including finished and failed ones, are listed at the top of Archive until you clear them. Dismissing one from the corner dock keeps it there.
 
 - **New look.** Midnight Edition is the default theme and Paperback is the light one, with wide art-led cards, serif titles and one set of controls across the app. The page takes on the colour of the art you point at.
 - **Home tab.** Continue playing with your last save, your other recent games, new versions, new Feed releases and what's ready to play.
@@ -52,6 +56,7 @@ On `master`, not yet tagged.
 
 ### Changed
 
+- The Library's card wall sits in a frame, inset from the window and no wider than 1680 pixels, so the cards no longer run out to the edges.
 - Assign has a search box and guesses the game from the file's name.
 - A mod with its own folders or images now stays whole when assigned, instead of being refused. Extra files are no longer thrown away.
 - Clean Up shows its total on the button, has Select all and Select none, and includes archives whose version is already in your library however they got there.
@@ -87,6 +92,9 @@ On `master`, not yet tagged.
 
 ### Fixed
 
+- Right-clicking a game in the Library and choosing Fetch Metadata, Properties, Change Image, Merge or Delete Archive now opens it. The menu could lose track of the card it came from and do nothing.
+- The app no longer slows down while a game downloads. Every card in the Library and Feed redrew several times a second during a download; now only that game's card does.
+- When Windows refuses to start a game, the message says where to look: a network share that saves files without permission to run them, or antivirus.
 - Assigning a patch no longer leaves the file's row behind until the next rescan, and it now says where the patch went.
 - Assign no longer offers entries with no installed game, which failed when picked.
 - Copy Path in the Archive tab copies the path.

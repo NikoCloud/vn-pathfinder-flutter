@@ -198,6 +198,23 @@ class FeedNotifier extends StateNotifier<FeedState> {
   @visibleForTesting
   FeedNotifier.seeded(this._ref, FeedState seed) : super(seed);
 
+  /// The real Feed, set aside while the tour shows sample releases.
+  FeedState? _real;
+
+  /// Shows [items] in place of the Feed until [endSample]. Refreshes and saves
+  /// wait, so sample rows never reach the saved list.
+  void showSample(List<RawFeedItem> items) {
+    _real ??= state;
+    state = FeedState(items: items);
+  }
+
+  void endSample() {
+    final real = _real;
+    if (real == null) return;
+    _real = null;
+    state = real;
+  }
+
   /// Done once the launch refresh, and any refresh running now, have finished.
   Future<void> get idle async {
     await _ready;
@@ -245,6 +262,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   Future<void> refresh() => _running ??= _refresh().whenComplete(() => _running = null);
 
   Future<void> _refresh() async {
+    if (_real != null) return;
     // Lockdown keeps the saved list, and "updated" would be untrue.
     if (_ref.read(settingsProvider).lockdown) return;
     state = state.copyWith(isLoading: true, error: null);
@@ -282,6 +300,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
   /// Puts rows into the Feed as they arrive. Rows that can't be dated yet go
   /// to [undated] instead, and show up once their thread has been read.
   void _land(List<RawFeedItem> rows, List<RawFeedItem> undated) {
+    if (_real != null) return;
     final now = DateTime.now();
     final settled = <RawFeedItem>[];
     for (final row in rows) {
@@ -301,7 +320,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     var missed = 0;
     for (var i = 0; i < rows.length; i++) {
       if (i > 0) await Future.delayed(FeedService.threadGap);
-      if (!mounted || _ref.read(settingsProvider).lockdown) return;
+      if (!mounted || _ref.read(settingsProvider).lockdown || _real != null) return;
       final row = rows[i];
       final thread = await FeedService.readThreadDates(scraping, row.url);
       if (!mounted) return;
@@ -319,7 +338,10 @@ class FeedNotifier extends StateNotifier<FeedState> {
     await _save();
   }
 
-  Future<void> _save() => _saveCache(state.items, state.lastRefreshed, _releases, _sites);
+  Future<void> _save() async {
+    if (_real != null) return;
+    await _saveCache(state.items, state.lastRefreshed, _releases, _sites);
+  }
 
   /// Update the auto-refresh schedule. Call when the user changes feed settings.
   void updateSchedule(bool enabled, int refreshHours) {

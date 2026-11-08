@@ -571,7 +571,7 @@ class FeedCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final item = row.item;
     final titleKey = feedTitleKey(item.title);
-    final job = jobFor(ref.watch(downloadsProvider), item.title);
+    final job = ref.watch(downloadsProvider.select((jobs) => jobFor(jobs, item.title)));
     final art = feedArt(row, ref);
     final at = item.publishedAt;
 

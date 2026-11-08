@@ -20,6 +20,7 @@ import '../utils/formatters.dart';
 import '../widgets/common/art_card.dart';
 import '../widgets/common/kit.dart';
 import '../widgets/game/game_actions.dart';
+import '../widgets/get/download_dock.dart';
 import '../widgets/modals/orphan_scanner_modal.dart';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -120,6 +121,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
   _SortDir _sortDir    = _SortDir.desc;
   String?  _selectedPath;
   bool _queueCollapsed     = false;
+  bool _downloadsCollapsed = false;
   bool _completedCollapsed = false;
 
   // Running extractions, so they can be cancelled.
@@ -283,6 +285,45 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
               activeEntry: entry,
               onCancel: () => _jobs[entry.key]?.cancel(),
             ),
+
+          // ── Downloads ──────────────────────────────────────────────
+          // Its own watcher, so download progress doesn't rebuild the tab.
+          Consumer(builder: (context, ref, _) {
+            final jobs = ref.watch(downloadsProvider);
+            if (jobs.isEmpty) return const SizedBox.shrink();
+            return _QueueSection(
+              title: 'Downloads',
+              count: jobs.length,
+              collapsed: _downloadsCollapsed,
+              onToggle: () => setState(() => _downloadsCollapsed = !_downloadsCollapsed),
+              trailing: jobs.any((j) => !j.active)
+                  ? VpButton(
+                      label: 'Clear finished',
+                      tone: VpTone.quiet,
+                      small: true,
+                      onTap: () => ref.read(downloadsProvider.notifier).clearFinished(),
+                    )
+                  : null,
+              children: [
+                // About four rows, then it scrolls, so a long session can't
+                // push the archives off the screen.
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 240),
+                  child: ListView(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.only(bottom: 6),
+                    children: [
+                      for (final job in jobs.reversed)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 3),
+                          child: DownloadJobRow(job: job, inList: true),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }),
 
           // ── 3. Up Next Queue ───────────────────────────────────────
           if (queued.isNotEmpty)

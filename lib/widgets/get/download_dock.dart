@@ -20,15 +20,18 @@ class DownloadDock extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        for (final job in jobs) ...[_JobRow(job: job), const SizedBox(height: 8)],
+        for (final job in jobs.where((j) => j.docked)) ...[DownloadJobRow(job: job), const SizedBox(height: 8)],
       ],
     );
   }
 }
 
-class _JobRow extends ConsumerWidget {
+/// One download. In the dock it floats at a fixed width; in Archive's
+/// Downloads list ([inList]) it fills the row.
+class DownloadJobRow extends ConsumerWidget {
   final DownloadJob job;
-  const _JobRow({required this.job});
+  final bool inList;
+  const DownloadJobRow({super.key, required this.job, this.inList = false});
 
   String get _status {
     final version = job.version.isEmpty ? 'It' : fmtVersion(job.version);
@@ -52,13 +55,13 @@ class _JobRow extends ConsumerWidget {
     }).firstOrNull;
 
     return Container(
-      width: 340,
+      width: inList ? null : 340,
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: AppColors.bgCard.withValues(alpha: 0.96),
         border: Border.all(color: AppColors.border),
         borderRadius: AppRadius.borderLg,
-        boxShadow: const [BoxShadow(color: Color(0x80000000), blurRadius: 36, offset: Offset(0, 14))],
+        boxShadow: inList ? null : const [BoxShadow(color: Color(0x80000000), blurRadius: 36, offset: Offset(0, 14))],
       ),
       child: Row(
         children: [
@@ -112,7 +115,7 @@ class _JobRow extends ConsumerWidget {
           ],
           if (job.stage == JobStage.downloading)
             VpIconButton(icon: Icons.close, tooltip: 'Cancel', onTap: () => downloads.cancel(job))
-          else if (!job.active)
+          else if (!job.active && !inList)
             VpIconButton(icon: Icons.close, tooltip: 'Dismiss', onTap: () => downloads.dismiss(job)),
         ],
       ),

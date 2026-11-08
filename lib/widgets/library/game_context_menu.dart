@@ -26,6 +26,10 @@ void showGameContextMenu({
   required GameGroup group,
 }) async {
   final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+  // The card that opened the menu can rebuild while the menu is up, and then
+  // its context and ref are gone. These two outlive it.
+  final host = Navigator.of(context).context;
+  final container = ProviderScope.containerOf(context, listen: false);
   
   final v = group.latestVersion;
   if (v == null) return;
@@ -112,11 +116,11 @@ void showGameContextMenu({
   if (result == null) return;
 
   if (result == 'status') {
-    if (!context.mounted) return;
-    
+    if (!host.mounted) return;
+
     // Submenu for status
     final statusResult = await showMenu<String>(
-      context: context,
+      context: host,
       position: relativePosition,
       color: AppColors.bgCard,
       shape: RoundedRectangleBorder(
@@ -124,7 +128,7 @@ void showGameContextMenu({
         side: BorderSide(color: AppColors.border),
       ),
       items: () {
-        final ud = ref.read(userDataProvider);
+        final ud = container.read(userDataProvider);
         return statusMenuEntries(
           detected: detectedGameStatus(group, ud),
           picked: GameStatus.fromId(ud.status[group.baseKey]),
@@ -133,49 +137,50 @@ void showGameContextMenu({
     );
 
     if (statusResult != null) {
-      ref.read(userDataProvider.notifier).setStatus(group.baseKey, statusResult);
+      container.read(userDataProvider.notifier).setStatus(group.baseKey, statusResult);
     }
     return;
   }
 
+  if (!host.mounted) return;
   switch (result) {
     case 'play':
-      ref.read(playTrackerProvider.notifier).launch(v, group.baseKey);
+      container.read(playTrackerProvider.notifier).launch(v, group.baseKey);
       break;
     case 'properties':
-      if (context.mounted) showPropertiesModal(context, group);
+      showPropertiesModal(host, group);
       break;
     case 'folder':
       Process.run('explorer', [v.folderPath.path]);
       break;
     case 'saves':
-      _openSavesFolder(v, ref);
+      _openSavesFolder(v, container);
       break;
     case 'copy_path':
       Clipboard.setData(ClipboardData(text: v.folderPath.path));
       break;
     case 'merge':
-      if (context.mounted) showMergeGameDialog(context, group);
+      showMergeGameDialog(host, group);
       break;
     case 'fetch':
-      if (context.mounted) showMetadataFetchModal(context, group);
+      showMetadataFetchModal(host, group);
       break;
     case 'image':
-      if (context.mounted) showPropertiesModal(context, group, openArt: true);
+      showPropertiesModal(host, group, openArt: true);
       break;
     case 'archives':
-      if (context.mounted) await _deleteArchives(context, ref, group);
+      await _deleteArchives(host, container, group);
       break;
     case 'hide':
-      final notifier = ref.read(userDataProvider.notifier);
-      notifier.setHidden(group.baseKey, !ref.read(userDataProvider).hidden.contains(group.baseKey));
+      final notifier = container.read(userDataProvider.notifier);
+      notifier.setHidden(group.baseKey, !container.read(userDataProvider).hidden.contains(group.baseKey));
       break;
   }
 }
 
 /// A game's archive files, with anything being extracted held back. Nothing is
 /// ticked to begin with: deleting is the one thing here that can't be undone.
-Future<void> _deleteArchives(BuildContext context, WidgetRef ref, GameGroup group) async {
+Future<void> _deleteArchives(BuildContext context, ProviderContainer ref, GameGroup group) async {
   final status = ref.read(extractionStatusProvider);
   final free = group.archives.where((a) {
     final s = status[a.archivePath.path];
@@ -238,7 +243,7 @@ Future<void> _deleteArchives(BuildContext context, WidgetRef ref, GameGroup grou
   ref.read(libraryProvider.notifier).scan();
 }
 
-void _openSavesFolder(GameVersion version, WidgetRef ref) {
+void _openSavesFolder(GameVersion version, ProviderContainer ref) {
   // Ren'Py writes saves to the game's own folder and to AppData. The scanner
   // has already found both.
   for (final dir in [version.localSaveDir, ?version.appdataSaveDir]) {

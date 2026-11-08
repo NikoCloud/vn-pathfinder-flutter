@@ -319,14 +319,7 @@ class _Toolbar extends ConsumerWidget {
             VpTool(label: 'Select', on: selecting, onTap: onSelect),
             const SizedBox(width: 6),
           ],
-          VpSegmented<bool>(
-            value: details,
-            options: const [
-              (false, Icons.grid_view_rounded, 'Cards'),
-              (true, Icons.vertical_split_outlined, 'Details'),
-            ],
-            onChanged: (v) => ref.read(libraryDetailsProvider.notifier).state = v,
-          ),
+          const _SizeSlider(),
           const SizedBox(width: 6),
           VpIconButton(icon: Icons.add, tooltip: 'Add a game', size: 32, onTap: () => showAddGameModal(context)),
           VpIconButton(
@@ -341,9 +334,64 @@ class _Toolbar extends ConsumerWidget {
   }
 }
 
+/// Card size, with the Details list at its small end: drag to the left end and
+/// it snaps to Details, drag right and it's cards again at that size.
+class _SizeSlider extends ConsumerWidget {
+  const _SizeSlider();
+
+  static const _details = 170.0;
+  static const _snap = 195.0;
+  static const _minCard = 210.0;
+  static const _maxCard = 360.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final details = ref.watch(libraryDetailsProvider);
+    final width = ref.watch(settingsProvider.select((s) => s.cardWidth)).clamp(_minCard, _maxCard);
+    return Tooltip(
+      message: details ? 'Details. Drag right for cards' : 'Card size. Drag to the left end for Details',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.view_list_outlined, size: 16, color: details ? AppColors.accent : AppColors.textMuted),
+          SizedBox(
+            width: 128,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 13),
+              ),
+              child: Slider(
+                value: details ? _details : width,
+                min: _details,
+                max: _maxCard,
+                activeColor: AppColors.accent,
+                inactiveColor: AppColors.border,
+                semanticFormatterCallback: (v) => v < _snap ? 'Details' : 'Card size ${v.round()}',
+                onChanged: (v) {
+                  final toDetails = v < _snap;
+                  if (toDetails != details) ref.read(libraryDetailsProvider.notifier).state = toDetails;
+                  if (!toDetails) ref.read(settingsProvider.notifier).setCardWidth(v.clamp(_minCard, _maxCard));
+                },
+              ),
+            ),
+          ),
+          Icon(Icons.grid_view_rounded, size: 16, color: details ? AppColors.textMuted : AppColors.accent),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Cards ─────────────────────────────────────────────────────────────────────
 
 class _Wall extends ConsumerWidget {
+  static const _maxFrame = 1680.0;
+
+  /// Room inside the frame, enough for a card to grow on hover.
+  static const _inset = 22.0;
+
   final List<GameGroup> groups;
   final bool loading;
   final bool picking;
@@ -379,27 +427,45 @@ class _Wall extends ConsumerWidget {
       );
     }
     return LayoutBuilder(builder: (context, constraints) {
-      final wall = wallColumns(constraints.maxWidth - AppLayout.gutter - rightPad, minWidth);
-      return GridView.builder(
-        key: const PageStorageKey('library-wall'),
-        padding: EdgeInsets.fromLTRB(AppLayout.gutter, 16, rightPad, 96),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: wall.columns,
-          crossAxisSpacing: 18,
-          mainAxisSpacing: 20,
-          mainAxisExtent: ArtCard.heightFor(wall.cardWidth),
+      // The wall sits in a frame, inset from the window and no wider than
+      // _maxFrame, so the cards don't run out to the window's edges.
+      final frame = (constraints.maxWidth - AppLayout.gutter - rightPad).clamp(0.0, _maxFrame);
+      final wall = wallColumns(frame - _inset * 2, minWidth);
+      return Padding(
+        padding: EdgeInsets.fromLTRB(AppLayout.gutter, 14, rightPad, 14),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Container(
+            width: frame,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AppColors.bgCard.withValues(alpha: 0.35),
+              border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+              borderRadius: const BorderRadius.all(AppRadius.lg),
+            ),
+            child: GridView.builder(
+              key: const PageStorageKey('library-wall'),
+              padding: const EdgeInsets.fromLTRB(_inset, _inset, _inset, 96),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: wall.columns,
+                crossAxisSpacing: 18,
+                mainAxisSpacing: 20,
+                mainAxisExtent: ArtCard.heightFor(wall.cardWidth),
+              ),
+              itemCount: groups.length,
+              itemBuilder: (context, i) {
+                final g = groups[i];
+                return LibraryCard(
+                  key: ValueKey(g.baseKey),
+                  group: g,
+                  picking: picking,
+                  picked: picked.contains(g.baseKey),
+                  onOpen: picking ? () => onPick(g.baseKey) : null,
+                );
+              },
+            ),
+          ),
         ),
-        itemCount: groups.length,
-        itemBuilder: (context, i) {
-          final g = groups[i];
-          return LibraryCard(
-            key: ValueKey(g.baseKey),
-            group: g,
-            picking: picking,
-            picked: picked.contains(g.baseKey),
-            onOpen: picking ? () => onPick(g.baseKey) : null,
-          );
-        },
       );
     });
   }
@@ -457,7 +523,6 @@ class _FilterDrawer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cardWidth = ref.watch(settingsProvider.select((s) => s.cardWidth));
     final count = ref.watch(filteredGroupsProvider).length;
     return Container(
       decoration: BoxDecoration(
@@ -472,17 +537,6 @@ class _FilterDrawer extends ConsumerWidget {
               padding: const EdgeInsets.all(18),
               children: [
                 const FilterPanel(),
-                const SizedBox(height: 18),
-                Text('Card size', style: AppText.body(fontWeight: FontWeight.w600)),
-                Slider(
-                  value: cardWidth.clamp(210, 360),
-                  min: 210,
-                  max: 360,
-                  divisions: 15,
-                  activeColor: AppColors.accent,
-                  label: 'Card size',
-                  onChanged: ref.read(settingsProvider.notifier).setCardWidth,
-                ),
               ],
             ),
           ),

@@ -26,6 +26,7 @@ import 'common/finder.dart';
 import 'game/game_page.dart';
 import 'get/download_dock.dart';
 import 'title_bar.dart';
+import 'tutorial_overlay.dart';
 
 /// Looks once per run for a newer VN Pathfinder (Settings → Update Checks).
 final _appUpdateCheckProvider = Provider<void>((ref) {
@@ -138,6 +139,7 @@ class AppShell extends ConsumerWidget {
                 ),
               ),
               const Finder(),
+              const TutorialOverlay(),
               const ScrapingWebView(),
             ],
           ),

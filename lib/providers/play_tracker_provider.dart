@@ -20,6 +20,18 @@ class PlayTrackerState {
       );
 }
 
+/// What to tell someone whose game wouldn't start. Windows' own "Access is
+/// denied" doesn't say where to look.
+String launchFailureMessage(Object error) {
+  if (error is ProcessException && error.errorCode == 5) {
+    return "Windows wasn't allowed to run this game (access denied). If your library is "
+        "on a network share, the server may have saved the game's files without "
+        "permission to run them, so check the share's settings. Antivirus can also block "
+        'a game it has quarantined.';
+  }
+  return 'Failed to launch: $error';
+}
+
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
 class PlayTrackerNotifier extends StateNotifier<PlayTrackerState> {
@@ -66,7 +78,7 @@ class PlayTrackerNotifier extends StateNotifier<PlayTrackerState> {
 
       return null; // success
     } catch (e) {
-      return 'Failed to launch: $e';
+      return launchFailureMessage(e);
     }
   }
 

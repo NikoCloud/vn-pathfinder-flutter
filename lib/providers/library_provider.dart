@@ -261,7 +261,33 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   LibraryNotifier(this._ref) : super(const LibraryState());
 
+  /// The real list, set aside while the tour shows sample games.
+  LibraryState? _real;
+  bool _scanWanted = false;
+
+  /// Shows [groups] in place of the library until [endSample]. Nothing is
+  /// written, and a scan that comes in meanwhile waits.
+  void showSample(List<GameGroup> groups) {
+    _real ??= state;
+    state = LibraryState(groups: groups);
+  }
+
+  void endSample() {
+    final real = _real;
+    if (real == null) return;
+    _real = null;
+    state = real;
+    if (_scanWanted) {
+      _scanWanted = false;
+      scan();
+    }
+  }
+
   Future<void> scan() async {
+    if (_real != null) {
+      _scanWanted = true;
+      return;
+    }
     final libDir = _ref.read(libraryDirProvider);
     if (libDir.isEmpty) {
       state = state.copyWith(error: 'No library directory set. Open Settings to configure.');
@@ -272,6 +298,12 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       final ud = _ref.read(userDataProvider);
       final groups = await ScannerService.scanAll(Directory(libDir), merges: ud.gameMerges);
       ScannerService.autoDetectPatches(groups, ud);
+      // A scan that was already running when the tour began lands in the
+      // real list, not over the samples.
+      if (_real != null) {
+        _real = _real!.copyWith(groups: groups, loading: false);
+        return;
+      }
       state = state.copyWith(groups: groups, loading: false);
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());

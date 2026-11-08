@@ -37,6 +37,7 @@ class AppSettings {
 
   // ── Look ───────────────────────────────────────────────────────────────
   final bool discreet;           // blur all art
+  final bool tutorialDone;       // first-run tour finished or skipped
   final String? feedSeenAt;      // ISO time of the last "Mark all seen"
   final double cardWidth;        // Library card width
   final bool keepOldVersion;     // keep the old version when an update lands
@@ -66,6 +67,7 @@ class AppSettings {
     this.feedSourceF95 = true,
     this.feedSourceLC = true,
     this.discreet = false,
+    this.tutorialDone = false,
     this.feedSeenAt,
     this.cardWidth = 272,
     this.keepOldVersion = true,
@@ -98,6 +100,7 @@ class AppSettings {
     feedSourceF95: json['feed_source_f95'] as bool? ?? true,
     feedSourceLC: json['feed_source_lc'] as bool? ?? true,
     discreet: json['discreet'] as bool? ?? false,
+    tutorialDone: json['tutorial_done'] as bool? ?? false,
     feedSeenAt: json['feed_seen_at'] as String?,
     cardWidth: (json['card_width'] as num?)?.toDouble() ?? 272,
     keepOldVersion: json['keep_old_version'] as bool? ?? true,
@@ -129,6 +132,7 @@ class AppSettings {
     'feed_source_f95': feedSourceF95,
     'feed_source_lc': feedSourceLC,
     'discreet': discreet,
+    'tutorial_done': tutorialDone,
     'feed_seen_at': feedSeenAt,
     'card_width': cardWidth,
     'keep_old_version': keepOldVersion,
@@ -159,6 +163,7 @@ class AppSettings {
     bool? feedSourceF95,
     bool? feedSourceLC,
     bool? discreet,
+    bool? tutorialDone,
     String? feedSeenAt,
     double? cardWidth,
     bool? keepOldVersion,
@@ -187,6 +192,7 @@ class AppSettings {
     feedSourceF95: feedSourceF95 ?? this.feedSourceF95,
     feedSourceLC: feedSourceLC ?? this.feedSourceLC,
     discreet: discreet ?? this.discreet,
+    tutorialDone: tutorialDone ?? this.tutorialDone,
     feedSeenAt: feedSeenAt ?? this.feedSeenAt,
     cardWidth: cardWidth ?? this.cardWidth,
     keepOldVersion: keepOldVersion ?? this.keepOldVersion,
@@ -255,6 +261,7 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setDiscreet(bool v) => update((s) => s.copyWith(discreet: v));
   void markFeedSeen() => update((s) => s.copyWith(feedSeenAt: DateTime.now().toIso8601String()));
   void setCardWidth(double v) => update((s) => s.copyWith(cardWidth: v));
+  void setTutorialDone() => update((s) => s.copyWith(tutorialDone: true));
   void setKeepOldVersion(bool v) => update((s) => s.copyWith(keepOldVersion: v));
   void saveView(String name, Map<String, dynamic> view) =>
       update((s) => s.copyWith(savedViews: {...s.savedViews, name: view}));

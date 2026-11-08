@@ -31,7 +31,9 @@ class LibraryCard extends ConsumerWidget {
     final status = effectiveGameStatus(g, ud);
     final update = ref.watch(availableUpdatesProvider)[g.baseKey];
     final running = ref.watch(isGameRunningProvider(g.baseKey));
-    final job = jobFor(ref.watch(downloadsProvider), g.effectiveTitle);
+    // Only this game's download: watching the whole list rebuilt every card
+    // several times a second while anything was downloading.
+    final job = ref.watch(downloadsProvider.select((jobs) => jobFor(jobs, g.effectiveTitle)));
     final art = localArt(g, ref);
     final seconds = ud.playtime[g.baseKey] ?? 0;
     final hidden = ud.hidden.contains(g.baseKey);

@@ -13,7 +13,7 @@ A visual novel library manager for Windows. It finds the games in your library f
 - Finds Ren'Py games and other Windows games in your library folder
 - Groups every installed version of a game under one entry
 - Merge two entries that are really one game: right-click a game and choose **Merge into Another Game**. Likely matches are listed first, and your files aren't moved. When Pathfinder spots a likely duplicate, the game's page offers the merge
-- Wide cover cards, or a list beside the game's page
+- Wide cover cards in a framed wall, or a list beside the game's page. One slider in the top bar sets the card size, and dragging it to the left end switches to the list
 - Hovering a card lifts it and shows its tags, Play or Update, and more actions
 - Quick views for Playing, New version, Updated, Unplayed, On Hold and Completed, plus views you save yourself
 - Search by title or creator
@@ -95,6 +95,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 - Turn mods on and off without deleting them, separately for each game version
 - If a mod's name is already taken, you choose the new name
 - Find leftover files and folders with the **Orphans** button
+- **Downloads** at the top of Archive lists this session's downloads, finished and failed included, until you clear them
 
 ### Feed
 
@@ -130,6 +131,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 ## Getting started
 
+1. The first time you open the app, a short tour shows you around with made-up games. They're never saved and disappear when it ends. Take it again from **Help** (F1).
 1. Open **Settings → General** and choose your library folder.
 2. Lockdown Mode is on by default, so the app stays offline. To use online features, turn it off in **Settings → Network**.
 3. In **Settings → Network**, log in to the forums you use.
@@ -150,6 +152,7 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 - LewdCorner Plus and AI+ games need a forum role. Without it, LewdCorner hides their images, and Fetch Metadata tells you so.
 - LewdCorner no longer serves the full-size files of many older attachments. When that happens, Pathfinder uses another source for the same game if it can confirm a match, and otherwise saves small thumbnails and tells you.
 - Update checks ask F95Zone directly. LewdCorner and Azkosel's Corner updates only show up through the Feed.
+- With a library on a network share, a server that saves new files without permission to run them stops games from launching, and Windows says access is denied. The fix is on the server: let new files be executable.
 - With the MEGA desktop app installed, MEGA links download through that app, so Pathfinder can't follow them. Save the file to your library folder and it shows up in Archive, with its art if you already have the game. A game you don't have yet arrives as a plain row, without its cover or screenshots.
 - On LewdCorner and Azkosel's Corner, a fix released under the same version number doesn't come back up the Feed.
 - The first time the Feed sees a LewdCorner thread it has no history for it, so a small edit can pass as that release's date once.
@@ -166,7 +169,7 @@ Planned, in no fixed order:
 - Discord channels in the Feed
 - A backup metadata service for when sources are down
 - A staging folder on a fast drive, so you can play a game right away while it moves to storage in the background
-- macOS and Linux versions
+- macOS and Linux versions, planned for the first release candidate
 - Mod manager integration and community mod sharing
 - Translations
 - iOS and Android, after 2.0
