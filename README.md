@@ -9,7 +9,7 @@
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078d4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/NikoCloud/vn-pathfinder-flutter/releases/latest)
 <br>
 [![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569b?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
-[![License: Apache 2.0](https://img.shields.io/github/license/NikoCloud/vn-pathfinder-flutter?style=for-the-badge&color=6e7681)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-6e7681?style=for-the-badge)](LICENSE)
 [![No telemetry](https://img.shields.io/badge/Telemetry-None-2ea043?style=for-the-badge)](#privacy)
 
 <img src="docs/screenshots/feed.png" alt="The Feed: new releases and updates, with a Spotlight for a new version of a game you have" width="900">
