@@ -6,7 +6,9 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- **Fetch Metadata** says above the search box to check the title is spelled the way the site spells it, since a misspelled or squashed folder name often finds nothing.
 
 ## 2.0.0-beta.1 - 2026-11-09
 

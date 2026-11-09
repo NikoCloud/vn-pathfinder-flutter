@@ -479,19 +479,31 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                           children: [
                             Padding(
                               padding: const EdgeInsets.all(12),
-                              child: Row(children: [
-                                Expanded(
-                                  child: _SearchField(
-                                    controller: _queryCtrl,
-                                    onSubmit: locked ? null : _search,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  // Folder names are often squashed or misspelled
+                                  // ("BeingADIK"), and the sites only find exact-ish titles.
+                                  Text(
+                                    'Check the title is spelled the way the site spells it, or the game may not show up in the results.',
+                                    style: AppText.ui(fontSize: 12, color: AppColors.textMuted, height: 1.4),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                _SearchButton(
-                                  onTap: locked ? null : _search,
-                                  loading: _anyLoading,
-                                ),
-                              ]),
+                                  const SizedBox(height: 8),
+                                  Row(children: [
+                                    Expanded(
+                                      child: _SearchField(
+                                        controller: _queryCtrl,
+                                        onSubmit: locked ? null : _search,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _SearchButton(
+                                      onTap: locked ? null : _search,
+                                      loading: _anyLoading,
+                                    ),
+                                  ]),
+                                ],
+                              ),
                             ),
                             _ProviderTabs(
                               selected: _activeTab,
