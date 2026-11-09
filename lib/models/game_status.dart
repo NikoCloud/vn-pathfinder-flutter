@@ -93,15 +93,48 @@ String? _newestSaveVersion(GameGroup g) {
 /// [candidate] is clearly a higher version than [current]: both numbered
 /// ("0.12", "v1.0") and higher, or [candidate] is "Final" and [current] isn't.
 /// A labelled version compares by its "v…" part ("Part 8 v0.114" → "v0.114").
-/// Other word versions ("Part 1", "Chapter-3") don't line up reliably with
-/// folder or game version strings, so they never count.
+/// Chapter, episode, part, act, book and season versions compare by their
+/// numbers, but only against the same kind of label: "Ch.3.6.5" is newer than
+/// "Chapter-3.6", while "Chapter-3" and "0.2" never compare. Words after the
+/// numbers ("Public", "pc") don't count, so equal numbers are never newer.
 bool isClearlyNewer(String candidate, String current) {
+  final lc = _labelled(candidate), lcur = _labelled(current);
+  if (lc != null || lcur != null) {
+    if (lc == null || lcur == null || lc.$1 != lcur.$1) return false;
+    final a = lc.$2, b = lcur.$2;
+    for (var i = 0; i < a.length && i < b.length; i++) {
+      if (a[i] != b[i]) return a[i] > b[i];
+    }
+    return a.length > b.length;
+  }
   final c = _numberedPart(candidate), cur = _numberedPart(current);
   if (cur.isEmpty) return false;
   if (c.toLowerCase() == 'final') return cur.toLowerCase() != 'final';
   final numbered = RegExp(r'^v?\.?\d', caseSensitive: false);
   if (!numbered.hasMatch(c) || !numbered.hasMatch(cur)) return false;
   return compareVersionStrings(c, cur) > 0;
+}
+
+/// (kind, numbers) for a version led by a word label with no "v…" part:
+/// "Ch.3.6.5" → (chapter, [3, 6, 5]), "Episode 2 Public" → (episode, [2]).
+/// Null for anything else, including "Chapter 2 v0.3", which compares by its
+/// "v…" part.
+(String, List<int>)? _labelled(String version) {
+  final m = RegExp(
+    r'^(ch(?:ap(?:ter)?)?|ep(?:isode)?|part|pt|act|book|season)[\s._-]*(\d+(?:[._]\d+)*)\b(.*)$',
+    caseSensitive: false,
+  ).firstMatch(version.trim());
+  if (m == null) return null;
+  if (RegExp(r'\bv\.?\d', caseSensitive: false).hasMatch(m[3]!)) return null;
+  final word = m[1]!.toLowerCase();
+  final kind = word.startsWith('ch')
+      ? 'chapter'
+      : word.startsWith('ep')
+          ? 'episode'
+          : word == 'pt'
+              ? 'part'
+              : word;
+  return (kind, RegExp(r'\d+').allMatches(m[2]!).map((x) => int.parse(x[0]!)).toList());
 }
 
 /// The version itself, without a leading label: "Part 8 v0.114" → "v0.114".

@@ -320,7 +320,13 @@ class _GameViewState extends ConsumerState<GameView> {
     }
     actions.add(play);
     actions.add(_MoreButton(
-      onTap: (position) => showGameContextMenu(context: context, ref: ref, globalPosition: position, group: g),
+      onTap: (position) => showGameContextMenu(
+        context: context,
+        ref: ref,
+        globalPosition: position,
+        group: g,
+        onDownload: () => showGetSheet(context, ref, title: title, item: item, group: g, version: latest),
+      ),
     ));
     return actions;
   }

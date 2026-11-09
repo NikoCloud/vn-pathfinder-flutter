@@ -8,7 +8,6 @@ import '../theme.dart';
 import '../providers/feed_images_provider.dart';
 import '../providers/filter_provider.dart';
 import '../providers/library_provider.dart';
-import '../providers/notification_provider.dart';
 import '../providers/play_tracker_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/shell_provider.dart';
@@ -17,7 +16,7 @@ import '../screens/library_screen.dart';
 import '../screens/archive_screen.dart';
 import '../screens/feed_screen.dart';
 import '../screens/stats_screen.dart';
-import '../services/app_update_service.dart';
+import '../providers/app_update_provider.dart';
 import '../services/tray_service.dart';
 import 'modals/help_modal.dart';
 import 'modals/settings_modal.dart';
@@ -29,14 +28,9 @@ import 'title_bar.dart';
 import 'tutorial_overlay.dart';
 
 /// Looks once per run for a newer VN Pathfinder (Settings → Update Checks).
+/// A newer one shows as the Update button in the title bar.
 final _appUpdateCheckProvider = Provider<void>((ref) {
-  final settings = ref.read(settingsProvider);
-  if (settings.lockdown || !settings.checkUpdates) return;
-  AppUpdateService.newerRelease().then((tag) {
-    if (tag != null) {
-      ref.read(notificationProvider.notifier).info('VN Pathfinder $tag is available on GitHub.');
-    }
-  });
+  Future.microtask(() => ref.read(appUpdateProvider.notifier).checkOnStartup());
 });
 
 final _pruneFeedImagesProvider = FutureProvider<void>((ref) => FeedImageCache.prune());

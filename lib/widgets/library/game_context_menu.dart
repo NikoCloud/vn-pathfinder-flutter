@@ -24,6 +24,9 @@ void showGameContextMenu({
   required WidgetRef ref,
   required Offset globalPosition,
   required GameGroup group,
+  /// Offered as Download a Version… when set. The game page passes it, so a
+  /// version can be fetched even when no update is detected.
+  VoidCallback? onDownload,
 }) async {
   final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
   // The card that opened the menu can rebuild while the menu is up, and then
@@ -54,6 +57,12 @@ void showGameContextMenu({
         height: 36,
         child: _MenuRow(icon: Icons.play_arrow, label: 'Play', color: AppColors.accent),
       ),
+      if (onDownload != null)
+        PopupMenuItem(
+          value: 'download',
+          height: 36,
+          child: _MenuRow(icon: Icons.download_rounded, label: 'Download a Version…'),
+        ),
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
         value: 'status',
@@ -146,6 +155,9 @@ void showGameContextMenu({
   switch (result) {
     case 'play':
       container.read(playTrackerProvider.notifier).launch(v, group.baseKey);
+      break;
+    case 'download':
+      onDownload?.call();
       break;
     case 'properties':
       showPropertiesModal(host, group);

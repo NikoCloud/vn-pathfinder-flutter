@@ -22,7 +22,6 @@ Older READMEs marked these as finished or in the app. They aren't.
 
 - **Accessibility.** The shared controls have labels, focus rings and keyboard use, and the app honours Windows' animation setting. Older dialogs (Settings, Properties, Fetch Metadata, Archive) haven't been through this yet.
 - **Tablet and responsive layouts.** Described as a benefit of the rewrite, never built as a feature.
-
 ## Planned features
 
 Never built.
@@ -53,9 +52,7 @@ Never built.
 
 ## Release and community
 
-- **Publish a Windows build.** `v0.9.0` is a source tag with no GitHub Release. The packaging script makes a portable ZIP and an installer, but nothing has been published.
-- **Settle the version number.** The current work is a beta 1 candidate. The tag says `0.9.0`, `pubspec.yaml` says `2.0.0+1`, and the app calls itself `2.0.0-alpha`.
-- **Beta release** and **community beta testing.**
+- **Community beta testing.**
 - **Talk to every provider about the app.** This is why the Feed stays neutral between sources.
 - **Accessibility audit.**
 - **Performance profiling.**

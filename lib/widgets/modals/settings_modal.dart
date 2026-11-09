@@ -8,7 +8,10 @@ import '../../theme.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/feed_provider.dart';
+import '../../providers/app_update_provider.dart';
 import '../../services/app_update_service.dart';
+import '../common/kit.dart';
+import 'app_update_dialog.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart';
 import 'orphan_scanner_modal.dart';
@@ -2246,10 +2249,12 @@ class _AboutPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Version $appVersion · Flutter Rewrite',
+              'Version $appVersion',
               style: AppText.ui(
                   fontSize: 12, color: AppColors.textMuted),
             ),
+            const SizedBox(height: 12),
+            const _UpdateRow(),
             const SizedBox(height: 16),
             Text(
               'Your complete visual novel library manager.\nTrack, organise, launch, and maintain your collection.',
@@ -2271,5 +2276,61 @@ class _AboutPanel extends StatelessWidget {
         ),
       ),
     ]);
+  }
+}
+
+/// Settings → About: check GitHub for a newer version on demand.
+class _UpdateRow extends ConsumerWidget {
+  const _UpdateRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(appUpdateProvider);
+    final notifier = ref.read(appUpdateProvider.notifier);
+    final release = st.release;
+
+    final String? status = switch (st.phase) {
+      AppUpdatePhase.upToDate => "You're on the newest version.",
+      AppUpdatePhase.failed => st.error,
+      _ when release != null => 'Version ${release.version} is available.',
+      _ => null,
+    };
+
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            VpButton(
+              label: 'Check for updates',
+              icon: Icons.refresh,
+              small: true,
+              busy: st.phase == AppUpdatePhase.checking,
+              onTap: st.phase == AppUpdatePhase.checking ? null : () => notifier.check(),
+            ),
+            if (release != null) ...[
+              const SizedBox(width: 8),
+              VpButton(
+                label: "See what's new",
+                icon: Icons.system_update_alt,
+                tone: VpTone.update,
+                small: true,
+                onTap: () => showAppUpdateDialog(context),
+              ),
+            ],
+          ],
+        ),
+        if (status != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            status,
+            style: AppText.ui(
+              fontSize: 12,
+              color: st.phase == AppUpdatePhase.failed ? AppColors.danger : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }

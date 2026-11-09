@@ -2,14 +2,20 @@
 
 What's in each version of VN Pathfinder 2.0, newest first.
 
-No downloadable 2.0 build has been published yet. Tagged versions are source snapshots.
+Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutter/releases) page. `0.9.0` is a source snapshot with no download.
 
 ## Unreleased
 
-On `master`, not yet tagged. The app reports itself as `2.0.0-alpha.2`.
+Nothing yet.
+
+## 2.0.0-beta.1 - 2026-11-09
+
+The first downloadable build of 2.0, with an installer and a portable ZIP. Everything since `v0.9.0` is in it.
 
 ### Added
 
+- **Download a Version…** in a game page's ⋯ menu opens the download sheet for a game you have, even when no update is detected.
+- **Updates from inside the app.** When a new version is out, an Update button appears in the title bar with what's new. Update now downloads the installer, checks its checksum, installs it and reopens the app. Settings → About has Check for updates. The portable version opens the release page instead.
 - **First-run tour.** The first time the app opens, a short tour walks through Home, Library, Feed and Archive with made-up games. Nothing about them is saved, and your real library and Feed are untouched. **Help** has Take the tour to see it again.
 - **Card size slider in the Library's top bar.** It replaces the Cards and Details switch: drag it to the left end for the Details list, or anywhere else for cards at that size. It used to be inside the Filters drawer.
 - **Downloads in Archive.** This session's downloads, including finished and failed ones, are listed at the top of Archive until you clear them. Dismissing one from the corner dock keeps it there.
@@ -92,6 +98,7 @@ On `master`, not yet tagged. The app reports itself as `2.0.0-alpha.2`.
 
 ### Fixed
 
+- Games versioned by chapter, episode or part (`Chapter-3.6`, `Ch.3.6.5`, `Episode 4`) now get update alerts. They used to be skipped, so a newer chapter showed on the Feed and on the version path with no Update button.
 - Right-clicking a game in the Library and choosing Fetch Metadata, Properties, Change Image, Merge or Delete Archive now opens it. The menu could lose track of the card it came from and do nothing.
 - The app no longer slows down while a game downloads. Every card in the Library and Feed redrew several times a second during a download; now only that game's card does.
 - When Windows refuses to start a game, the message says where to look: a network share that saves files without permission to run them, or antivirus.

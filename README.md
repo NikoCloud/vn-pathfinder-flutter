@@ -2,9 +2,7 @@
 
 A visual novel library manager for Windows. It finds the games in your library folder, keeps every version of a game together, fetches covers and details from the forums, manages mods, and tells you when a game has an update.
 
-> **Release status:** VN Pathfinder 2.0 is in pre-release and has no downloadable build yet, so for now you [build it from source](#build-from-source). The latest tagged version is `v0.9.0`. Everything added since then is listed under [Unreleased](CHANGELOG.md#unreleased).
->
-> Want something ready to run today? The previous Python version is available as [VN Pathfinder v1.1.0-beta](https://github.com/NikoCloud/VN-Pathfinder/releases/tag/v1.1.0-beta).
+> **Release status:** VN Pathfinder 2.0 is in beta. Download it from [Releases](https://github.com/NikoCloud/vn-pathfinder-flutter/releases). Expect rough edges, and please [report them](https://github.com/NikoCloud/vn-pathfinder-flutter/issues).
 
 ## Features
 
@@ -66,7 +64,7 @@ Set a status yourself under **Your copy** on a game's page, or from the right-cl
 - Update takes you straight to the download
 - A filter shows only games with an update
 - Checks run when your library loads and while the app stays open, at most once every 6 hours
-- A notification tells you when a new version of VN Pathfinder is on GitHub
+- An Update button in the title bar tells you when a new version of VN Pathfinder is out, and installs it (see [Updating](#updating))
 
 Games are matched by forum thread, using the link saved by Fetch Metadata. Games without a link are matched by exact title. LewdCorner and Azkosel's Corner updates are picked up from the Feed for games with a saved link to that forum.
 
@@ -121,6 +119,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 - The file lands in your library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP and RAR archives are extracted for you; anything else stays in the folder for you to handle
 - The game arrives already fetched: its cover, screenshots, description, tags and thread link come with it, and update alerts work from the start
 - For an update, keep the old version or remove it
+- **Download a Version…** in a game page's ⋯ menu gets any version of a game you have, even when no update is detected
 - If a connection drops, the download retries by itself and shows which try it's on. It picks up where it stopped if the host allows that, and otherwise starts again. If it gives up, it tells you why
 
 ## Requirements
@@ -128,6 +127,18 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 - Windows 10 or 11, 64-bit (developed and tested on Windows 11)
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) for forum logins and fetching (included with Windows 11)
 - [7-Zip](https://www.7-zip.org/) to extract RAR archives
+
+## Install
+
+1. From the [latest release](https://github.com/NikoCloud/vn-pathfinder-flutter/releases), download `VN-Pathfinder-<version>-windows-setup.exe`. There's also a portable ZIP that runs from any folder without installing.
+2. Run the installer. Releases aren't code-signed, so Windows may show **Windows protected your PC**. Click **More info**, then **Run anyway**. Your browser may also warn about the download. Each release lists the SHA-256 checksum of its files if you want to check your copy.
+3. It installs for your Windows account only and doesn't need admin rights, unless you choose to install for everyone.
+
+### Updating
+
+When a new version is out, an **Update** button appears in the title bar. It shows what's new, and **Update now** downloads the installer, checks it against the checksum GitHub publishes, installs it and reopens the app. Your library, settings and games aren't touched. **Settings → About** has **Check for updates** to look on demand.
+
+The portable version can't update itself: its Update button shows what's new and links to the release page for the new ZIP.
 
 ## Getting started
 
@@ -144,7 +155,7 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 - **Offline by default.** Nothing goes online until you turn off Lockdown Mode.
 - **No accounts, telemetry or analytics.**
 - **Your data stays on your PC.** App data is in `%APPDATA%\VN Pathfinder\`, and each game's metadata and images are in a `.vnpf` folder inside the game. All fonts ship with the app, so nothing is fetched just to draw text.
-- **The app only contacts the services you use.** Fetch Metadata, the Feed and game pages contact the sites you've chosen. Update checks send F95Zone the forum thread IDs of your games, plus title searches for games without a saved link and, a few at a time, to refresh ratings. To stop that, turn off Game Update Checks. Update Checks asks GitHub for the latest VN Pathfinder release when the app starts. To stop that, turn off Update Checks.
+- **The app only contacts the services you use.** Fetch Metadata, the Feed and game pages contact the sites you've chosen. Update checks send F95Zone the forum thread IDs of your games, plus title searches for games without a saved link and, a few at a time, to refresh ratings. To stop that, turn off Game Update Checks. Update Checks asks GitHub for the list of VN Pathfinder releases when the app starts. To stop that, turn off Update Checks. Updates are only downloaded when you choose Update now.
 - **Stored without encryption.** Forum sessions are kept on your PC as plain files.
 
 ## Known issues
@@ -165,7 +176,6 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 
 Planned, in no fixed order:
 
-- A published Windows build and a public beta
 - Discord channels in the Feed
 - A backup metadata service for when sources are down
 - A staging folder on a fast drive, so you can play a game right away while it moves to storage in the background

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import '../providers/app_update_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/shell_provider.dart';
 import '../providers/update_provider.dart';
 import '../theme.dart';
 import 'common/kit.dart';
+import 'modals/app_update_dialog.dart';
 import 'modals/help_modal.dart';
 import 'modals/settings_modal.dart';
 
@@ -54,6 +56,7 @@ class AppTitleBar extends ConsumerWidget {
                   const Spacer(),
                   _FindButton(wide: roomy),
                   const SizedBox(width: 6),
+                  const _AppUpdateButton(),
                   const _DiscreetButton(),
                   const _NetworkPill(),
                   VpIconButton(
@@ -222,6 +225,28 @@ class _DiscreetButton extends ConsumerWidget {
       tooltip: on ? 'Discreet is on: art is blurred (Ctrl+Shift+D)' : 'Discreet: blur all art (Ctrl+Shift+D)',
       selected: on,
       onTap: () => ref.read(settingsProvider.notifier).setDiscreet(!on),
+    );
+  }
+}
+
+/// Shows only while a newer VN Pathfinder is available.
+class _AppUpdateButton extends ConsumerWidget {
+  const _AppUpdateButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final release = ref.watch(appUpdateProvider.select((s) => s.release));
+    if (release == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: VpButton(
+        label: 'Update',
+        icon: Icons.system_update_alt,
+        tone: VpTone.update,
+        small: true,
+        tooltip: 'VN Pathfinder ${release.version} is available',
+        onTap: () => showAppUpdateDialog(context),
+      ),
     );
   }
 }
