@@ -6,6 +6,13 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ## Unreleased
 
+## 2.0.0-beta.2 - 2026-11-09
+
+### Added
+
+- **Several library folders.** Add as many as you like in **Settings → General**, on any drive. Games in every folder show in one library, and versions of one game in different folders group together. Each folder shows its drive's free space. Downloads go to the first folder; drag the handles to choose it. A folder on an unplugged drive is skipped until it's back, and downloading tells you if the first folder isn't reachable. A folder inside another one can't be added, since its games would show twice.
+- **Keep the original** in Assign copies a patch into the game instead of moving it, so the same file can go to several games.
+
 ### Changed
 
 - **Fetch Metadata** says above the search box to check the title is spelled the way the site spells it, since a misspelled or squashed folder name often finds nothing.
@@ -13,6 +20,8 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 ### Fixed
 
 - Maximizing the window no longer crashes the app on Windows. Both sliders are now the app's own, since Material's slider set off a Flutter crash in the accessibility code when the window was resized.
+- Assigning a patch to a game on a different drive from the file works. It's copied and the original removed, since a move can't cross drives.
+- The Assign dialog scrolls when the window is too short for it.
 
 ## 2.0.0-beta.1 - 2026-11-09
 

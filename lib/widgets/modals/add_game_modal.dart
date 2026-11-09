@@ -297,12 +297,12 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
     }
 
     // Check if already in library
-    final libDir = ref.read(libraryDirProvider);
-    final isInsideLib =
-        p.isWithin(libDir, dir.path) || p.equals(libDir, dir.path);
+    final isInsideLib = ref
+        .read(libraryDirsProvider)
+        .any((d) => p.isWithin(d, dir.path) || p.equals(d, dir.path));
     String? warn;
     if (!isInsideLib) {
-      warn = '⚠ This folder is outside your library directory.\n'
+      warn = '⚠ This folder is outside your library folders.\n'
           'It will be scanned but won\'t appear on future library rescans.';
     }
 

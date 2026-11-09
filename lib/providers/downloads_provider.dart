@@ -125,12 +125,11 @@ final extractionStatusProvider = StateProvider<Map<String, ExtractionStatus>>((r
 /// Bumped when a saved card changes, so the Archive tab reads them again.
 final archiveCardsEpochProvider = StateProvider<int>((ref) => 0);
 
-/// Every saved card in the library, linked or not.
+/// Every saved card in every library folder, linked or not.
 final archiveCardsProvider = Provider<List<ArchiveCard>>((ref) {
   ref.watch(archiveCardsEpochProvider);
   ref.watch(libraryGroupsProvider);
-  final library = ref.watch(libraryDirProvider);
-  return library.isEmpty ? const [] : ArchiveCards.all(library);
+  return [for (final d in ref.watch(libraryDirsProvider)) ...ArchiveCards.all(d)];
 });
 
 /// Archives the Archive tab should unpack as soon as a scan has found them.

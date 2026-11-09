@@ -596,20 +596,25 @@ class ScannerService {
   /// listings, metadata, save files) that would otherwise freeze the UI.
   /// [merges] is UserData.gameMerges: folders with a key in it join the game
   /// it points to.
-  static Future<List<GameGroup>> scanAll(Directory libraryDir,
+  /// Every folder in [libraryDirs] is scanned. Versions of one game in
+  /// different folders group into one game. A folder that can't be read,
+  /// such as a drive that isn't plugged in, is skipped.
+  static Future<List<GameGroup>> scanAll(List<Directory> libraryDirs,
       {Map<String, String> merges = const {}}) {
-    return Isolate.run(() => _scanAllSync(libraryDir, merges));
+    return Isolate.run(() => _scanAllSync(libraryDirs, merges));
   }
 
-  static List<GameGroup> _scanAllSync(Directory libraryDir, Map<String, String> merges) {
+  static List<GameGroup> _scanAllSync(List<Directory> libraryDirs, Map<String, String> merges) {
     final versions = <GameVersion>[];
     final archives = <ArchiveItem>[];
 
-    final List<FileSystemEntity> entries;
-    try {
-      entries = libraryDir.listSync();
-    } catch (_) {
-      return [];
+    final entries = <FileSystemEntity>[];
+    for (final dir in libraryDirs) {
+      try {
+        entries.addAll(dir.listSync());
+      } catch (_) {
+        // Not reachable right now. Its games come back when it is.
+      }
     }
 
     for (final e in entries) {
@@ -729,10 +734,13 @@ class ScannerService {
   }
 
   /// Finds files and folders in the library root that are not recognized as games or archives.
-  static List<FileSystemEntity> findOrphans(Directory libraryDir, List<GameGroup> existingGroups) {
-    if (!libraryDir.existsSync()) return [];
-
-    final allEntries = libraryDir.listSync();
+  static List<FileSystemEntity> findOrphans(List<Directory> libraryDirs, List<GameGroup> existingGroups) {
+    final allEntries = <FileSystemEntity>[];
+    for (final dir in libraryDirs) {
+      try {
+        allEntries.addAll(dir.listSync());
+      } catch (_) {}
+    }
     final orphans = <FileSystemEntity>[];
 
     // Build a set of paths that are already known

@@ -757,7 +757,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
         .where((g) => g.versions.isNotEmpty)
         .map((g) => g.baseKey)
         .toSet();
-    final library = ref.read(settingsProvider).libraryDir;
+    final library = libraryRootFor(ref.read(libraryDirsProvider), item.archivePath.path);
     final card = library.isEmpty
         ? null
         : ArchiveCards.all(library).where((c) => c.fileName == item.name).firstOrNull;
@@ -2475,6 +2475,10 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
   bool       _working = false;
   String?    _error;
 
+  /// Copy the file into the game and leave the original, so it can go to
+  /// other games too. Off moves it, as before.
+  bool _keepOriginal = false;
+
   /// Linking to game data rather than installing as a patch.
   bool _asData = false;
   late final List<_DataTarget> _targets;
@@ -2514,7 +2518,7 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
         target.card!.linkTo(widget.item.name);
       } else if (game != null) {
         await ArchiveCards.fromGame(
-          ref.read(settingsProvider).libraryDir,
+          libraryRootFor(ref.read(libraryDirsProvider), widget.item.archivePath.path),
           widget.item.name,
           game.versions.lastWhere((v) => v.hasVnpf),
           version: widget.item.versionStr,
@@ -2547,9 +2551,11 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: AppColors.textPrimary)),
+      // Scrolls when the window is too short for the whole dialog.
       content: SizedBox(
         width: 400,
-        child: Column(
+        child: SingleChildScrollView(
+         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2642,6 +2648,41 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
                 onChanged: (v) => setState(() => _selectedVersion = v),
               ),
             ],
+            const SizedBox(height: 10),
+            InkWell(
+              onTap: _working ? null : () => setState(() => _keepOriginal = !_keepOriginal),
+              borderRadius: AppRadius.borderSm,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 24,
+                    child: Checkbox(
+                      value: _keepOriginal,
+                      activeColor: AppColors.accent,
+                      onChanged: _working ? null : (v) => setState(() => _keepOriginal = v ?? false),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Keep the original',
+                              style: AppText.ui(fontSize: 12, color: AppColors.textPrimary)),
+                          const SizedBox(height: 2),
+                          Text('Copies it instead of moving it, so the same file can go to other games too.',
+                              style: AppText.meta(color: AppColors.textMuted)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             ],
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -2650,6 +2691,7 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
                       fontSize: 11, color: AppColors.danger)),
             ],
           ],
+         ),
         ),
       ),
       actions: [
@@ -2704,15 +2746,16 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
         throw 'Unsupported patch format: $suffix';
       }
 
-      ref.read(notificationProvider.notifier).success(
-          'Stored with ${group.effectiveTitle}. Turn it on in Properties, Patches.');
+      ref.read(notificationProvider.notifier).success(_keepOriginal
+          ? 'Copied to ${group.effectiveTitle}. The original stays here. Turn it on in Properties, Patches.'
+          : 'Stored with ${group.effectiveTitle}. Turn it on in Properties, Patches.');
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       setState(() { _working = false; _error = e.toString(); });
     }
   }
 
-  /// Move a loose file (.rpa, .rpy, .rpyc, .py) directly into .patches/.
+  /// Move or copy a loose file (.rpa, .rpy, .rpyc, .py) directly into .patches/.
   Future<void> _assignLoose(Directory patchesDir, String metaKey) async {
     var patchName = widget.item.name;
     if (_nameTaken(patchName, patchesDir)) {
@@ -2721,7 +2764,19 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
       patchName = chosen;
     }
     final dest = File(p.join(patchesDir.path, patchName));
-    await widget.item.archivePath.rename(dest.path);
+    final source = widget.item.archivePath;
+    if (_keepOriginal) {
+      await source.copy(dest.path);
+    } else {
+      try {
+        await source.rename(dest.path);
+      } on FileSystemException {
+        // The game is on another drive (a second library folder): rename
+        // can't cross drives, so copy and then delete.
+        await source.copy(dest.path);
+        await source.delete();
+      }
+    }
     ref.read(userDataProvider.notifier).setPatchState(metaKey, patchName, false);
   }
 
@@ -2809,7 +2864,7 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
       for (final name in names) {
         ref.read(userDataProvider.notifier).setPatchState(metaKey, name, false);
       }
-      await widget.item.archivePath.delete();
+      if (!_keepOriginal) await widget.item.archivePath.delete();
     } finally {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     }

@@ -288,15 +288,15 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       _scanWanted = true;
       return;
     }
-    final libDir = _ref.read(libraryDirProvider);
-    if (libDir.isEmpty) {
+    final dirs = _ref.read(libraryDirsProvider);
+    if (dirs.isEmpty) {
       state = state.copyWith(error: 'No library directory set. Open Settings to configure.');
       return;
     }
     state = state.copyWith(loading: true, error: null);
     try {
       final ud = _ref.read(userDataProvider);
-      final groups = await ScannerService.scanAll(Directory(libDir), merges: ud.gameMerges);
+      final groups = await ScannerService.scanAll([for (final d in dirs) Directory(d)], merges: ud.gameMerges);
       ScannerService.autoDetectPatches(groups, ud);
       // A scan that was already running when the tour began lands in the
       // real list, not over the samples.
@@ -329,13 +329,15 @@ final libraryGroupsProvider = Provider<List<GameGroup>>((ref) {
 
 final libraryScanProvider = Provider<void>((ref) {
   // Initial scan if dir is already configured
-  final dir = ref.read(libraryDirProvider);
-  if (dir.isNotEmpty) {
+  final dirs = ref.read(libraryDirsProvider);
+  if (dirs.isNotEmpty) {
     Future.microtask(() => ref.read(libraryProvider.notifier).scan());
   }
-  // Re-scan whenever the dir changes
-  ref.listen<String>(libraryDirProvider, (prev, next) {
-    if (next.isNotEmpty && next != prev) {
+  // Re-scan whenever a folder is added or removed. Reordering doesn't change
+  // what's found, so it doesn't rescan.
+  ref.listen<List<String>>(libraryDirsProvider, (prev, next) {
+    final before = {...?prev}, after = {...next};
+    if (before.length != after.length || !before.containsAll(after)) {
       ref.read(libraryProvider.notifier).scan();
     }
   });

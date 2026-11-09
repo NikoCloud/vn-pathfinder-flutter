@@ -1,7 +1,7 @@
 name: vn_pathfinder
 description: "Visual novel library manager — track, organise, and launch your collection."
 publish_to: 'none'
-version: 2.0.0-beta.1+1
+version: 2.0.0-beta.2+2
 
 environment:
   sdk: ^3.11.4
@@ -28,6 +28,9 @@ dependencies:
 
   # Path utilities
   path: ^1.9.1
+
+  # Native calls on Windows (free space per library drive)
+  ffi: ^2.1.0
   path_provider: ^2.1.5
 
   # Image loading & caching

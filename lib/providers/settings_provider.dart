@@ -8,7 +8,11 @@ import '../theme.dart';
 // ── Settings Model ────────────────────────────────────────────────────────────
 
 class AppSettings {
-  final String libraryDir;
+  /// Library folders, in order. Downloads go to the first one.
+  final List<String> libraryDirs;
+
+  /// The first library folder, where downloads go. Empty when none is set.
+  String get libraryDir => libraryDirs.isEmpty ? '' : libraryDirs.first;
   final bool lockdown;
   final bool checkUpdates;
   final bool checkGameUpdates;   // ask F95Zone which version each game's thread is on
@@ -44,7 +48,7 @@ class AppSettings {
   final Map<String, Map<String, dynamic>> savedViews; // Library views by name
 
   const AppSettings({
-    this.libraryDir = '',
+    this.libraryDirs = const [],
     this.lockdown = true,
     this.checkUpdates = true,
     this.checkGameUpdates = true,
@@ -75,7 +79,7 @@ class AppSettings {
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-    libraryDir: json['library_dir'] as String? ?? '',
+    libraryDirs: _readLibraryDirs(json),
     lockdown: json['lockdown'] as bool? ?? true,
     checkUpdates: json['check_updates'] as bool? ?? true,
     checkGameUpdates: json['check_game_updates'] as bool? ?? true,
@@ -108,7 +112,19 @@ class AppSettings {
       (k, v) => MapEntry(k as String, Map<String, dynamic>.from(v as Map))),
   );
 
+  /// `library_dirs`, or the single `library_dir` older versions saved.
+  static List<String> _readLibraryDirs(Map<String, dynamic> json) {
+    final list = json['library_dirs'];
+    if (list is List) {
+      return list.whereType<String>().where((d) => d.isNotEmpty).toList();
+    }
+    final one = json['library_dir'] as String? ?? '';
+    return one.isEmpty ? const [] : [one];
+  }
+
   Map<String, dynamic> toJson() => {
+    'library_dirs': libraryDirs,
+    // Kept so an older version still finds the first folder.
     'library_dir': libraryDir,
     'lockdown': lockdown,
     'check_updates': checkUpdates,
@@ -140,7 +156,7 @@ class AppSettings {
   };
 
   AppSettings copyWith({
-    String? libraryDir,
+    List<String>? libraryDirs,
     bool? lockdown,
     bool? checkUpdates,
     bool? checkGameUpdates,
@@ -169,7 +185,7 @@ class AppSettings {
     bool? keepOldVersion,
     Map<String, Map<String, dynamic>>? savedViews,
   }) => AppSettings(
-    libraryDir: libraryDir ?? this.libraryDir,
+    libraryDirs: libraryDirs ?? this.libraryDirs,
     lockdown: lockdown ?? this.lockdown,
     checkUpdates: checkUpdates ?? this.checkUpdates,
     checkGameUpdates: checkGameUpdates ?? this.checkGameUpdates,
@@ -236,7 +252,29 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     save();
   }
 
-  void setLibraryDir(String path) => update((s) => s.copyWith(libraryDir: path));
+  /// Makes [path] the first library folder, replacing the current first one.
+  void setLibraryDir(String path) => update((s) => s.copyWith(
+      libraryDirs: [path, ...s.libraryDirs.skip(1).where((d) => !p.equals(d, path))]));
+
+  /// Adds a library folder at the end. Returns why it can't be added, or null.
+  String? addLibraryDir(String path) {
+    final problem = libraryDirProblem(state.libraryDirs, path);
+    if (problem != null) return problem;
+    update((s) => s.copyWith(libraryDirs: [...s.libraryDirs, path]));
+    return null;
+  }
+
+  void removeLibraryDir(String path) => update((s) =>
+      s.copyWith(libraryDirs: s.libraryDirs.where((d) => d != path).toList()));
+
+  /// Moves the folder at [from] to [to], as ReorderableListView reports it.
+  void moveLibraryDir(int from, int to) => update((s) {
+        final dirs = [...s.libraryDirs];
+        if (to > from) to -= 1;
+        final d = dirs.removeAt(from);
+        dirs.insert(to.clamp(0, dirs.length), d);
+        return s.copyWith(libraryDirs: dirs);
+      });
   void setLockdown(bool v) => update((s) => s.copyWith(lockdown: v));
   void setCheckUpdates(bool v) => update((s) => s.copyWith(checkUpdates: v));
   void setCheckGameUpdates(bool v) => update((s) => s.copyWith(checkGameUpdates: v));
@@ -296,10 +334,34 @@ final lockdownProvider = Provider<bool>(
   (ref) => ref.watch(settingsProvider).lockdown,
 );
 
-// Convenience: library dir
+// Convenience: the first library folder, where downloads go
 final libraryDirProvider = Provider<String>(
   (ref) => ref.watch(settingsProvider).libraryDir,
 );
+
+/// Every library folder, in order.
+final libraryDirsProvider = Provider<List<String>>(
+  (ref) => ref.watch(settingsProvider).libraryDirs,
+);
+
+/// Why [path] can't join [existing] library folders, or null if it can.
+/// A folder inside another one, or holding one, would find games twice.
+String? libraryDirProblem(List<String> existing, String path) {
+  for (final d in existing) {
+    if (p.equals(d, path)) return 'That folder is already in your library.';
+    if (p.isWithin(d, path)) return 'That folder is inside $d, which is already in your library.';
+    if (p.isWithin(path, d)) return 'That folder holds $d, which is already in your library. Remove it first, or pick a different folder.';
+  }
+  return null;
+}
+
+/// The library folder that holds [path], or the first folder if none does.
+String libraryRootFor(List<String> dirs, String path) {
+  for (final d in dirs) {
+    if (p.isWithin(d, path) || p.equals(d, path)) return d;
+  }
+  return dirs.isEmpty ? '' : dirs.first;
+}
 
 // Reactive ThemeData derived from persisted settings
 final appThemeDataProvider = Provider<ThemeData>((ref) {

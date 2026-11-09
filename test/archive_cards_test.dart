@@ -221,7 +221,7 @@ void main() {
     test('the scanner sees the data as neither a game nor a file', () async {
       final file = File(p.join(library.path, 'a.zip'))..writeAsStringSync('x');
       await ArchiveCards.create(library.path, 'a.zip', draft);
-      final groups = await ScannerService.scanAll(library);
+      final groups = await ScannerService.scanAll([library]);
       expect(groups.expand((g) => g.versions), isEmpty);
       expect(groups.expand((g) => g.archives).single.archivePath.path, file.path);
     });

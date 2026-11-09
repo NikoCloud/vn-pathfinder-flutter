@@ -37,11 +37,11 @@ void main() {
       folder('LightofmyLife-1.0.4-pc');
       folder('LightofmyLifeS2-0.9.2-pc');
       folder('Other-1.0-pc');
-      expect((await ScannerService.scanAll(lib)).length, 3);
+      expect((await ScannerService.scanAll([lib])).length, 3);
 
       final source = key('LightofmyLifeS2-0.9.2-pc');
       final target = key('LightofmyLife-1.0.4-pc');
-      final groups = await ScannerService.scanAll(lib, merges: {source: target});
+      final groups = await ScannerService.scanAll([lib], merges: {source: target});
 
       expect(groups.length, 2);
       final merged = groups.singleWhere((g) => g.baseKey == target);
@@ -55,7 +55,7 @@ void main() {
       folder('LightofmyLife-1.0.4-pc');
       folder('LightofmyLifeS2-0.9.2-pc');
       folder('LightofmyLifeS2-0.10.2-pc');
-      final groups = await ScannerService.scanAll(lib,
+      final groups = await ScannerService.scanAll([lib],
           merges: {key('LightofmyLifeS2-0.9.2-pc'): key('LightofmyLife-1.0.4-pc')});
       expect(groups.single.versions.length, 3);
     });
@@ -65,16 +65,16 @@ void main() {
       folder('LightofmyLifeS2-0.9.2-pc');
       final ud = const UserData().withGameMerged(
           key('LightofmyLifeS2-0.9.2-pc'), key('LightofmyLife-1.0.4-pc'));
-      expect((await ScannerService.scanAll(lib, merges: ud.gameMerges)).length, 1);
+      expect((await ScannerService.scanAll([lib], merges: ud.gameMerges)).length, 1);
       final undone = ud.copyWith(gameMerges: {...ud.gameMerges}..remove(key('LightofmyLifeS2-0.9.2-pc')));
-      expect((await ScannerService.scanAll(lib, merges: undone.gameMerges)).length, 2);
+      expect((await ScannerService.scanAll([lib], merges: undone.gameMerges)).length, 2);
     });
 
     test('an archive of the merged game stays attached to it', () async {
       folder('Game-1.0-pc');
       folder('GameTypo-0.5-pc');
       File(p.join(lib.path, 'GameTypo-0.6-pc.zip')).writeAsBytesSync([0]);
-      final groups = await ScannerService.scanAll(lib, merges: {key('GameTypo-0.5-pc'): key('Game-1.0-pc')});
+      final groups = await ScannerService.scanAll([lib], merges: {key('GameTypo-0.5-pc'): key('Game-1.0-pc')});
       expect(groups.single.archives.length, 1);
     });
   });

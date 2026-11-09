@@ -32,7 +32,7 @@ final _realFeed = [
 ];
 
 List<Override> _overrides({String libraryDir = ''}) => [
-      settingsProvider.overrideWith((ref) => _Settings(AppSettings(libraryDir: libraryDir))),
+      settingsProvider.overrideWith((ref) => _Settings(AppSettings(libraryDirs: libraryDir.isEmpty ? const [] : [libraryDir]))),
       libraryProvider.overrideWith((ref) => _Library(ref, _real)),
       feedProvider.overrideWith((ref) => FeedNotifier.seeded(ref, FeedState(items: _realFeed))),
     ];

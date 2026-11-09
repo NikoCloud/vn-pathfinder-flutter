@@ -35,10 +35,10 @@ class _OrphanScannerModalState extends ConsumerState<OrphanScannerModal> {
 
   Future<void> _scan() async {
     setState(() => _scanning = true);
-    final libDir = ref.read(libraryDirProvider);
+    final dirs = ref.read(libraryDirsProvider);
     final groups = ref.read(libraryProvider).groups;
     
-    if (libDir.isEmpty) {
+    if (dirs.isEmpty) {
       setState(() {
         _orphans = [];
         _scanning = false;
@@ -46,7 +46,7 @@ class _OrphanScannerModalState extends ConsumerState<OrphanScannerModal> {
       return;
     }
 
-    final result = await Future(() => ScannerService.findOrphans(Directory(libDir), groups));
+    final result = await Future(() => ScannerService.findOrphans([for (final d in dirs) Directory(d)], groups));
     
     if (mounted) {
       setState(() {

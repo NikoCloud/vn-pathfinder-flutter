@@ -6,10 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_windows/webview_windows.dart';
 import '../../theme.dart';
 import '../../providers/settings_provider.dart';
-import '../../providers/library_provider.dart';
 import '../../providers/feed_provider.dart';
 import '../../providers/app_update_provider.dart';
 import '../../services/app_update_service.dart';
+import '../../services/disk_space.dart';
 import '../common/kit.dart';
 import 'app_update_dialog.dart';
 import '../../services/metadata_service.dart';
@@ -519,44 +519,7 @@ class _GeneralPanel extends ConsumerWidget {
 
     return _PanelScroll(children: [
       _SettingGroup(title: 'Library', children: [
-        _SettingRow(
-          label: 'Library Directory',
-          subtitle: 'Root folder containing your visual novels',
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 200),
-                child: Text(
-                  settings.libraryDir.isEmpty
-                      ? 'Not set'
-                      : settings.libraryDir,
-                  style: AppText.mono(
-                    fontSize: 11,
-                    color: settings.libraryDir.isEmpty
-                        ? AppColors.textMuted
-                        : AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 8),
-              _SmallButton(
-                'Browse',
-                onTap: () async {
-                  final result = await FilePicker.platform.getDirectoryPath(
-                    dialogTitle: 'Select your library directory',
-                    lockParentWindow: true,
-                  );
-                  if (result != null) {
-                    notifier.setLibraryDir(result);
-                    ref.read(libraryProvider.notifier).scan();
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
+        const _LibraryFolders(),
         _SettingRow(
           label: 'Slideshow Interval',
           subtitle: 'Auto-advance time for screenshot carousel',
@@ -589,7 +552,7 @@ class _GeneralPanel extends ConsumerWidget {
       _SettingGroup(title: 'Maintenance', children: [
         _SettingRow(
           label: 'Orphaned File Scanner',
-          subtitle: 'Find unrecognised files in your library root',
+          subtitle: 'Find unrecognised files in your library folders',
           trailing: _SmallButton(
             'Scan Now',
             onTap: () {
@@ -669,6 +632,184 @@ class _SliderRowState extends State<_SliderRow> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Library folders ───────────────────────────────────────────────────────────
+
+/// Free space for one folder's drive. Settings reads it again each time it
+/// opens.
+final _diskSpaceProvider =
+    FutureProvider.autoDispose.family<DiskSpace?, String>((ref, dir) => diskSpaceFor(dir));
+
+/// Every library folder, in order, with its drive's free space. Downloads go
+/// to the first one; drag the handles to choose which that is.
+class _LibraryFolders extends ConsumerWidget {
+  const _LibraryFolders();
+
+  Future<void> _add(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Add a library folder',
+      lockParentWindow: true,
+    );
+    if (result == null) return;
+    final problem = ref.read(settingsProvider.notifier).addLibraryDir(result);
+    if (problem != null && context.mounted) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(problem)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dirs = ref.watch(libraryDirsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Library folders', style: AppText.ui(fontSize: 13, color: AppColors.textPrimary)),
+          const SizedBox(height: 2),
+          Text(
+            dirs.length > 1
+                ? 'Games are found in every folder. Downloads go to the first one, so drag the handles to choose it.'
+                : 'Folders with your games in them. Downloads go to the first one.',
+            style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 10),
+          if (dirs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text('No folder yet.', style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
+            )
+          else
+            ReorderableListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              onReorder: notifier.moveLibraryDir,
+              children: [
+                for (var i = 0; i < dirs.length; i++)
+                  _LibraryFolderRow(
+                    key: ValueKey(dirs[i]),
+                    index: i,
+                    dir: dirs[i],
+                    canDrag: dirs.length > 1,
+                    onRemove: () => notifier.removeLibraryDir(dirs[i]),
+                  ),
+              ],
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _SmallButton(dirs.isEmpty ? 'Choose a folder' : '+ Add folder',
+                primary: dirs.isEmpty, onTap: () => _add(context, ref)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LibraryFolderRow extends ConsumerWidget {
+  final int index;
+  final String dir;
+  final bool canDrag;
+  final VoidCallback onRemove;
+
+  const _LibraryFolderRow({
+    super.key,
+    required this.index,
+    required this.dir,
+    required this.canDrag,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final space = ref.watch(_diskSpaceProvider(dir));
+    final s = space.valueOrNull;
+    final offline = space.hasValue && s == null;
+    final first = index == 0;
+
+    final status = space.isLoading
+        ? 'Checking space…'
+        : offline
+            ? "Not connected. Its games come back when it is."
+            : '${formatBytes(s!.free)} free of ${formatBytes(s.total)}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(4, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.bgInput,
+        borderRadius: AppRadius.borderSm,
+        border: Border.all(color: first ? AppColors.accent.withValues(alpha: 0.5) : AppColors.border),
+      ),
+      child: Row(
+        children: [
+          if (canDrag)
+            ReorderableDragStartListener(
+              index: index,
+              child: MouseRegion(
+                cursor: SystemMouseCursors.grab,
+                child: Tooltip(
+                  message: 'Drag to reorder',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Icon(Icons.drag_indicator, size: 18, color: AppColors.textMuted),
+                  ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Tooltip(
+                        message: dir,
+                        child: Text(
+                          dir,
+                          style: AppText.mono(fontSize: 11, color: AppColors.textSecondary),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    if (first) ...[
+                      const SizedBox(width: 8),
+                      VpBadge(label: 'Downloads', fill: AppColors.accent.withValues(alpha: 0.15), color: AppColors.accentLight),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                if (s != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: s.usedFraction,
+                      minHeight: 3,
+                      backgroundColor: AppColors.border,
+                      color: s.usedFraction > 0.92 ? AppColors.warning : AppColors.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                Text(status,
+                    style: AppText.ui(
+                        fontSize: 11, color: offline ? AppColors.warning : AppColors.textMuted)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          _SmallButton('Remove', onTap: onRemove),
+        ],
+      ),
     );
   }
 }

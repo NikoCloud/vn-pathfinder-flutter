@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_windows/webview_windows.dart';
@@ -36,6 +37,13 @@ Future<void> showGetSheet(
   }
   if (settings.libraryDir.isEmpty) {
     notify.info('Choose a library folder in Settings first.');
+    return;
+  }
+  // Downloads go to the first folder. If its drive is unplugged, say so
+  // rather than quietly saving somewhere else.
+  if (!Directory(settings.libraryDir).existsSync()) {
+    notify.info("Downloads go to ${settings.libraryDir}, which isn't reachable. "
+        'Connect that drive, or move another folder to the top in Settings → General.');
     return;
   }
 

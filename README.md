@@ -37,7 +37,9 @@
 
 ### Library
 
-- Finds Ren'Py games and other Windows games in your library folder
+- Finds Ren'Py games and other Windows games in your library folders. Add as many folders as you like, on any drive, in **Settings → General**. Versions of one game in different folders show as one game
+- Each folder shows how much room its drive has left. Downloads go to the first folder, and you drag the folders to choose which one that is
+- A folder on a drive that isn't plugged in is skipped, and its games come back when it is. Nothing you've saved about them is lost
 - Groups every installed version of a game under one entry
 - Merge two entries that are really one game: right-click a game and choose **Merge into Another Game**. Likely matches are listed first, and your files aren't moved. When Pathfinder spots a likely duplicate, the game's page offers the merge
 - Wide cover cards in a framed wall, or a list beside the game's page. One slider in the top bar sets the card size, and dragging it to the left end switches to the list
@@ -109,7 +111,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 ### Archives and mods
 
-- Browse the ZIP, RAR, RPA and RPY files in your library folder
+- Browse the ZIP, RAR, RPA and RPY files in your library folders
 - Downloads from the Feed and files that match a game you have show as cards with their art. Anything else is a plain row
 - Extract ZIP and RAR archives from inside the app, with real speed and time left, and cancel at any point. Files are written as they unpack, so a large game doesn't have to fit in memory
 - If an extraction fails, Archive tells you why
@@ -118,6 +120,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 - **Clean Up** lists the archives whose version is already in your library, with the space they'd free, so you can delete the ones you pick
 - Delete a game's archives from its right-click menu
 - **Assign** makes a file a patch for a game, with a search box and a guess at the game. It can also give a file saved game data, for example after you rename a download
+- **Keep the original** in Assign copies the file instead of moving it, so one mod can go to several games
 - Mods with their own folders and images stay whole
 - Turn mods on and off without deleting them, separately for each game version
 - If a mod's name is already taken, you choose the new name
@@ -145,7 +148,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 - Download or Update from a card or a game's page
 - Pick the site, platform and file host, and the site's own page opens in the app, exactly as it is on the site, with any check, wait or ad. You finish it there
-- The file lands in your library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP and RAR archives are extracted for you; anything else stays in the folder for you to handle
+- The file lands in your first library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP and RAR archives are extracted for you; anything else stays in the folder for you to handle
 - The game arrives already fetched: its cover, screenshots, description, tags and thread link come with it, and update alerts work from the start
 - For an update, keep the old version or remove it
 - **Download a Version…** in a game page's ⋯ menu gets any version of a game you have, even when no update is detected
@@ -172,7 +175,7 @@ The portable version can't update itself: its Update button shows what's new and
 ## Getting started
 
 1. The first time you open the app, a short tour shows you around with made-up games. They're never saved and disappear when it ends. Take it again from **Help** (F1).
-1. Open **Settings → General** and choose your library folder.
+1. Open **Settings → General** and choose your library folder. Games in more than one place? Add each folder.
 2. Lockdown Mode is on by default, so the app stays offline. To use online features, turn it off in **Settings → Network**.
 3. In **Settings → Network**, log in to the forums you use.
 4. Select a game and choose **Fetch Metadata**.
@@ -198,6 +201,7 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 - The first time the Feed sees a LewdCorner thread it has no history for it, so a small edit can pass as that release's date once.
 - Logged out of F95Zone or LewdCorner, the public feeds only know a thread's latest reply, so an old thread can show as recent the first time it's seen.
 - Games that have a `.vnpf` folder from Game Properties or Add Game don't count as Unfetched, even if nothing was fetched.
+- Only the folders directly inside each library folder are looked at. A game inside another folder, such as `Library\Ren'Py\Game`, isn't found yet. Add each inner folder (`Library\Ren'Py`) as a library folder instead of the folder above it.
 - Windows only for now. macOS and Linux need a different built-in browser.
 - Windows 11's Snap Layouts menu doesn't appear when you hover the maximize button. Dragging a window to a screen edge and Win+Z still work.
 
