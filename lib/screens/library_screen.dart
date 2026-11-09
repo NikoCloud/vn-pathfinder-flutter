@@ -356,25 +356,19 @@ class _SizeSlider extends ConsumerWidget {
           Icon(Icons.view_list_outlined, size: 16, color: details ? AppColors.accent : AppColors.textMuted),
           SizedBox(
             width: 128,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 3,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 13),
-              ),
-              child: Slider(
-                value: details ? _details : width,
-                min: _details,
-                max: _maxCard,
-                activeColor: AppColors.accent,
-                inactiveColor: AppColors.border,
-                semanticFormatterCallback: (v) => v < _snap ? 'Details' : 'Card size ${v.round()}',
-                onChanged: (v) {
-                  final toDetails = v < _snap;
-                  if (toDetails != details) ref.read(libraryDetailsProvider.notifier).state = toDetails;
-                  if (!toDetails) ref.read(settingsProvider.notifier).setCardWidth(v.clamp(_minCard, _maxCard));
-                },
-              ),
+            child: VpSlider(
+              value: details ? _details : width,
+              min: _details,
+              max: _maxCard,
+              activeColor: AppColors.accent,
+              inactiveColor: AppColors.border,
+              label: 'Card size',
+              semanticFormatter: (v) => v < _snap ? 'Details' : 'Card size ${v.round()}',
+              onChanged: (v) {
+                final toDetails = v < _snap;
+                if (toDetails != details) ref.read(libraryDetailsProvider.notifier).state = toDetails;
+                if (!toDetails) ref.read(settingsProvider.notifier).setCardWidth(v.clamp(_minCard, _maxCard));
+              },
             ),
           ),
           Icon(Icons.grid_view_rounded, size: 16, color: details ? AppColors.textMuted : AppColors.accent),

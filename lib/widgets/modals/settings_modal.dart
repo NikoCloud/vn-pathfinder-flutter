@@ -645,26 +645,17 @@ class _SliderRowState extends State<_SliderRow> {
       children: [
         SizedBox(
           width: 140,
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: AppColors.accent,
-              inactiveTrackColor: AppColors.bgInput,
-              thumbColor: AppColors.accent,
-              overlayColor: AppColors.accentGlow,
-              trackHeight: 3,
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape:
-                  const RoundSliderOverlayShape(overlayRadius: 12),
-            ),
-            child: Slider(
-              value: _val.clamp(widget.min, widget.max),
-              min: widget.min,
-              max: widget.max,
-              divisions: widget.divisions,
-              onChanged: (v) => setState(() => _val = v),
-              onChangeEnd: widget.onChanged,
-            ),
+          child: VpSlider(
+            value: _val.clamp(widget.min, widget.max),
+            min: widget.min,
+            max: widget.max,
+            divisions: widget.divisions,
+            activeColor: AppColors.accent,
+            inactiveColor: AppColors.bgInput,
+            thumbRadius: 6,
+            semanticFormatter: (_) => widget.label,
+            onChanged: (v) => setState(() => _val = v),
+            onChangeEnd: widget.onChanged,
           ),
         ),
         const SizedBox(width: 8),

@@ -10,6 +10,10 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 - **Fetch Metadata** says above the search box to check the title is spelled the way the site spells it, since a misspelled or squashed folder name often finds nothing.
 
+### Fixed
+
+- Maximizing the window no longer crashes the app on Windows. Both sliders are now the app's own, since Material's slider set off a Flutter crash in the accessibility code when the window was resized.
+
 ## 2.0.0-beta.1 - 2026-11-09
 
 The first downloadable build of 2.0, with an installer and a portable ZIP. Everything since `v0.9.0` is in it.

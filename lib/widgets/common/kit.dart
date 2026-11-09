@@ -799,3 +799,211 @@ class VpFact extends StatelessWidget {
     );
   }
 }
+
+/// A slider without Material's value-indicator overlay. Material's [Slider]
+/// keeps an overlay attached at all times, and on Windows that overlay can
+/// leave the accessibility tree with a node that has no parent. The engine
+/// then crashes when the window resizes (flutter/flutter#175041, #190357).
+/// Drag or click the track, or use the arrow keys when it has focus.
+class VpSlider extends StatefulWidget {
+  final double value;
+  final double min;
+  final double max;
+  final int? divisions;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
+  final Color? activeColor;
+  final Color? inactiveColor;
+  final double thumbRadius;
+  final String? label;
+  final String Function(double value)? semanticFormatter;
+
+  const VpSlider({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.min = 0,
+    this.max = 1,
+    this.divisions,
+    this.onChangeEnd,
+    this.activeColor,
+    this.inactiveColor,
+    this.thumbRadius = 7,
+    this.label,
+    this.semanticFormatter,
+  });
+
+  @override
+  State<VpSlider> createState() => _VpSliderState();
+}
+
+class _VpSliderState extends State<VpSlider> {
+  bool _hovered = false, _focused = false, _dragging = false;
+  late double _current = widget.value;
+
+  @override
+  void didUpdateWidget(VpSlider old) {
+    super.didUpdateWidget(old);
+    if (!_dragging) _current = widget.value;
+  }
+
+  double get _span => widget.max - widget.min;
+
+  double _snap(double v) {
+    v = v.clamp(widget.min, widget.max);
+    final d = widget.divisions;
+    if (d == null || d <= 0 || _span <= 0) return v;
+    final step = _span / d;
+    return widget.min + ((v - widget.min) / step).round() * step;
+  }
+
+  double get _step => widget.divisions != null && widget.divisions! > 0
+      ? _span / widget.divisions!
+      : _span / 20;
+
+  void _set(double v) {
+    v = _snap(v);
+    if (v == _current) return;
+    setState(() => _current = v);
+    widget.onChanged(v);
+  }
+
+  void _fromPosition(Offset local, double width) {
+    final inset = widget.thumbRadius;
+    final usable = (width - inset * 2).clamp(1.0, double.infinity);
+    final t = ((local.dx - inset) / usable).clamp(0.0, 1.0);
+    _set(widget.min + t * _span);
+  }
+
+  void _nudge(int dir) {
+    _set(_current + dir * _step);
+    widget.onChangeEnd?.call(_current);
+  }
+
+  String _describe(double v) =>
+      widget.semanticFormatter?.call(v) ?? v.toStringAsFixed(v % 1 == 0 ? 0 : 1);
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.activeColor ?? AppColors.accent;
+    final inactive = widget.inactiveColor ?? AppColors.border;
+    final height = widget.thumbRadius * 2 + 12;
+    final t = _span <= 0 ? 0.0 : ((_current - widget.min) / _span).clamp(0.0, 1.0);
+
+    return Semantics(
+      slider: true,
+      label: widget.label,
+      value: _describe(_current),
+      increasedValue: _describe(_snap(_current + _step)),
+      decreasedValue: _describe(_snap(_current - _step)),
+      onIncrease: () => _nudge(1),
+      onDecrease: () => _nudge(-1),
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowFocusHighlight: (v) => setState(() => _focused = v),
+        onShowHoverHighlight: (v) => setState(() => _hovered = v),
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.arrowRight): _NudgeIntent(1),
+          SingleActivator(LogicalKeyboardKey.arrowUp): _NudgeIntent(1),
+          SingleActivator(LogicalKeyboardKey.arrowLeft): _NudgeIntent(-1),
+          SingleActivator(LogicalKeyboardKey.arrowDown): _NudgeIntent(-1),
+        },
+        actions: {
+          _NudgeIntent: CallbackAction<_NudgeIntent>(onInvoke: (i) {
+            _nudge(i.direction);
+            return null;
+          }),
+        },
+        child: LayoutBuilder(builder: (context, box) {
+          final width = box.maxWidth;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (d) => _fromPosition(d.localPosition, width),
+            onTapUp: (_) => widget.onChangeEnd?.call(_current),
+            onHorizontalDragStart: (d) {
+              _dragging = true;
+              _fromPosition(d.localPosition, width);
+            },
+            onHorizontalDragUpdate: (d) => _fromPosition(d.localPosition, width),
+            onHorizontalDragEnd: (_) {
+              _dragging = false;
+              widget.onChangeEnd?.call(_current);
+            },
+            onHorizontalDragCancel: () => _dragging = false,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: CustomPaint(
+                painter: _SliderPainter(
+                  t: t,
+                  active: active,
+                  inactive: inactive,
+                  thumbRadius: widget.thumbRadius,
+                  halo: _hovered || _dragging || _focused,
+                  focused: _focused,
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _NudgeIntent extends Intent {
+  final int direction;
+  const _NudgeIntent(this.direction);
+}
+
+class _SliderPainter extends CustomPainter {
+  final double t;
+  final Color active;
+  final Color inactive;
+  final double thumbRadius;
+  final bool halo;
+  final bool focused;
+
+  _SliderPainter({
+    required this.t,
+    required this.active,
+    required this.inactive,
+    required this.thumbRadius,
+    required this.halo,
+    required this.focused,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height / 2;
+    final left = thumbRadius, right = size.width - thumbRadius;
+    final x = left + (right - left) * t;
+    final track = Paint()
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(left, y), Offset(right, y), track..color = inactive);
+    canvas.drawLine(Offset(left, y), Offset(x, y), track..color = active);
+    if (halo) {
+      canvas.drawCircle(Offset(x, y), thumbRadius + 6, Paint()..color = active.withValues(alpha: 0.18));
+    }
+    canvas.drawCircle(Offset(x, y), thumbRadius, Paint()..color = active);
+    if (focused) {
+      canvas.drawCircle(
+          Offset(x, y),
+          thumbRadius + 3,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = active);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SliderPainter old) =>
+      old.t != t ||
+      old.active != active ||
+      old.inactive != inactive ||
+      old.halo != halo ||
+      old.focused != focused ||
+      old.thumbRadius != thumbRadius;
+}
