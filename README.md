@@ -1,8 +1,37 @@
+<div align="center">
+
 # VN Pathfinder
 
-A visual novel library manager for Windows. It finds the games in your library folder, keeps every version of a game together, fetches covers and details from the forums, manages mods, and tells you when a game has an update.
+**Your visual novel library, organised.** Every version of every game in one place, covers and details from the forums, update alerts, and downloads straight into your library.
+
+[![Download](https://img.shields.io/github/v/release/NikoCloud/vn-pathfinder-flutter?label=Download&style=for-the-badge&color=4ac99b)](https://github.com/NikoCloud/vn-pathfinder-flutter/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/NikoCloud/vn-pathfinder-flutter/total?style=for-the-badge&color=f2b84b)](https://github.com/NikoCloud/vn-pathfinder-flutter/releases)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078d4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/NikoCloud/vn-pathfinder-flutter/releases/latest)
+<br>
+[![Built with Flutter](https://img.shields.io/badge/Built%20with-Flutter-02569b?style=for-the-badge&logo=flutter&logoColor=white)](https://flutter.dev)
+[![License: Apache 2.0](https://img.shields.io/github/license/NikoCloud/vn-pathfinder-flutter?style=for-the-badge&color=6e7681)](LICENSE)
+[![No telemetry](https://img.shields.io/badge/Telemetry-None-2ea043?style=for-the-badge)](#privacy)
+
+<img src="docs/screenshots/feed.png" alt="The Feed: new releases and updates, with a Spotlight for a new version of a game you have" width="900">
+
+</div>
 
 > **Release status:** VN Pathfinder 2.0 is in beta. Download it from [Releases](https://github.com/NikoCloud/vn-pathfinder-flutter/releases). Expect rough edges, and please [report them](https://github.com/NikoCloud/vn-pathfinder-flutter/issues).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/library.png" alt="Library with art cards, statuses and quick views"><br><sub><b>Library.</b> Every game with its art, status and version, and quick views along the top.</sub></td>
+    <td width="50%"><img src="docs/screenshots/game.png" alt="Game page with the version path and what's new"><br><sub><b>Game page.</b> The version path shows where you are and what's new since.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/home.png" alt="Home with Continue playing and recent games"><br><sub><b>Home.</b> Continue playing from your last save, and pick up your other recent games.</sub></td>
+    <td width="50%"><img src="docs/screenshots/light-library.png" alt="Library in the light Paperback theme"><br><sub><b>Paperback.</b> The light theme, for daytime.</sub></td>
+  </tr>
+</table>
+
+<sub>The games in these screenshots are made up, with placeholder art.</sub>
 
 ## Features
 
