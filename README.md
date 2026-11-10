@@ -37,7 +37,7 @@
 
 ### Library
 
-- Finds games in your library folders and in folders inside them (Search subfolders, on by default per folder), and recognises their engine: Ren'Py, Unity, Unreal, RPG Maker, Godot, Wolf RPG, Kirikiri, HTML and Flash. Add as many folders as you like, on any drive, in **Settings → General**. Versions of one game in different folders show as one game
+- Finds games in your library folders and in folders inside them (Search subfolders, on by default per folder), and recognises their engine: Ren'Py, Unity, Unreal, RPG Maker, Godot, Wolf RPG, Kirikiri, HTML and Flash. Add as many folders as you like, on any drive, in **Settings → General**. Versions of one game in different folders show as one game. The app is made for Ren'Py games; games from other engines are found and can be played, but aren't officially supported yet, so some features may not work for them or not as fully
 - Each folder shows how much room its drive has left. Downloads go to the first folder, and you drag the folders to choose which one that is
 - A folder on a drive that isn't plugged in is skipped, and its games come back when it is. Nothing you've saved about them is lost
 - Groups every installed version of a game under one entry

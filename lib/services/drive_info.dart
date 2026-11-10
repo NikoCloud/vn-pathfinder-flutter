@@ -94,16 +94,98 @@ Future<String?> _busType(String letter) async {
 }
 
 /// Sends [folder] to the Recycle Bin. Only call it when [DriveInfo.trashSafe].
+///
+/// Uses Windows' own file operation, owned by the app's window, so a prompt
+/// it shows opens in front of the app. It asks nothing for an ordinary
+/// folder; for one too big for the Recycle Bin, Windows asks before deleting
+/// it permanently, and No keeps it.
 Future<void> moveToTrash(String folder) async {
-  final escaped = folder.replaceAll("'", "''");
-  final r = await Process.run('powershell', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    "Add-Type -AssemblyName Microsoft.VisualBasic; "
-        "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('$escaped', 'AllDialogs', 'SendToRecycleBin')",
-  ]);
-  if (r.exitCode != 0 || Directory(folder).existsSync()) {
-    throw FileSystemException('Could not move it to the Recycle Bin: ${'${r.stderr}'.trim()}', folder);
+  final owner = _appWindow();
+  final (code, aborted) = await Isolate.run(() => _shellDelete(folder, owner));
+  if (aborted) throw FileSystemException('Cancelled. Nothing was deleted.', folder);
+  if (code != 0 || Directory(folder).existsSync()) {
+    throw FileSystemException('Could not move it to the Recycle Bin (Windows error $code).', folder);
   }
 }
+
+// SHFileOperationW flags.
+const _foDelete = 0x0003;
+const _fofSilent = 0x0004; // no progress window
+const _fofNoConfirmation = 0x0010; // no "are you sure?" for ordinary folders
+const _fofAllowUndo = 0x0040; // to the Recycle Bin
+const _fofNoConfirmMkdir = 0x0200;
+const _fofWantNukeWarning = 0x4000; // but do ask before a permanent delete
+
+final class _ShFileOp extends Struct {
+  @IntPtr()
+  external int hwnd;
+  @Uint32()
+  external int wFunc;
+  external Pointer<Utf16> pFrom;
+  external Pointer<Utf16> pTo;
+  @Uint16()
+  external int fFlags;
+  @Int32()
+  external int fAnyOperationsAborted;
+  external Pointer<Void> hNameMappings;
+  external Pointer<Utf16> lpszProgressTitle;
+}
+
+typedef _ShFileOpN = Int32 Function(Pointer<_ShFileOp>);
+typedef _ShFileOpD = int Function(Pointer<_ShFileOp>);
+typedef _FindWindowN = IntPtr Function(IntPtr, IntPtr, Pointer<Utf16>, Pointer<Utf16>);
+typedef _FindWindowD = int Function(int, int, Pointer<Utf16>, Pointer<Utf16>);
+typedef _WindowPidN = Uint32 Function(IntPtr, Pointer<Uint32>);
+typedef _WindowPidD = int Function(int, Pointer<Uint32>);
+
+/// This app's main window, or 0 when it can't be found (then Windows'
+/// prompt has no owner, but still works).
+int _appWindow() {
+  if (!Platform.isWindows) return 0;
+  try {
+    final user32 = DynamicLibrary.open('user32.dll');
+    final findEx = user32.lookupFunction<_FindWindowN, _FindWindowD>('FindWindowExW');
+    final windowPid = user32.lookupFunction<_WindowPidN, _WindowPidD>('GetWindowThreadProcessId');
+    final cls = 'FLUTTER_RUNNER_WIN32_WINDOW'.toNativeUtf16();
+    final owner = calloc<Uint32>();
+    try {
+      var h = 0;
+      while ((h = findEx(0, h, cls, nullptr)) != 0) {
+        windowPid(h, owner);
+        if (owner.value == pid) return h;
+      }
+    } finally {
+      calloc.free(cls);
+      calloc.free(owner);
+    }
+  } catch (_) {}
+  return 0;
+}
+
+/// Runs on a background isolate, so the app keeps drawing while a big folder
+/// is moved. Returns Windows' result code and whether the user said No.
+(int, bool) _shellDelete(String folder, int owner) {
+  final shell32 = DynamicLibrary.open('shell32.dll');
+  final op = shell32.lookupFunction<_ShFileOpN, _ShFileOpD>('SHFileOperationW');
+  // The path list ends with two nulls.
+  final units = p.normalize(folder).codeUnits;
+  final from = calloc<Uint16>(units.length + 2);
+  for (var i = 0; i < units.length; i++) {
+    from[i] = units[i];
+  }
+  final info = calloc<_ShFileOp>();
+  try {
+    info.ref
+      ..hwnd = owner
+      ..wFunc = _foDelete
+      ..pFrom = from.cast()
+      ..pTo = nullptr
+      ..fFlags = _fofSilent | _fofNoConfirmation | _fofAllowUndo | _fofNoConfirmMkdir | _fofWantNukeWarning;
+    final code = op(info);
+    return (code, info.ref.fAnyOperationsAborted != 0);
+  } finally {
+    calloc.free(from);
+    calloc.free(info);
+  }
+}
+

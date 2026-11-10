@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:vn_pathfinder/services/crash_log.dart';
+import 'package:vn_pathfinder/services/drive_info.dart';
 import 'package:vn_pathfinder/services/duplicates.dart';
 import 'package:vn_pathfinder/services/library_cache.dart';
 import 'package:vn_pathfinder/services/old_versions.dart';
@@ -189,5 +190,12 @@ void main() {
     final bomb = zlib.encode(List.filled(4 << 20, 0));
     expect(inflateCapped(bomb, 1 << 20), isNull);
     expect(inflateCapped(zlib.encode(utf8.encode('hello')), 1 << 20), utf8.encode('hello'));
+  });
+
+  test('Send to the Recycle Bin moves a folder with no prompt for an ordinary size', () async {
+    final d = Directory(p.join(root.path, 'vnp-trash-test-folder'))..createSync();
+    File(p.join(d.path, 'a.txt')).writeAsStringSync('tiny');
+    await moveToTrash(d.path);
+    expect(d.existsSync(), isFalse);
   });
 }
