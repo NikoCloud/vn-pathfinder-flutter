@@ -18,9 +18,9 @@ const tutorialSteps = <TutorialStep>[
     title: 'Welcome to VN Pathfinder',
     body: 'Choose the folder that holds your games, and the app reads it while you take this tour. The games you '
         'see now are made up, only here for the tour, and they disappear when it ends.\n\n'
-        "VN Pathfinder is made for Ren'Py games. Games made with other engines, like Unity or RPG Maker, are often "
-        "found and can be played, but they aren't officially supported yet: some features may not work for them, "
-        "or not as fully.",
+        "For now, VN Pathfinder officially supports Ren'Py games only. Support for other engines, like Unity and "
+        "RPG Maker, is planned and on its way. Until then, those games are often found and can be played, and some "
+        'features may work for them, but use them at your own risk.',
   ),
   (
     tab: AppTab.home,
