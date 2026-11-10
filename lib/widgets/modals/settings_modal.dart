@@ -15,6 +15,7 @@ import 'app_update_dialog.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart';
 import 'orphan_scanner_modal.dart';
+import '../../services/crash_log.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -2384,6 +2385,18 @@ class _AboutPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const _UpdateRow(),
+            const SizedBox(height: 8),
+            // Logs and crash reports stay on this PC; this just opens the folder.
+            VpButton(
+              label: 'Open logs folder',
+              icon: Icons.folder_open_outlined,
+              tone: VpTone.quiet,
+              small: true,
+              onTap: () {
+                CrashLog.logsDir.createSync(recursive: true);
+                Process.run('explorer', [CrashLog.logsDir.path]);
+              },
+            ),
             const SizedBox(height: 16),
             Text(
               'Your complete visual novel library manager.\nTrack, organise, launch, and maintain your collection.',

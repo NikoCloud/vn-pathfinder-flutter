@@ -25,6 +25,7 @@ import 'common/finder.dart';
 import 'game/game_page.dart';
 import 'get/download_dock.dart';
 import 'title_bar.dart';
+import 'crash_report_prompt.dart';
 import 'tutorial_overlay.dart';
 
 /// Looks once per run for a newer VN Pathfinder (Settings → Update Checks).
@@ -134,6 +135,7 @@ class AppShell extends ConsumerWidget {
               ),
               const Finder(),
               const TutorialOverlay(),
+              const CrashReportPrompt(),
               const ScrapingWebView(),
             ],
           ),

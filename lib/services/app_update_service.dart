@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'crash_log.dart';
 
 /// This build's version, shown in Settings → About and compared with releases.
 /// `tool/package_windows.ps1` reads it too, so it names the installer.
@@ -164,6 +165,7 @@ class AppUpdateService {
       ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/RELAUNCH'],
       mode: ProcessStartMode.detached,
     );
+    await CrashLog.beforeExit();
     exit(0);
   }
 }

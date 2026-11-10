@@ -6,6 +6,10 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ## Unreleased
 
+### Added
+
+- **Crash reports.** If the app closes unexpectedly, the next start says so and offers the report to view or copy, to paste wherever you report problems. It records crashes in native code too, which the app couldn't see before, and notices runs that ended without a crash being caught (a force-quit or a power cut). Reports stay on your PC, with your folders and Windows user name left out. **Settings → About** has **Open logs folder**.
+
 ### Bug fixes
 
 - **A downloaded update could install as the wrong version.** When a thread labelled its version with extra words ("Chapter 3.6.5 Patched", "Ch.3.6.5"), the extracted folder's name lost the number or split the game in two, so Play kept opening the old version and the update still looked available. Download folders now always read back as the game and its version number, and the same version from two sources lands in one folder.

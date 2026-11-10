@@ -173,6 +173,8 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 When a new version is out, an **Update** button appears in the title bar. It shows what's new, and **Update now** downloads the installer, checks it against the checksum GitHub publishes, installs it and reopens the app. Your library, settings and games aren't touched. **Settings → About** has **Check for updates** to look on demand.
 
+If the app ever closes unexpectedly, the next start offers a short report to view or copy. Nothing is sent anywhere, and your folders and Windows user name are left out. **Settings → About → Open logs folder** shows the app's log and past reports.
+
 The portable version can't update itself: its Update button shows what's new and links to the release page for the new ZIP.
 
 ## Getting started
