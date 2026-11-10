@@ -34,6 +34,11 @@ import '../modals/metadata_fetch_modal.dart';
 import '../modals/properties_modal.dart';
 import 'game_actions.dart';
 import 'version_path_view.dart';
+import 'package:path/path.dart' as p;
+import '../../services/old_versions.dart';
+import '../../services/disk_space.dart' show formatBytes;
+import '../../providers/downloads_provider.dart' show extractRequestsProvider;
+import '../../providers/notification_provider.dart';
 
 /// The full-window game page, over whichever tab opened it.
 class GamePage extends ConsumerWidget {
@@ -180,6 +185,8 @@ class _GameViewState extends ConsumerState<GameView> {
       if (shots.isNotEmpty) _Section(title: 'Screenshots', child: _Shots(shots: shots)),
       if (fetchedTags.isNotEmpty || g != null)
         _Section(title: 'Tags', child: _Tags(group: g, fetched: fetchedTags)),
+      if (g != null && keptDownloads(g.baseKey, ref.watch(libraryDirsProvider)).isNotEmpty)
+        _Section(title: 'Kept downloads', child: _KeptDownloads(group: g)),
       if (g != null)
         _Section(
           title: 'Notes',
@@ -906,4 +913,51 @@ int _folderSize(String path) {
     }
   }
   return total;
+}
+
+/// Old versions kept as their downloads (#24), each with Restore: the archive
+/// goes back to its library folder and is extracted again.
+class _KeptDownloads extends ConsumerWidget {
+  final GameGroup group;
+  const _KeptDownloads({required this.group});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final kept = keptDownloads(group.baseKey, ref.watch(libraryDirsProvider))
+      ..sort((a, b) => compareVersionStrings(b.version, a.version));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final k in kept)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Tooltip(
+                    message: k.file,
+                    child: Text(
+                      '${k.version.isEmpty ? p.basename(k.file) : fmtVersion(k.version)} · '
+                      '${formatBytes(File(k.file).lengthSync())}',
+                      style: AppText.ui(fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+                VpButton(
+                  label: 'Restore',
+                  icon: Icons.unarchive_outlined,
+                  small: true,
+                  onTap: () {
+                    final path = restoreKept(k);
+                    ref.read(extractRequestsProvider.notifier).update((l) => [...l, path]);
+                    ref.read(libraryProvider.notifier).scan();
+                    ref.read(notificationProvider.notifier).info('Restoring ${fmtVersion(k.version)}: see Archive');
+                  },
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }

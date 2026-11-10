@@ -16,6 +16,7 @@ import '../../utils/formatters.dart';
 import '../common/art.dart';
 import '../common/kit.dart';
 import '../game/game_actions.dart';
+import '../../services/old_versions.dart';
 
 /// Getting a game: pick a site, a platform and a host, then the site's real
 /// page opens in the panel. It stays exactly as it is on the site, with any
@@ -122,6 +123,9 @@ class _GetSheetState extends ConsumerState<_GetSheet> {
   String? _platform;
   bool _inSite = false;
   bool _keepOld = true;
+
+  /// Removing the old version, but keeping its download (#24).
+  bool _keepDownload = false;
   int _jobsAtStart = 0;
 
   @override
@@ -143,6 +147,10 @@ class _GetSheetState extends ConsumerState<_GetSheet> {
       version: widget.version,
       baseKey: widget.group?.baseKey,
       replaceFolder: _keepOld ? null : installed?.folderPath.path,
+      keepArchive: !_keepOld && _keepDownload && installed != null && widget.group != null
+          ? archiveForVersion(widget.group!, installed)
+          : null,
+      keepVersion: installed?.versionStr ?? '',
       card: !isGame
           ? null
           : ArchiveCardDraft.build(
@@ -266,11 +274,30 @@ class _GetSheetState extends ConsumerState<_GetSheet> {
       if (installed != null) ...[
         const SizedBox(height: 18),
         heading('After it installs'),
-        _Radio(label: 'Keep ${fmtVersion(installed.versionStr)} too', on: _keepOld, onTap: () => setState(() => _keepOld = true)),
-        _Radio(label: 'Remove ${fmtVersion(installed.versionStr)}', on: !_keepOld, onTap: () => setState(() => _keepOld = false)),
+        _Radio(
+            label: 'Keep ${fmtVersion(installed.versionStr)} too',
+            on: _keepOld,
+            onTap: () => setState(() => _keepOld = true)),
+        _Radio(
+            label: 'Remove ${fmtVersion(installed.versionStr)}',
+            on: !_keepOld && !_keepDownload,
+            onTap: () => setState(() {
+                  _keepOld = false;
+                  _keepDownload = false;
+                })),
+        if (widget.group != null && archiveForVersion(widget.group!, installed) != null)
+          _Radio(
+              label: 'Remove ${fmtVersion(installed.versionStr)}, keep its download',
+              on: !_keepOld && _keepDownload,
+              onTap: () => setState(() {
+                    _keepOld = false;
+                    _keepDownload = true;
+                  })),
         const SizedBox(height: 4),
         Text(
-          "Removing it deletes that folder, including saves kept inside it. Ren'Py also keeps its saves in AppData.",
+          'Removing it deletes that folder once the new version is in. Saves only it has move to the new version '
+          "first, and Ren'Py also keeps its saves in AppData. Keeping its download puts the archive aside, so the "
+          'game page can restore that version later.',
           style: AppText.meta(color: AppColors.textMuted),
         ),
       ],

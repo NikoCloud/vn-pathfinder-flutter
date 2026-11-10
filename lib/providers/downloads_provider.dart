@@ -11,6 +11,8 @@ import '../services/site_browser.dart';
 import 'feed_images_provider.dart';
 import 'library_provider.dart';
 import 'settings_provider.dart';
+import '../services/old_versions.dart';
+import '../services/extraction_log.dart';
 
 enum JobStage { downloading, waiting, extracting, ready, saved, failed }
 
@@ -24,6 +26,11 @@ class DownloadJob {
 
   /// Folder to delete once this version is in, when the user asked for that.
   final String? replaceFolder;
+
+  /// The replaced version's archive, kept in the hidden old-versions folder
+  /// instead of being lost (#24), with that version's string.
+  final String? keepArchive;
+  final String keepVersion;
   final JobStage stage;
   final int received;
   final int total;
@@ -46,6 +53,8 @@ class DownloadJob {
     this.version = '',
     this.baseKey,
     this.replaceFolder,
+    this.keepArchive,
+    this.keepVersion = '',
     this.stage = JobStage.downloading,
     this.received = 0,
     this.total = -1,
@@ -83,6 +92,8 @@ class DownloadJob {
         version: version,
         baseKey: baseKey ?? this.baseKey,
         replaceFolder: replaceFolder,
+        keepArchive: keepArchive,
+        keepVersion: keepVersion,
         stage: stage ?? this.stage,
         received: received ?? this.received,
         total: total ?? this.total,
@@ -153,6 +164,8 @@ class DownloadIntent {
   final String version;
   final String? baseKey;
   final String? replaceFolder;
+  final String? keepArchive;
+  final String keepVersion;
 
   /// What to save beside the file. Null for anything that isn't the game
   /// itself, like a walkthrough or a mod from the same thread.
@@ -163,6 +176,8 @@ class DownloadIntent {
     this.version = '',
     this.baseKey,
     this.replaceFolder,
+    this.keepArchive,
+    this.keepVersion = '',
     this.card,
   });
 }
@@ -203,6 +218,8 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
             version: i?.version ?? '',
             baseKey: i?.baseKey,
             replaceFolder: i?.replaceFolder,
+            keepArchive: i?.keepArchive,
+            keepVersion: i?.keepVersion ?? '',
             total: d.total,
             path: d.path,
           ),
@@ -302,9 +319,27 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
 
   /// The old version goes only after the new one has landed, and only when
   /// the user ticked that on the Get sheet.
+  /// Saves only the old folder has move into the new version first, and its
+  /// archive goes to the old-versions folder when the user chose to keep it.
   void _removeReplaced(DownloadJob job) {
     final folder = job.replaceFolder;
     if (folder == null) return;
+    try {
+      final newFolder = ExtractionLog.folderFor(job.path);
+      if (newFolder != null && !p.equals(newFolder, folder)) carrySaves(folder, newFolder);
+      final archive = job.keepArchive;
+      if (archive != null && File(archive).existsSync()) {
+        stashArchive(
+          archivePath: archive,
+          libraryRoot: libraryRootFor(_ref.read(libraryDirsProvider), archive),
+          baseKey: job.baseKey ?? '',
+          version: job.keepVersion,
+          title: job.title,
+        );
+      }
+    } catch (e) {
+      debugPrint('Keeping the old version failed: $e');
+    }
     Directory(folder).delete(recursive: true).then((_) {
       _ref.read(libraryProvider.notifier).scan();
     }, onError: (_) {});
