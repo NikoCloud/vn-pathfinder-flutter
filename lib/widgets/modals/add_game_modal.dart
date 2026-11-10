@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
+import '../../services/folder_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -210,10 +211,7 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
   }
 
   Future<void> _pickFolder() async {
-    final result = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Select game folder',
-      lockParentWindow: true,
-    );
+    final result = await pickFolder('Select game folder');
     if (result == null) return;
 
     final dir = Directory(result);

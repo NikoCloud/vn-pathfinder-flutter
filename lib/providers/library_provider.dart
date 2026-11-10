@@ -283,11 +283,46 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }
   }
 
+  /// The scan in progress, if any. Only one runs at a time: adding folders
+  /// quickly used to start overlapping scans, and whichever finished last won,
+  /// even when it didn't include the newest folder.
+  Future<void>? _running;
+  bool _rescan = false;
+
   Future<void> scan() async {
     if (_real != null) {
       _scanWanted = true;
       return;
     }
+    final running = _running;
+    if (running != null) {
+      // Picked up by the loop below once the current pass ends.
+      _rescan = true;
+      return running;
+    }
+    final run = _scanLoop();
+    _running = run;
+    try {
+      await run;
+    } finally {
+      _running = null;
+    }
+  }
+
+  /// Scans again while requests keep arriving mid-scan, so everyone waiting
+  /// on [scan] gets a list that includes their change.
+  Future<void> _scanLoop() async {
+    do {
+      _rescan = false;
+      await _scanOnce();
+    } while (_rescan && _real == null);
+    if (_rescan) {
+      _rescan = false;
+      _scanWanted = true;
+    }
+  }
+
+  Future<void> _scanOnce() async {
     final dirs = _ref.read(libraryDirsProvider);
     if (dirs.isEmpty) {
       state = state.copyWith(error: 'No library directory set. Open Settings to configure.');

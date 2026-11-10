@@ -54,10 +54,13 @@ class AppTitleBar extends ConsumerWidget {
                       onTap: () => open(t),
                     ),
                   const Spacer(),
+                  // Left of Find, away from Lockdown, so reaching for one
+                  // doesn't hit the other.
+                  const _DiscreetButton(),
+                  const SizedBox(width: 6),
                   _FindButton(wide: roomy),
                   const SizedBox(width: 6),
                   const _AppUpdateButton(),
-                  const _DiscreetButton(),
                   const _NetworkPill(),
                   VpIconButton(
                     icon: Icons.help_outline,

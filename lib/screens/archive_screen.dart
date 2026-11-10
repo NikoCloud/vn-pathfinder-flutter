@@ -123,6 +123,8 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
   bool _queueCollapsed     = false;
   bool _downloadsCollapsed = false;
   bool _completedCollapsed = false;
+  /// Showing the archives Clear took off the screen, so they can come back.
+  bool _showHidden = false;
 
   // Running extractions, so they can be cancelled.
   final _jobs = <String, ExtractionJob>{};
@@ -226,17 +228,26 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     final all          = _allArchives(libState.groups)
         .where((a) => !downloading.contains(p.canonicalize(a.archivePath.path)))
         .toList();
-    final visible      = _filtered(all);
+    // Clear takes archives off this screen; the files stay where they are.
+    final hiddenPaths  = ref.watch(settingsProvider.select((s) => s.hiddenArchives)).toSet();
+    bool isHidden(ArchiveItem a) => hiddenPaths.contains(a.archivePath.path);
+    final hiddenCount  = all.where(isHidden).length;
+    final showHidden   = _showHidden && hiddenCount > 0;
+    final visible      = _filtered([for (final a in all) if (isHidden(a) == showHidden) a]);
     final totalBytes   = all.fold<int>(0, (s, a) => s + (a.sizeBytes ?? 0));
     final extractedAll = all.where(_isExtracted).toList();
     // Clean Up only ever deletes the archive, so it can include anything whose
     // version is in the library. Nothing being extracted is offered.
     final removable = all
-        .where((a) => !_isBusy(a) && (_isExtracted(a) || archiveIsInstalled(a, _gameOf(a, libState.groups))))
+        .where((a) => !isHidden(a) && !_isBusy(a) && (_isExtracted(a) || archiveIsInstalled(a, _gameOf(a, libState.groups))))
         .toList();
-    // Completed = any archive whose extracted folder exists on disk.
-    // Using filesystem as source of truth so the list survives app restarts.
-    final completed    = all.where(_isExtracted).toList();
+    // Completed = what this app extracted since it started, so Clear and the
+    // ✕ remove rows for real. It used to be every archive with a folder of
+    // the same name next to it, which in a library of unpacked games listed
+    // nearly everything and couldn't be cleared.
+    final completed    = all
+        .where((a) => exStates[a.archivePath.path]?.isDone == true && _isExtracted(a) && !isHidden(a))
+        .toList();
     final queued       = all.where((a) => exStates[a.archivePath.path]?.isQueued == true).toList();
     final activeEntries = exStates.entries.where((e) => e.value.isActive).toList();
     final failures = exStates.entries.where((e) => e.value.isFailed).toList();
@@ -247,7 +258,14 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     final savedCards = ref.watch(archiveCardsProvider);
     final entries = <ArchiveEntry>[];
     final rows = <ArchiveItem>[];
+    final listMode = ref.watch(settingsProvider.select((s) => s.archiveDetails));
+    final cardWidth = ref.watch(settingsProvider.select((s) => s.archiveCardWidth))
+        .clamp(VpSizeSlider.minCard, VpSizeSlider.maxCard);
     for (final item in visible) {
+      if (listMode) {
+        rows.add(item);
+        continue;
+      }
       final card = savedCards.where((c) => c.fileName == item.name).firstOrNull;
       final game = _gameOf(item, libState.groups);
       if (card != null || game != null) {
@@ -276,6 +294,9 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                 : 'Clean Up (${removable.length}, ${fmtBytes(removable.fold<int>(0, (s, a) => s + (a.sizeBytes ?? 0)))})',
             onCleanUp: () => _showCleanUp(removable),
             onOrphans: () => showOrphanScannerModal(context),
+            hiddenCount: hiddenCount,
+            showHidden: showHidden,
+            onToggleHidden: () => setState(() => _showHidden = !showHidden),
           ),
 
           // ── 2. Extraction Hero ─────────────────────────────────────
@@ -305,22 +326,11 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                     )
                   : null,
               children: [
-                // About four rows, then it scrolls, so a long session can't
-                // push the archives off the screen.
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 240),
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.only(bottom: 6),
-                    children: [
-                      for (final job in jobs.reversed)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 3),
-                          child: DownloadJobRow(job: job, inList: true),
-                        ),
-                    ],
+                for (final job in jobs.reversed)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 3),
+                    child: DownloadJobRow(job: job, inList: true),
                   ),
-                ),
               ],
             );
           }),
@@ -349,7 +359,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                 children: [
                   _QueueActionBtn(
                     label: 'Clear All',
-                    onTap: () => _clearCompleted(completed, exStates),
+                    onTap: () => _hide(completed),
                   ),
                   const SizedBox(width: 6),
                   _QueueActionBtn(
@@ -362,7 +372,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
               children: completed.map((item) => _QueueRow(
                 name: item.name,
                 isCompleted: true,
-                onCancel: () => _clearSingleCompleted(item, exStates),
+                onCancel: () => _hide([item]),
               )).toList(),
             ),
 
@@ -376,7 +386,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                         SliverPadding(
                           padding: EdgeInsets.fromLTRB(AppLayout.gutter, 16, AppLayout.gutter, rows.isEmpty ? 24 : 12),
                           sliver: SliverLayoutBuilder(builder: (context, c) {
-                            final wall = wallColumns(c.crossAxisExtent, 272);
+                            final wall = wallColumns(c.crossAxisExtent, cardWidth);
                             return SliverGrid.builder(
                               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: wall.columns,
@@ -408,6 +418,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
                               final isExtracted = _isExtracted(item);
                               return _ArchiveRow(
                                 item: item,
+                                gameName: _gameOf(item, libState.groups)?.displayName,
                                 exState: exState,
                                 isSelected: isSelected,
                                 isExtracted: isExtracted,
@@ -441,9 +452,6 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
             onDeleteArchive: selectedItem != null ? () => _deleteArchive(selectedItem) : null,
             onOpenFolder: selectedItem != null ? () => _openFolder(selectedItem) : null,
             onAssignPatch: selectedItem != null ? () => _showAssignDialog(selectedItem) : null,
-            onDeleteExtracted: (selectedItem != null && _isExtracted(selectedItem))
-                ? () => _deleteSingleExtracted(selectedItem)
-                : null,
           ),
         ],
       ),
@@ -537,6 +545,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
 
   void _showContextMenu(BuildContext context, Offset pos, ArchiveItem item,
       bool isExtracted, _ExState exState) {
+    final hidden = ref.read(settingsProvider).hiddenArchives.contains(item.archivePath.path);
     setState(() => _selectedPath = item.archivePath.path);
     final canExtract = item.type == ArchiveType.zip || item.type == ArchiveType.rar;
 
@@ -555,13 +564,11 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
         _ctxItem('delete_archive', Icons.delete_outline, 'Delete Archive'),
         _ctxItem('open_folder', Icons.folder_open_outlined, 'Open Folder'),
         _ctxItem('assign_patch', Icons.extension_outlined, 'Assign…'),
-        if (isExtracted) ...[
-          const PopupMenuDivider(height: 1),
-          _ctxItem('delete_extracted', Icons.delete_sweep_outlined, 'Delete Extracted'),
-          _ctxItem('clear_and_delete', Icons.delete_forever_outlined, 'Clear & Delete Archive',
-              danger: true),
-        ],
         const PopupMenuDivider(height: 1),
+        if (hidden)
+          _ctxItem('unhide', Icons.visibility_outlined, 'Show in Archive')
+        else
+          _ctxItem('hide', Icons.visibility_off_outlined, 'Clear from Archive'),
         _ctxItem('copy_path', Icons.copy_outlined, 'Copy Path'),
       ],
     ).then((val) {
@@ -570,8 +577,8 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
         case 'delete_archive':   _deleteArchive(item);
         case 'open_folder':      _openFolder(item);
         case 'assign_patch':     _showAssignDialog(item);
-        case 'delete_extracted': _deleteSingleExtracted(item);
-        case 'clear_and_delete': _clearAndDeleteSingle(item);
+        case 'hide':             _hide([item]);
+        case 'unhide':           ref.read(settingsProvider.notifier).unhideArchives([item.archivePath.path]);
         case 'copy_path':
           // ignore: use_build_context_synchronously
           _copyPath(item);
@@ -841,34 +848,15 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     } catch (e) { debugPrint('deleteArchive: $e'); }
   }
 
-  Future<void> _deleteSingleExtracted(ArchiveItem item) async {
-    final dirPath = _extractedDirPath(item);
-    try {
-      await compute(_deleteDir, dirPath);
-      ExtractionLog.forget(item.archivePath.path);
-      if (mounted) setState(() {});
-    } catch (e) { debugPrint('deleteSingleExtracted: $e'); }
+  /// Takes [items] off the Archive screen. The files stay; Hidden in the
+  /// header brings them back.
+  void _hide(List<ArchiveItem> items) {
+    ref.read(settingsProvider.notifier).hideArchives(items.map((i) => i.archivePath.path));
+    final notifier = ref.read(_exProvider.notifier);
+    notifier.state = Map.of(notifier.state)
+      ..removeWhere((path, st) => !st.isActive && items.any((i) => i.archivePath.path == path));
+    if (items.any((i) => i.archivePath.path == _selectedPath)) setState(() => _selectedPath = null);
   }
-
-  Future<void> _clearAndDeleteSingle(ArchiveItem item) async {
-    if (_refuseIfBusy(item)) return;
-    final ok = await _confirmDialog(
-      title: 'Clear & Delete?',
-      body: 'Delete the extracted folder and the archive file "${item.name}"?\nThis cannot be undone.',
-      confirmLabel: 'Clear & Delete',
-    );
-    if (!ok) return;
-    try {
-      await compute(_deleteDirsAndFiles, ([_extractedDirPath(item)], [item.archivePath.path]));
-      ExtractionLog.forget(item.archivePath.path);
-      _deleteCardsFor([item]);
-      if (mounted) {
-        ref.read(libraryProvider.notifier).scan();
-        setState(() {});
-      }
-    } catch (e) { debugPrint('clearAndDeleteSingle: $e'); }
-  }
-
 
   void _clearCompleted(List<ArchiveItem> items, Map<String, _ExState> exStates) {
     final notifier = ref.read(_exProvider.notifier);
@@ -879,19 +867,20 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     notifier.state = updated;
   }
 
+  /// Deletes the archive files only. Archive never deletes folders: an
+  /// extracted folder is usually an installed game.
   Future<void> _clearAndDeleteCompleted(
       List<ArchiveItem> all, Map<String, _ExState> exStates) async {
     final items = all.where((a) => !_isBusy(a)).toList();
     if (items.isEmpty) return;
     final ok = await _confirmDialog(
-      title: 'Clear & Delete All Completed?',
-      body: 'Delete ${items.length} extracted folder(s) and their archive files?\nThis cannot be undone.',
+      title: 'Delete ${items.length} archive file${items.length == 1 ? '' : 's'}?',
+      body: 'The archive files are deleted. The games they were extracted to stay as they are.\nThis cannot be undone.',
       confirmLabel: 'Clear & Delete All',
     );
     if (!ok) return;
-    final dirs  = items.map(_extractedDirPath).toList();
     final files = items.map((i) => i.archivePath.path).toList();
-    await compute(_deleteDirsAndFiles, (dirs, files));
+    await compute(_deleteFiles, files);
     for (final path in files) {
       ExtractionLog.forget(path);
     }
@@ -901,11 +890,6 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
       ref.read(libraryProvider.notifier).scan();
       setState(() {});
     }
-  }
-
-  void _clearSingleCompleted(ArchiveItem item, Map<String, _ExState> exStates) {
-    final notifier = ref.read(_exProvider.notifier);
-    notifier.state = Map.of(notifier.state)..remove(item.archivePath.path);
   }
 
   void _openFolder(ArchiveItem item) {
@@ -988,11 +972,6 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
 
   // ── Background isolate helpers ──────────────────────────────────
 
-  static Future<void> _deleteDir(String path) async {
-    final dir = Directory(path);
-    if (dir.existsSync()) dir.deleteSync(recursive: true);
-  }
-
   /// Moves every file under `from` into `to`, keeping relative paths and
   /// replacing files that already exist (same drive, so these are renames).
   static Future<void> _mergeInto((String, String) args) async {
@@ -1006,13 +985,15 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
   }
 
 
-  static Future<void> _deleteDirsAndFiles((List<String>, List<String>) args) async {
-    final (dirs, files) = args;
-    for (final path in dirs) {
-      final dir = Directory(path);
-      if (dir.existsSync()) try { dir.deleteSync(recursive: true); } catch (_) {}
-    }
-    for (final path in files) {
+  /// Only for the app's own staging folders (`.vnp-extract-…`), never for a
+  /// game or an extracted folder.
+  static Future<void> _deleteDir(String path) async {
+    final dir = Directory(path);
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  }
+
+  static Future<void> _deleteFiles(List<String> paths) async {
+    for (final path in paths) {
       final file = File(path);
       if (file.existsSync()) try { file.deleteSync(); } catch (_) {}
     }
@@ -1034,6 +1015,9 @@ class _ArchiveHeader extends StatefulWidget {
   final String cleanUpLabel;
   final VoidCallback onCleanUp;
   final VoidCallback onOrphans;
+  final int hiddenCount;
+  final bool showHidden;
+  final VoidCallback onToggleHidden;
 
   const _ArchiveHeader({
     required this.query,
@@ -1046,6 +1030,9 @@ class _ArchiveHeader extends StatefulWidget {
     required this.cleanUpLabel,
     required this.onCleanUp,
     required this.onOrphans,
+    required this.hiddenCount,
+    required this.showHidden,
+    required this.onToggleHidden,
   });
 
   @override
@@ -1122,11 +1109,25 @@ class _ArchiveHeaderState extends State<_ArchiveHeader> {
 
           const SizedBox(width: 12),
 
+          const _ArchiveSize(),
+          const SizedBox(width: 6),
           _HeaderBtn(
             label: widget.cleanUpLabel,
             onTap: widget.onCleanUp,
           ),
           const SizedBox(width: 6),
+          if (widget.hiddenCount > 0) ...[
+            Tooltip(
+              message: widget.showHidden
+                  ? 'Back to the other archives'
+                  : 'Archives you cleared. Right-click one to show it again',
+              child: _HeaderBtn(
+                label: widget.showHidden ? 'Done (${widget.hiddenCount} hidden)' : 'Hidden (${widget.hiddenCount})',
+                onTap: widget.onToggleHidden,
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
           _HeaderBtn(
             label: 'Orphans',
             onTap: widget.onOrphans,
@@ -1572,7 +1573,16 @@ class _QueueSection extends StatelessWidget {
             crossFadeState: collapsed
                 ? CrossFadeState.showSecond
                 : CrossFadeState.showFirst,
-            firstChild: Column(children: children),
+            // A few rows, then it scrolls, so a long list can't push the
+            // archives off the screen.
+            firstChild: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 6),
+                children: children,
+              ),
+            ),
             secondChild: const SizedBox.shrink(),
           ),
         ],
@@ -1774,6 +1784,8 @@ class _THState extends State<_TH> {
 
 class _ArchiveRow extends StatefulWidget {
   final ArchiveItem item;
+  /// The library game this archive belongs to, shown beside the file name.
+  final String? gameName;
   final _ExState exState;
   final bool isSelected;
   final bool isExtracted;
@@ -1782,6 +1794,7 @@ class _ArchiveRow extends StatefulWidget {
 
   const _ArchiveRow({
     required this.item,
+    this.gameName,
     required this.exState,
     required this.isSelected,
     required this.isExtracted,
@@ -1834,13 +1847,21 @@ class _ArchiveRowState extends State<_ArchiveRow> {
                 flex: 4,
                 child: Padding(
                   padding: const EdgeInsets.only(left: 12, right: 8),
-                  child: Text(
-                    item.name,
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: item.name),
+                      if (widget.gameName != null)
+                        TextSpan(
+                          text: '   ${widget.gameName}',
+                          style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
+                        ),
+                    ]),
                     style: AppText.ui(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       color: AppColors.textPrimary,
                     ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -2099,7 +2120,6 @@ class _ActionBar extends StatelessWidget {
   final VoidCallback? onDeleteArchive;
   final VoidCallback? onOpenFolder;
   final VoidCallback? onAssignPatch;
-  final VoidCallback? onDeleteExtracted;
 
   const _ActionBar({
     required this.selected,
@@ -2109,7 +2129,6 @@ class _ActionBar extends StatelessWidget {
     required this.onDeleteArchive,
     required this.onOpenFolder,
     required this.onAssignPatch,
-    required this.onDeleteExtracted,
   });
 
   bool get _canExtract {
@@ -2156,14 +2175,6 @@ class _ActionBar extends StatelessWidget {
             enabled: selected != null,
             onTap: onAssignPatch,
           ),
-          if (isExtracted) ...[
-            const SizedBox(width: 8),
-            _BarBtn(
-              label: 'Delete Extracted',
-              enabled: true,
-              onTap: onDeleteExtracted,
-            ),
-          ],
 
           const SizedBox(width: 16),
           Expanded(
@@ -3015,6 +3026,22 @@ class _Dropdown<T> extends StatelessWidget {
           onChanged: onChanged,
         ),
       ),
+    );
+  }
+}
+
+/// Archive's own card size, with the list at its small end.
+class _ArchiveSize extends ConsumerWidget {
+  const _ArchiveSize();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(settingsProvider.notifier);
+    return VpSizeSlider(
+      details: ref.watch(settingsProvider.select((s) => s.archiveDetails)),
+      width: ref.watch(settingsProvider.select((s) => s.archiveCardWidth)),
+      onDetails: notifier.setArchiveDetails,
+      onWidth: notifier.setArchiveCardWidth,
     );
   }
 }

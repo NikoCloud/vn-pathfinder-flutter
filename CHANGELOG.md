@@ -6,6 +6,18 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ## Unreleased
 
+## 2.0.0-beta.2.1 - 2026-11-10
+
+### Bug fixes
+
+- Adding a library folder while the app was still reading a large one could crash it. The folder picker now leaves the app running behind it, and folders added quickly are read one after another, so the list always includes the newest one.
+- Archive no longer deletes folders. **Delete Extracted** is gone from the right-click menu and the action bar, and **Clear & Delete** deletes only the archive files. Before, it also deleted the folder each one was extracted to, which is usually the installed game.
+- A long Completed or Up Next list in Archive pushed the archives off the screen with no way to scroll. Both lists now stop at a few rows and scroll, like Downloads.
+- Archive's Completed list showed every archive that had an unpacked folder beside it, including ones that were there before, and its ✕ and Clear All didn't remove them. It now shows only what the app unpacked since it started, and clearing works. Other archives stay in the main list, where they can be extracted or assigned.
+- **Clear from Archive** in an archive's right-click menu takes it off the Archive screen without touching the file. **Hidden** in the header lists cleared archives, and right-click shows one again. The Completed list's ✕ and Clear All do the same.
+- Archive has the Library's size slider. Drag it to the left end for a list of every archive, with its game's name beside the file name, or anywhere else for cards at that size. Archive remembers its own size, separate from the Library.
+- The hide-covers (eye) button sits left of Find, away from Lockdown, so it's harder to switch Lockdown by accident.
+
 ## 2.0.0-beta.2 - 2026-11-09
 
 ### Added

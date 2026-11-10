@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+import '../../services/folder_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_windows/webview_windows.dart';
@@ -649,10 +649,7 @@ class _LibraryFolders extends ConsumerWidget {
   const _LibraryFolders();
 
   Future<void> _add(BuildContext context, WidgetRef ref) async {
-    final result = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Add a library folder',
-      lockParentWindow: true,
-    );
+    final result = await pickFolder('Add a library folder');
     if (result == null) return;
     final problem = ref.read(settingsProvider.notifier).addLibraryDir(result);
     if (problem != null && context.mounted) {

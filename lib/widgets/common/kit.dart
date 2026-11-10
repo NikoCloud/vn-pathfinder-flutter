@@ -800,6 +800,61 @@ class VpFact extends StatelessWidget {
   }
 }
 
+/// Card size with a Details list at its small end: drag to the left end and
+/// it snaps to the list, drag right and it's cards again at that size. Used by
+/// Library and Archive, each with its own saved size.
+class VpSizeSlider extends StatelessWidget {
+  final bool details;
+  final double width;
+  final ValueChanged<bool> onDetails;
+  final ValueChanged<double> onWidth;
+
+  const VpSizeSlider({
+    super.key,
+    required this.details,
+    required this.width,
+    required this.onDetails,
+    required this.onWidth,
+  });
+
+  static const _details = 170.0;
+  static const _snap = 195.0;
+  static const minCard = 210.0;
+  static const maxCard = 360.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = width.clamp(minCard, maxCard);
+    return Tooltip(
+      message: details ? 'List. Drag right for cards' : 'Card size. Drag to the left end for a list',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.view_list_outlined, size: 16, color: details ? AppColors.accent : AppColors.textMuted),
+          SizedBox(
+            width: 128,
+            child: VpSlider(
+              value: details ? _details : w,
+              min: _details,
+              max: maxCard,
+              activeColor: AppColors.accent,
+              inactiveColor: AppColors.border,
+              label: 'Card size',
+              semanticFormatter: (v) => v < _snap ? 'List' : 'Card size ${v.round()}',
+              onChanged: (v) {
+                final toDetails = v < _snap;
+                if (toDetails != details) onDetails(toDetails);
+                if (!toDetails) onWidth(v.clamp(minCard, maxCard));
+              },
+            ),
+          ),
+          Icon(Icons.grid_view_rounded, size: 16, color: details ? AppColors.textMuted : AppColors.accent),
+        ],
+      ),
+    );
+  }
+}
+
 /// A slider without Material's value-indicator overlay. Material's [Slider]
 /// keeps an overlay attached at all times, and on Windows that overlay can
 /// leave the accessibility tree with a node that has no parent. The engine

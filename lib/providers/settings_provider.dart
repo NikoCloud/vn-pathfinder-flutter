@@ -44,6 +44,9 @@ class AppSettings {
   final bool tutorialDone;       // first-run tour finished or skipped
   final String? feedSeenAt;      // ISO time of the last "Mark all seen"
   final double cardWidth;        // Library card width
+  final double archiveCardWidth; // Archive card width
+  final bool archiveDetails;     // Archive shows every archive as a list row
+  final List<String> hiddenArchives; // archive paths cleared from the Archive screen
   final bool keepOldVersion;     // keep the old version when an update lands
   final Map<String, Map<String, dynamic>> savedViews; // Library views by name
 
@@ -74,6 +77,9 @@ class AppSettings {
     this.tutorialDone = false,
     this.feedSeenAt,
     this.cardWidth = 272,
+    this.archiveCardWidth = 272,
+    this.archiveDetails = false,
+    this.hiddenArchives = const [],
     this.keepOldVersion = true,
     this.savedViews = const {},
   });
@@ -107,6 +113,9 @@ class AppSettings {
     tutorialDone: json['tutorial_done'] as bool? ?? false,
     feedSeenAt: json['feed_seen_at'] as String?,
     cardWidth: (json['card_width'] as num?)?.toDouble() ?? 272,
+    archiveCardWidth: (json['archive_card_width'] as num?)?.toDouble() ?? 272,
+    archiveDetails: json['archive_details'] as bool? ?? false,
+    hiddenArchives: [for (final p in json['hidden_archives'] as List? ?? const []) '$p'],
     keepOldVersion: json['keep_old_version'] as bool? ?? true,
     savedViews: (json['saved_views'] as Map? ?? {}).map(
       (k, v) => MapEntry(k as String, Map<String, dynamic>.from(v as Map))),
@@ -151,6 +160,9 @@ class AppSettings {
     'tutorial_done': tutorialDone,
     'feed_seen_at': feedSeenAt,
     'card_width': cardWidth,
+    'archive_card_width': archiveCardWidth,
+    'archive_details': archiveDetails,
+    'hidden_archives': hiddenArchives,
     'keep_old_version': keepOldVersion,
     'saved_views': savedViews,
   };
@@ -182,6 +194,9 @@ class AppSettings {
     bool? tutorialDone,
     String? feedSeenAt,
     double? cardWidth,
+    double? archiveCardWidth,
+    bool? archiveDetails,
+    List<String>? hiddenArchives,
     bool? keepOldVersion,
     Map<String, Map<String, dynamic>>? savedViews,
   }) => AppSettings(
@@ -211,6 +226,9 @@ class AppSettings {
     tutorialDone: tutorialDone ?? this.tutorialDone,
     feedSeenAt: feedSeenAt ?? this.feedSeenAt,
     cardWidth: cardWidth ?? this.cardWidth,
+    archiveCardWidth: archiveCardWidth ?? this.archiveCardWidth,
+    archiveDetails: archiveDetails ?? this.archiveDetails,
+    hiddenArchives: hiddenArchives ?? this.hiddenArchives,
     keepOldVersion: keepOldVersion ?? this.keepOldVersion,
     savedViews: savedViews ?? this.savedViews,
   );
@@ -299,6 +317,18 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setDiscreet(bool v) => update((s) => s.copyWith(discreet: v));
   void markFeedSeen() => update((s) => s.copyWith(feedSeenAt: DateTime.now().toIso8601String()));
   void setCardWidth(double v) => update((s) => s.copyWith(cardWidth: v));
+  void setArchiveCardWidth(double v) => update((s) => s.copyWith(archiveCardWidth: v));
+  void setArchiveDetails(bool v) => update((s) => s.copyWith(archiveDetails: v));
+
+  /// Clears archives from the Archive screen without touching the files.
+  void hideArchives(Iterable<String> paths) => update((s) =>
+      s.copyWith(hiddenArchives: {...s.hiddenArchives, ...paths}.toList()));
+
+  void unhideArchives(Iterable<String> paths) {
+    final drop = paths.toSet();
+    update((s) => s.copyWith(
+        hiddenArchives: [for (final p in s.hiddenArchives) if (!drop.contains(p)) p]));
+  }
   void setTutorialDone() => update((s) => s.copyWith(tutorialDone: true));
   void setKeepOldVersion(bool v) => update((s) => s.copyWith(keepOldVersion: v));
   void saveView(String name, Map<String, dynamic> view) =>

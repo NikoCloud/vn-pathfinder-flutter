@@ -119,6 +119,9 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 - Extracted games are named from the best of the archive's name and the folder inside it
 - **Clean Up** lists the archives whose version is already in your library, with the space they'd free, so you can delete the ones you pick
 - Delete a game's archives from its right-click menu
+- Archive only ever deletes archive files, never a folder, so an installed game is never removed from here
+- **Clear from Archive** (right-click) takes an archive off the screen and leaves the file where it is. **Hidden** in the header lists them so you can show them again
+- The size slider turns the cards into a list of every archive, with each one's game beside it
 - **Assign** makes a file a patch for a game, with a search box and a guess at the game. It can also give a file saved game data, for example after you rename a download
 - **Keep the original** in Assign copies the file instead of moving it, so one mod can go to several games
 - Mods with their own folders and images stay whole

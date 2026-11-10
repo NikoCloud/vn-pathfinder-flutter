@@ -334,48 +334,17 @@ class _Toolbar extends ConsumerWidget {
   }
 }
 
-/// Card size, with the Details list at its small end: drag to the left end and
-/// it snaps to Details, drag right and it's cards again at that size.
+/// The Library's card size, with the Details list at its small end.
 class _SizeSlider extends ConsumerWidget {
   const _SizeSlider();
 
-  static const _details = 170.0;
-  static const _snap = 195.0;
-  static const _minCard = 210.0;
-  static const _maxCard = 360.0;
-
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final details = ref.watch(libraryDetailsProvider);
-    final width = ref.watch(settingsProvider.select((s) => s.cardWidth)).clamp(_minCard, _maxCard);
-    return Tooltip(
-      message: details ? 'Details. Drag right for cards' : 'Card size. Drag to the left end for Details',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.view_list_outlined, size: 16, color: details ? AppColors.accent : AppColors.textMuted),
-          SizedBox(
-            width: 128,
-            child: VpSlider(
-              value: details ? _details : width,
-              min: _details,
-              max: _maxCard,
-              activeColor: AppColors.accent,
-              inactiveColor: AppColors.border,
-              label: 'Card size',
-              semanticFormatter: (v) => v < _snap ? 'Details' : 'Card size ${v.round()}',
-              onChanged: (v) {
-                final toDetails = v < _snap;
-                if (toDetails != details) ref.read(libraryDetailsProvider.notifier).state = toDetails;
-                if (!toDetails) ref.read(settingsProvider.notifier).setCardWidth(v.clamp(_minCard, _maxCard));
-              },
-            ),
-          ),
-          Icon(Icons.grid_view_rounded, size: 16, color: details ? AppColors.textMuted : AppColors.accent),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context, WidgetRef ref) => VpSizeSlider(
+        details: ref.watch(libraryDetailsProvider),
+        width: ref.watch(settingsProvider.select((s) => s.cardWidth)),
+        onDetails: (v) => ref.read(libraryDetailsProvider.notifier).state = v,
+        onWidth: ref.read(settingsProvider.notifier).setCardWidth,
+      );
 }
 
 // ── Cards ─────────────────────────────────────────────────────────────────────
