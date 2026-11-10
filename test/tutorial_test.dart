@@ -1,8 +1,10 @@
+import 'dart:io';
 // The first-run tour: sample data only while it runs, and the real library
 // and Feed back exactly as they were afterwards.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:vn_pathfinder/models/feed_item.dart';
 import 'package:vn_pathfinder/models/game_group.dart';
 import 'package:vn_pathfinder/providers/feed_provider.dart';
@@ -55,15 +57,23 @@ void main() {
     expect(c.read(tutorialProvider), isNull);
   });
 
-  test('a scan asked for during the tour waits, and never replaces the samples', () async {
-    final c = ProviderContainer(overrides: _overrides());
+  test('a scan during the tour runs, keeps the samples on screen, and shows when the tour ends', () async {
+    final lib = Directory.systemTemp.createTempSync('vnp_tour');
+    addTearDown(() => lib.deleteSync(recursive: true));
+    final game = Directory(p.join(lib.path, 'Scanned-1.0-pc', 'game'))..createSync(recursive: true);
+    File(p.join(game.path, 'script.rpy')).writeAsStringSync('label start:\n    return\n');
+
+    final c = ProviderContainer(overrides: _overrides(libraryDir: lib.path));
     addTearDown(c.dispose);
     final tour = c.read(tutorialProvider.notifier)..start();
     final samples = c.read(libraryProvider).groups;
 
     await c.read(libraryProvider.notifier).scan();
-    expect(c.read(libraryProvider).groups, same(samples));
+    expect(c.read(libraryProvider).groups, same(samples), reason: 'the tour keeps its samples');
+    expect(c.read(realGameCountProvider), 1);
+
     tour.finish();
+    expect(c.read(libraryProvider).groups.map((g) => g.baseKey), ['scanned']);
   });
 
   test('each step opens its tab, and Back and Next move through them', () {
@@ -96,12 +106,13 @@ void main() {
   testWidgets('starts by itself on a first run, and Skip ends it', (t) async {
     final c = await pumpOverlay(t);
     expect(find.text('Welcome to VN Pathfinder'), findsOneWidget);
-    await t.tap(find.text('Next'));
+    expect(find.text('Choose library folder'), findsOneWidget);
+    await t.tap(find.text('Tour first'));
     await t.pump();
-    expect(find.text('Library'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
     await t.tap(find.text('Skip tour'));
     await t.pump();
-    expect(find.text('Library'), findsNothing);
+    expect(find.text('Home'), findsNothing);
     expect(c.read(settingsProvider).tutorialDone, isTrue);
     expect(c.read(libraryProvider).groups, same(_real));
   });

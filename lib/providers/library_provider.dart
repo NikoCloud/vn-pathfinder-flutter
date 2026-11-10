@@ -271,10 +271,9 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   /// The real list, set aside while the tour shows sample games.
   LibraryState? _real;
-  bool _scanWanted = false;
 
   /// Shows [groups] in place of the library until [endSample]. Nothing is
-  /// written, and a scan that comes in meanwhile waits.
+  /// written; a scan meanwhile updates the real library set aside.
   void showSample(List<GameGroup> groups) {
     _real ??= state;
     state = LibraryState(groups: groups);
@@ -285,10 +284,6 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (real == null) return;
     _real = null;
     state = real;
-    if (_scanWanted) {
-      _scanWanted = false;
-      scan();
-    }
   }
 
   /// The library cache: loaded once, replaced after every full scan.
@@ -302,10 +297,6 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   bool _rescan = false;
 
   Future<void> scan() async {
-    if (_real != null) {
-      _scanWanted = true;
-      return;
-    }
     final running = _running;
     if (running != null) {
       // Picked up by the loop below once the current pass ends.
@@ -327,20 +318,28 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     do {
       _rescan = false;
       await _scanOnce();
-    } while (_rescan && _real == null);
-    if (_rescan) {
-      _rescan = false;
-      _scanWanted = true;
+    } while (_rescan);
+  }
+
+  /// Changes the real library: the one on screen, or the one set aside while
+  /// the tour shows sample games. Scans run during the tour (#27) and land
+  /// in the real list, which appears when the tour ends.
+  void _update(LibraryState Function(LibraryState) change) {
+    final real = _real;
+    if (real != null) {
+      _real = change(real);
+    } else {
+      state = change(state);
     }
   }
 
   Future<void> _scanOnce() async {
     final dirs = _ref.read(libraryDirsProvider);
     if (dirs.isEmpty) {
-      state = state.copyWith(error: 'No library directory set. Open Settings to configure.');
+      _update((s) => s.copyWith(error: 'No library directory set. Open Settings to configure.'));
       return;
     }
-    state = state.copyWith(loading: true, error: null);
+    _update((s) => s.copyWith(loading: true, error: null));
     try {
       final ud = _ref.read(userDataProvider);
       final libraryDirs = [for (final d in dirs) Directory(d)];
@@ -353,11 +352,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         _quickDone = true;
         final quick = await ScannerService.scanCached(libraryDirs, cache, merges: ud.gameMerges);
         ScannerService.autoDetectPatches(quick.groups, ud);
-        if (_real != null) {
-          _real = _real!.copyWith(groups: quick.groups);
-        } else if (quick.groups.isNotEmpty) {
-          state = state.copyWith(groups: quick.groups);
-        }
+        if (quick.groups.isNotEmpty) _update((s) => s.copyWith(groups: quick.groups));
       }
       _quickDone = true;
 
@@ -368,23 +363,21 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           cache: cache, onProgress: (prog) {
         // About ten updates a second is plenty for a progress bar.
         final now = DateTime.now();
-        if (now.difference(lastShown).inMilliseconds < 100 || _real != null) return;
+        if (now.difference(lastShown).inMilliseconds < 100) return;
         lastShown = now;
-        state = state.copyWith(progress: prog);
+        _update((s) => s.copyWith(progress: prog));
+        _ref.read(scanProgressProvider.notifier).state = prog;
       });
       _cache = result.cache;
       LibraryCache.save(result.cache);
       final groups = result.groups;
       ScannerService.autoDetectPatches(groups, ud);
-      // A scan that was already running when the tour began lands in the
-      // real list, not over the samples.
-      if (_real != null) {
-        _real = _real!.copyWith(groups: groups, loading: false);
-        return;
-      }
-      state = state.copyWith(groups: groups, loading: false, clearProgress: true);
+      _update((s) => s.copyWith(groups: groups, loading: false, clearProgress: true));
+      _ref.read(scanProgressProvider.notifier).state = null;
+      _ref.read(realGameCountProvider.notifier).state = groups.where((g) => g.versions.isNotEmpty).length;
     } catch (e) {
-      state = state.copyWith(loading: false, error: e.toString(), clearProgress: true);
+      _update((s) => s.copyWith(loading: false, error: e.toString(), clearProgress: true));
+      _ref.read(scanProgressProvider.notifier).state = null;
     }
   }
 
@@ -393,6 +386,12 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   void clearSelection() => state = state.copyWith(clearSelection: true);
 }
+
+/// The running scan's progress, seen even while the tour shows sample games.
+final scanProgressProvider = StateProvider<ScanProgress?>((ref) => null);
+
+/// Games found by the last full scan, for the tour's "your library is ready".
+final realGameCountProvider = StateProvider<int?>((ref) => null);
 
 final libraryProvider =
     StateNotifierProvider<LibraryNotifier, LibraryState>(

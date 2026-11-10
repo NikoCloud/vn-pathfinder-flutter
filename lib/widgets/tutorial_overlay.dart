@@ -7,7 +7,8 @@ import '../providers/shell_provider.dart';
 import '../services/tutorial_samples.dart';
 import '../theme.dart';
 import 'common/kit.dart';
-import 'modals/settings_modal.dart';
+import '../services/folder_picker.dart';
+import '../services/scanner_service.dart' show ScanStage;
 
 typedef TutorialStep = ({AppTab tab, String title, String body});
 
@@ -15,15 +16,21 @@ const tutorialSteps = <TutorialStep>[
   (
     tab: AppTab.home,
     title: 'Welcome to VN Pathfinder',
-    body: "Here's a quick tour with made-up games. They're only here for the tour, nothing you see is saved, "
-        'and they disappear when it ends.',
+    body: 'Choose the folder that holds your games, and the app reads it while you take this tour. The games you '
+        'see now are made up, only here for the tour, and they disappear when it ends.',
+  ),
+  (
+    tab: AppTab.home,
+    title: 'Home',
+    body: 'What to play next: the game you were last in, new versions of games you play, and games ready to start. '
+        "It's worked out from your saves, so it's right the moment the app opens.",
   ),
   (
     tab: AppTab.library,
     title: 'Library',
-    body: 'Every game in your library folder, with all its versions kept together. Right-click a game for Fetch '
-        'Metadata, its saves folder and more. The slider in the top bar sets the card size, and dragging it to the '
-        'left end switches to the Details list.',
+    body: r'Every game in your library folders, with all its versions kept together. Games inside folders, like '
+        r'Played\Developer\Game, are found too. The slider in the top bar sets the card size; drag it to the left end '
+        'for a list.',
   ),
   (
     tab: AppTab.library,
@@ -32,21 +39,47 @@ const tutorialSteps = <TutorialStep>[
         "set it yourself from a game's right-click menu, and the views along the top filter by it.",
   ),
   (
-    tab: AppTab.feed,
-    title: 'Feed',
-    body: "New releases and updates from the sites you choose, in time order. It's off until you turn it on in "
-        'Settings, and nothing goes online while Lockdown Mode is on.',
+    tab: AppTab.library,
+    title: 'Fetch Metadata and Merge',
+    body: 'Right-click a game for Fetch Metadata, which finds its cover, description and tags. Nothing goes online '
+        'while Lockdown is on. If one game shows as two, right-click either one and choose Merge into Another Game '
+        'to join their versions.',
   ),
   (
     tab: AppTab.archive,
     title: 'Archive',
-    body: 'The archives in your library folder, and the downloads you start from the Feed. Extract them here, and '
-        'follow your downloads at the top.',
+    body: 'The archives in your library folders and your downloads. Extract a game, or Assign a mod or patch to one; '
+        'Keep the original copies it instead of moving it, so one file can go to several games.',
+  ),
+  (
+    tab: AppTab.archive,
+    title: 'Clear, Delete and Clean Up',
+    body: 'Clear takes an archive off this screen and leaves the file; Hidden brings it back. Clear & Delete deletes '
+        'only the archive file. Archive never deletes a game folder. Clean Up lists archives of games you already '
+        'have, to free space.',
+  ),
+  (
+    tab: AppTab.feed,
+    title: 'Feed',
+    body: 'New releases and updates from the sites you choose, in time order. It needs to go online, so it stays '
+        'unavailable while Lockdown is on, and it starts off until you turn it on in Settings.',
+  ),
+  (
+    tab: AppTab.stats,
+    title: 'Stats',
+    body: 'Your library in numbers: games by status and engine, what you play most, and play time by week.',
+  ),
+  (
+    tab: AppTab.home,
+    title: 'In the title bar',
+    body: 'The eye hides every cover at once (Ctrl+Shift+D), for when someone might see your screen. Lockdown shows '
+        "whether the app may go online; click it to switch. Rescan the library from the Library's top bar after "
+        'changing folders outside the app.',
   ),
   (
     tab: AppTab.home,
     title: "You're ready",
-    body: 'Choose the folder that holds your games to get started. You can take this tour again from Help (F1).',
+    body: 'Take this tour again any time from Help (F1).',
   ),
 ];
 
@@ -108,6 +141,19 @@ class _TutorialOverlayState extends ConsumerState<TutorialOverlay> {
     });
   }
 
+  /// Picks the library folder and moves on: the app reads it while the tour
+  /// runs, and the real library appears when the tour ends.
+  Future<void> _chooseFolder(BuildContext context) async {
+    final path = await pickFolder('Choose the folder that holds your games');
+    if (path == null || !mounted) return;
+    final problem = ref.read(settingsProvider.notifier).addLibraryDir(path);
+    if (problem != null) {
+      if (context.mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(problem)));
+      return;
+    }
+    if (ref.read(tutorialProvider) == 0) ref.read(tutorialProvider.notifier).next();
+  }
+
   @override
   Widget build(BuildContext context) {
     final step = ref.watch(tutorialProvider);
@@ -115,6 +161,7 @@ class _TutorialOverlayState extends ConsumerState<TutorialOverlay> {
     final tour = ref.read(tutorialProvider.notifier);
     final s = tutorialSteps[step];
     final last = step == tutorialSteps.length - 1;
+    final hasFolder = ref.watch(libraryDirsProvider).isNotEmpty;
 
     return Stack(
       children: [
@@ -141,37 +188,87 @@ class _TutorialOverlayState extends ConsumerState<TutorialOverlay> {
                   Text(s.title, style: AppText.heading()),
                   const SizedBox(height: 8),
                   Text(s.body, style: AppText.body(color: AppColors.textSecondary)),
+                  const _ScanNote(),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      if (!last) VpButton(label: 'Skip tour', tone: VpTone.quiet, small: true, onTap: tour.finish),
-                      const Spacer(),
-                      if (step > 0) ...[
-                        VpButton(label: 'Back', tone: VpTone.quiet, small: true, onTap: tour.back),
-                        const SizedBox(width: 6),
+                  // Navigation on one line, Skip on its own below, so the
+                  // first card's three buttons fit at any text size.
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        if (step > 0) VpButton(label: 'Back', tone: VpTone.quiet, small: true, onTap: tour.back),
+                        if (!hasFolder && (step == 0 || last))
+                          VpButton(
+                            label: 'Choose library folder',
+                            tone: VpTone.primary,
+                            small: true,
+                            onTap: () => _chooseFolder(context),
+                          ),
+                        if (last)
+                          VpButton(
+                              label: 'Done',
+                              tone: hasFolder ? VpTone.primary : VpTone.quiet,
+                              small: true,
+                              onTap: tour.finish)
+                        else
+                          VpButton(
+                            label: step == 0 && !hasFolder ? 'Tour first' : 'Next',
+                            tone: step == 0 && !hasFolder ? VpTone.quiet : VpTone.primary,
+                            small: true,
+                            onTap: tour.next,
+                          ),
                       ],
-                      if (last) ...[
-                        VpButton(label: 'Done', tone: VpTone.quiet, small: true, onTap: tour.finish),
-                        const SizedBox(width: 6),
-                        VpButton(
-                          label: 'Choose library folder',
-                          tone: VpTone.primary,
-                          small: true,
-                          onTap: () {
-                            tour.finish();
-                            showSettingsModal(context);
-                          },
-                        ),
-                      ] else
-                        VpButton(label: 'Next', tone: VpTone.primary, small: true, onTap: tour.next),
-                    ],
+                    ),
                   ),
+                  if (!last) ...[
+                    const SizedBox(height: 4),
+                    VpButton(label: 'Skip tour', tone: VpTone.quiet, small: true, onTap: tour.finish),
+                  ],
                 ],
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The real library's progress, read while the tour shows sample games.
+class _ScanNote extends ConsumerWidget {
+  const _ScanNote();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(libraryDirsProvider).isEmpty) return const SizedBox.shrink();
+    final prog = ref.watch(scanProgressProvider);
+    final count = ref.watch(realGameCountProvider);
+    final String text;
+    if (prog != null) {
+      text = prog.stage == ScanStage.saves
+          ? 'Reading your library in the background · ${prog.done} of ${prog.total}'
+          : 'Finding your games in the background · ${prog.found} found';
+    } else if (count != null) {
+      text = 'Your library is ready: $count game${count == 1 ? '' : 's'}.';
+    } else {
+      text = 'Reading your library in the background…';
+    }
+    final working = prog != null || count == null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          if (working)
+            SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: AppColors.accent))
+          else
+            Icon(Icons.check_circle_outline, size: 14, color: AppColors.accent),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: AppText.ui(fontSize: 12, color: AppColors.textMuted))),
+        ],
+      ),
     );
   }
 }
