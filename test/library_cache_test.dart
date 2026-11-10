@@ -77,8 +77,9 @@ void main() {
 
   test('the cache file round-trips and ignores a damaged file', () {
     final f = File(p.join(root.path, 'library_cache.json'));
+    final before = LibraryCache.fileForTesting;
     LibraryCache.fileForTesting = f;
-    addTearDown(() => LibraryCache.fileForTesting = null);
+    addTearDown(() => LibraryCache.fileForTesting = before);
     LibraryCache.save({'X': {'engine': 'unity'}});
     expect((LibraryCache.load()['X'] as Map)['engine'], 'unity');
     f.writeAsStringSync('{not json');

@@ -13,6 +13,7 @@ class LibraryCache {
   static File? _fileOverride;
 
   /// For tests.
+  static File? get fileForTesting => _fileOverride;
   static set fileForTesting(File? f) => _fileOverride = f;
 
   static File get _file =>
