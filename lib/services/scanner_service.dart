@@ -413,7 +413,12 @@ void _addScreenshots(GameGroup g, List<File> paths) {
 /// Reads one game folder. [engine] is passed when the library search has
 /// already recognised it; otherwise it's detected here, with a folder of
 /// programs and no known engine accepted (a top folder or one picked by hand).
-GameVersion? scanGameVersion(Directory dir, {GameEngine? engine}) {
+/// [cached] is this folder's entry from the library cache, if any: its save
+/// info is reused when both save folders' timestamps are unchanged (Ren'Py
+/// writes every save as a new file renamed into place, which changes the
+/// folder's time). [onCache] receives the entry to keep for next time.
+GameVersion? scanGameVersion(Directory dir,
+    {GameEngine? engine, Map? cached, void Function(Map<String, dynamic> entry)? onCache}) {
   engine ??= detectEngine(dir, allowOther: true);
   if (engine == null) return null;
   final renpy = engine == GameEngine.renpy;
@@ -449,7 +454,7 @@ GameVersion? scanGameVersion(Directory dir, {GameEngine? engine}) {
     metadata: loadGameMetadata(dir),
     isRenpy: renpy,
     engine: engine,
-    saves: _readSaves(localSaves, appdataSaves),
+    saves: _savesWithCache(localSaves, appdataSaves, engine, cached, onCache),
     hasVnpf: Directory(p.join(dir.path, _metadataDir)).existsSync(),
   );
 }
@@ -463,6 +468,40 @@ GameVersion? scanGameVersion(Directory dir, {GameEngine? engine}) {
 ///   • Ren'Py rotates autosaves so auto-1 is always the newest, and rewrites
 ///     `persistent` whenever the game runs — their times stand in for "last
 ///     played", and auto-1's own record gives the game version last played.
+/// A folder's modified time in ms, or null when it doesn't exist.
+int? _folderTime(Directory? d) {
+  if (d == null) return null;
+  try {
+    final st = d.statSync();
+    return st.type == FileSystemEntityType.notFound ? null : st.modified.millisecondsSinceEpoch;
+  } catch (_) {
+    return null;
+  }
+}
+
+SaveInfo _savesWithCache(Directory local, Directory? appdata, GameEngine engine, Map? cached,
+    void Function(Map<String, dynamic>)? onCache) {
+  final localTime = _folderTime(local), appdataTime = _folderTime(appdata);
+  SaveInfo? saves;
+  // Reused only when everything matches; any doubt means a full read.
+  if (cached != null &&
+      cached['saves'] is Map &&
+      cached['local_t'] == localTime &&
+      cached['appdata_t'] == appdataTime &&
+      cached['appdata'] == appdata?.path) {
+    saves = SaveInfo.fromJson(cached['saves'] as Map);
+  }
+  saves ??= _readSaves(local, appdata);
+  onCache?.call({
+    'engine': engine.name,
+    'local_t': localTime,
+    'appdata_t': appdataTime,
+    'appdata': appdata?.path,
+    'saves': saves.toJson(),
+  });
+  return saves;
+}
+
 SaveInfo _readSaves(Directory local, Directory? appdata) {
   final localNames = _listNames(local);
   final hasLocalSaves = localNames.any((n) => n.endsWith('.save'));
@@ -635,14 +674,46 @@ class ScannerService {
   /// Folders in [noSubfolders] are searched at their top level only; every
   /// other folder is also searched in its subfolders (#13).
   static Future<List<GameGroup>> scanAll(List<Directory> libraryDirs,
-      {Map<String, String> merges = const {}, Set<String> noSubfolders = const {}}) {
-    return Isolate.run(() => _scanAllSync(libraryDirs, merges, noSubfolders));
+      {Map<String, String> merges = const {}, Set<String> noSubfolders = const {}}) async =>
+      (await scanLibrary(libraryDirs, merges: merges, noSubfolders: noSubfolders)).groups;
+
+  /// The full search. [cache] is the library cache from the last scan (game
+  /// folder path → entry); the result carries the new one.
+  static Future<ScanResult> scanLibrary(List<Directory> libraryDirs,
+      {Map<String, String> merges = const {},
+      Set<String> noSubfolders = const {},
+      Map<String, dynamic> cache = const {}}) {
+    return Isolate.run(() => _scanAllSync(libraryDirs, merges, noSubfolders, cache));
   }
 
-  static List<GameGroup> _scanAllSync(
-      List<Directory> libraryDirs, Map<String, String> merges, Set<String> noSubfolders) {
+  /// The quick pass for a normal start: only the games the cache knows,
+  /// with saves reread where their timestamps changed. No searching, no
+  /// archives; the full search follows and catches anything new or moved.
+  static Future<ScanResult> scanCached(List<Directory> libraryDirs, Map<String, dynamic> cache,
+      {Map<String, String> merges = const {}}) {
+    return Isolate.run(() {
+      final versions = <GameVersion>[];
+      final next = <String, dynamic>{};
+      final roots = [for (final d in libraryDirs) d.path];
+      for (final entry in cache.entries) {
+        final path = entry.key;
+        if (!roots.any((r) => p.isWithin(r, path))) continue;
+        final dir = Directory(path);
+        if (!dir.existsSync()) continue;
+        final e = entry.value as Map;
+        final engine = GameEngine.values.where((g) => g.name == e['engine']).firstOrNull;
+        final v = scanGameVersion(dir, engine: engine, cached: e, onCache: (c) => next[path] = c);
+        if (v != null) versions.add(v);
+      }
+      return ScanResult(_buildGroups(versions, const [], merges), next);
+    });
+  }
+
+  static ScanResult _scanAllSync(List<Directory> libraryDirs, Map<String, String> merges,
+      Set<String> noSubfolders, Map<String, dynamic> cache) {
     final versions = <GameVersion>[];
     final archives = <ArchiveItem>[];
+    final next = <String, dynamic>{};
 
     for (final dir in libraryDirs) {
       // A folder that isn't reachable right now is skipped; its games come
@@ -650,7 +721,8 @@ class ScannerService {
       if (!dir.existsSync()) continue;
       final found = searchLibrary(dir, subfolders: !noSubfolders.contains(dir.path));
       for (final (folder, engine) in found.games) {
-        final v = scanGameVersion(folder, engine: engine);
+        final v = scanGameVersion(folder,
+            engine: engine, cached: cache[folder.path] as Map?, onCache: (c) => next[folder.path] = c);
         if (v != null) versions.add(v);
       }
       for (final f in found.archives) {
@@ -658,7 +730,7 @@ class ScannerService {
       }
     }
 
-    return _buildGroups(versions, archives, merges);
+    return ScanResult(_buildGroups(versions, archives, merges), next);
   }
 
   static List<GameGroup> _buildGroups(
@@ -797,4 +869,11 @@ class ScannerService {
 
     return orphans;
   }
+}
+
+/// A scan's games and the library cache to keep for the next start.
+class ScanResult {
+  final List<GameGroup> groups;
+  final Map<String, dynamic> cache;
+  const ScanResult(this.groups, this.cache);
 }

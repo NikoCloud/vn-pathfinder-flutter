@@ -30,6 +30,24 @@ class SaveInfo {
     this.newestSaveVersion,
     this.newestSaveAt,
   });
+
+  Map<String, dynamic> toJson() => {
+        if (lastSaveAt != null) 'last': lastSaveAt!.toIso8601String(),
+        'local': hasLocalSaves,
+        'manual': manualSaves,
+        'auto': autoSaves,
+        if (newestSaveVersion != null) 'ver': newestSaveVersion,
+        if (newestSaveAt != null) 'newest': newestSaveAt!.toIso8601String(),
+      };
+
+  factory SaveInfo.fromJson(Map json) => SaveInfo(
+        lastSaveAt: DateTime.tryParse('${json['last'] ?? ''}'),
+        hasLocalSaves: json['local'] == true,
+        manualSaves: (json['manual'] as num?)?.toInt() ?? 0,
+        autoSaves: (json['auto'] as num?)?.toInt() ?? 0,
+        newestSaveVersion: json['ver'] as String?,
+        newestSaveAt: DateTime.tryParse('${json['newest'] ?? ''}'),
+      );
 }
 
 class GameVersion {

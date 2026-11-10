@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
 import '../models/game_status.dart';
 import '../models/user_data.dart';
+import '../services/library_cache.dart';
 import '../services/scanner_service.dart';
 import 'notification_provider.dart';
 import 'settings_provider.dart';
@@ -283,6 +284,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }
   }
 
+  /// The library cache: loaded once, replaced after every full scan.
+  Map<String, dynamic>? _cache;
+  bool _quickDone = false;
+
   /// The scan in progress, if any. Only one runs at a time: adding folders
   /// quickly used to start overlapping scans, and whichever finished last won,
   /// even when it didn't include the newest folder.
@@ -331,8 +336,31 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(loading: true, error: null);
     try {
       final ud = _ref.read(userDataProvider);
-      final groups = await ScannerService.scanAll([for (final d in dirs) Directory(d)],
-          merges: ud.gameMerges, noSubfolders: _ref.read(settingsProvider).noSubfolderDirs.toSet());
+      final libraryDirs = [for (final d in dirs) Directory(d)];
+      final cache = _cache ??= LibraryCache.load();
+
+      // The first scan of a session with a cache: show the games it knows
+      // first (saves reread where they changed), then search for the rest.
+      // `loading` stays on, so update checks wait for the full search.
+      if (!_quickDone && cache.isNotEmpty) {
+        _quickDone = true;
+        final quick = await ScannerService.scanCached(libraryDirs, cache, merges: ud.gameMerges);
+        ScannerService.autoDetectPatches(quick.groups, ud);
+        if (_real != null) {
+          _real = _real!.copyWith(groups: quick.groups);
+        } else if (quick.groups.isNotEmpty) {
+          state = state.copyWith(groups: quick.groups);
+        }
+      }
+      _quickDone = true;
+
+      final result = await ScannerService.scanLibrary(libraryDirs,
+          merges: ud.gameMerges,
+          noSubfolders: _ref.read(settingsProvider).noSubfolderDirs.toSet(),
+          cache: cache);
+      _cache = result.cache;
+      LibraryCache.save(result.cache);
+      final groups = result.groups;
       ScannerService.autoDetectPatches(groups, ud);
       // A scan that was already running when the tour began lands in the
       // real list, not over the samples.
