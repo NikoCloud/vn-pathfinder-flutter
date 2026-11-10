@@ -66,6 +66,15 @@ void main() {
     expect(quick.groups, isEmpty);
   });
 
+  test('a scan with progress runs on its own isolate and reports both stages', () async {
+    _game('Cat/Game-1.0-pc');
+    _game('Other-0.5-pc');
+    final seen = <ScanStage>{};
+    final r = await ScannerService.scanLibrary([root], onProgress: (prog) => seen.add(prog.stage));
+    expect(r.groups.length, 2);
+    expect(seen, {ScanStage.finding, ScanStage.saves});
+  });
+
   test('the cache file round-trips and ignores a damaged file', () {
     final f = File(p.join(root.path, 'library_cache.json'));
     LibraryCache.fileForTesting = f;

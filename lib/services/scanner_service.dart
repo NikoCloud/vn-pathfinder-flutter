@@ -689,6 +689,18 @@ class ScannerService {
     return _withProgress((send) => _scanAllSync(libraryDirs, merges, noSubfolders, cache, send), onProgress);
   }
 
+  /// The isolate's entry point, made here so it carries only [work]: a
+  /// closure made inside [_withProgress] would share its scope, Completer
+  /// included, which can't be sent to another isolate.
+  static void Function(SendPort) _isolateEntry(ScanResult Function(void Function(ScanProgress)) work) =>
+      (SendPort out) {
+        try {
+          out.send(work(out.send));
+        } catch (e, st) {
+          out.send(['$e', '$st']);
+        }
+      };
+
   /// Runs [work] on a background isolate, passing its progress back.
   static Future<ScanResult> _withProgress(
       ScanResult Function(void Function(ScanProgress)) work, void Function(ScanProgress) onProgress) async {
@@ -705,15 +717,8 @@ class ScannerService {
         port.close();
       }
     });
-    final send = port.sendPort;
     try {
-      await Isolate.spawn((SendPort out) {
-        try {
-          out.send(work(out.send));
-        } catch (e, st) {
-          out.send(['$e', '$st']);
-        }
-      }, send);
+      await Isolate.spawn(_isolateEntry(work), port.sendPort);
     } catch (e) {
       port.close();
       rethrow;
