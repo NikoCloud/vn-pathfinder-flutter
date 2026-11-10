@@ -10,14 +10,11 @@ import 'package:path/path.dart' as p;
 class LibraryCache {
   LibraryCache._();
 
-  static File? _fileOverride;
-
-  /// For tests.
-  static File? get fileForTesting => _fileOverride;
-  static set fileForTesting(File? f) => _fileOverride = f;
+  /// For tests: where the cache goes instead of AppData.
+  static File? fileForTesting;
 
   static File get _file =>
-      _fileOverride ?? File(p.join(Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'library_cache.json'));
+      fileForTesting ?? File(p.join(Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'library_cache.json'));
 
   static const _version = 1;
 
