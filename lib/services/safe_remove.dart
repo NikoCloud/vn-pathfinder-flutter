@@ -53,5 +53,18 @@ void checkNotInUse(String folder) {
   } on FileSystemException {
     throw FileSystemException('A file in it is in use. Close the game and try again.', folder);
   }
-  Directory(temp).renameSync(folder);
+  // Put it back. Antivirus or Explorer can hold the folder for a moment, so
+  // try a few times before giving up, and then say where it is.
+  for (var attempt = 0;; attempt++) {
+    try {
+      Directory(temp).renameSync(folder);
+      return;
+    } on FileSystemException {
+      if (attempt >= 9) {
+        throw FileSystemException(
+            'The folder was left as ${p.basename(temp)}. Rename it back to ${p.basename(folder)}.', temp);
+      }
+      sleep(const Duration(milliseconds: 200));
+    }
+  }
 }

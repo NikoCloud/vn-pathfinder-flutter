@@ -120,10 +120,19 @@ Future<MergePlan> planMerge(DuplicateSet set) async {
   return (bytes, files, move, conflicts);
 }
 
-/// Engines whose saves are in [inFolderSaveDirs] or outside the game folder.
+/// Engines whose in-folder save places are known ([inFolderSaveDirs]).
+/// Everything else, Unity, Unreal and Godot included (they usually save in
+/// AppData, but not every game does), is shown as unchecked.
 bool _knownSaves(GameEngine? e) => switch (e) {
-      null || GameEngine.html || GameEngine.flash || GameEngine.other => false,
-      _ => true,
+      GameEngine.renpy ||
+      GameEngine.renpyMac ||
+      GameEngine.rpgmMv ||
+      GameEngine.rpgmMz ||
+      GameEngine.rpgmVx ||
+      GameEngine.wolf ||
+      GameEngine.kirikiri =>
+        true,
+      _ => false,
     };
 
 /// Merges per [plan]: copies saves into the kept copy (the newer file wins a

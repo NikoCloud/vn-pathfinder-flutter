@@ -295,9 +295,10 @@ class _GetSheetState extends ConsumerState<_GetSheet> {
                   })),
         const SizedBox(height: 4),
         Text(
-          'Removing it deletes that folder once the new version is in. Saves only it has move to the new version '
-          "first, and Ren'Py also keeps its saves in AppData. Keeping its download puts the archive aside, so the "
-          'game page can restore that version later.',
+          'Removing it deletes that folder once the new version is in. Its saves move to the new version first '
+          "for Ren'Py, which also keeps them in AppData, and for engines whose save folders the app knows; "
+          "other games' saves inside the folder go with it. Keeping its download puts the archive aside, so "
+          'the game page can restore that version later.',
           style: AppText.meta(color: AppColors.textMuted),
         ),
       ],

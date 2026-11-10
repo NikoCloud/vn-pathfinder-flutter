@@ -156,17 +156,18 @@ List<String> savesIn(String folder) {
   return out;
 }
 
-/// Copies saves only [oldFolder] has, or newer ones, into the same place in
-/// [newFolder] before the old folder is removed (see [inFolderSaveDirs]).
-/// Ren'Py also keeps every save in AppData; this covers saves kept only
-/// inside the game folder. Throws if a save can't be copied, so the caller
-/// keeps the old folder.
+/// Copies the saves in [oldFolder] into the same place in [newFolder]
+/// before the old folder is removed (see [inFolderSaveDirs]). The old
+/// folder's saves always win: the new one was unpacked moments ago, so a
+/// save in it came with the download (an RPG Maker slot index left in by the
+/// developer, say), not from your play. Ren'Py also keeps every save in
+/// AppData; this covers saves kept only inside the game folder. Throws if a
+/// save can't be copied, so the caller keeps the old folder.
 void carrySaves(String oldFolder, String newFolder) {
   for (final rel in savesIn(oldFolder)) {
     final f = File(p.join(oldFolder, rel));
     final dest = File(p.join(newFolder, rel));
     final time = f.lastModifiedSync();
-    if (dest.existsSync() && !time.isAfter(dest.lastModifiedSync())) continue;
     dest.parent.createSync(recursive: true);
     f.copySync(dest.path);
     dest.setLastModifiedSync(time);

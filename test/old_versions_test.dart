@@ -38,7 +38,7 @@ void main() {
     expect(keptDownloads('game', [root.path]).length, 2);
   });
 
-  test('saves only the old folder has, or newer ones, move to the new version', () {
+  test("the old folder's saves move to the new version and win over any that came with the download", () {
     final oldSaves = Directory(p.join(root.path, 'Old', 'game', 'saves'))..createSync(recursive: true);
     final newSaves = Directory(p.join(root.path, 'New', 'game', 'saves'))..createSync(recursive: true);
     File(p.join(oldSaves.path, 'only-old.save')).writeAsStringSync('a');
@@ -50,6 +50,7 @@ void main() {
       ..setLastModifiedSync(DateTime(2026, 6, 1));
     carrySaves(p.join(root.path, 'Old'), p.join(root.path, 'New'));
     expect(File(p.join(newSaves.path, 'only-old.save')).existsSync(), isTrue);
-    expect(File(p.join(newSaves.path, 'both.save')).readAsStringSync(), 'new', reason: 'the newer save stays');
+    expect(File(p.join(newSaves.path, 'both.save')).readAsStringSync(), 'old',
+        reason: 'the new folder was just unpacked, so its copy came with the download');
   });
 }
