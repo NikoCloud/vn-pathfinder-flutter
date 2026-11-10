@@ -241,8 +241,7 @@ class ArchiveCard {
   String? get extractName {
     final name = nameHint.isNotEmpty ? nameHint : title;
     if (name.isEmpty || version.isEmpty) return null;
-    // Titles can hold characters Windows won't take in a folder name.
-    return '$name-$version'.replaceAll(RegExp(r'[<>:"/\\|?*]'), '').replaceAll(RegExp(r'[. ]+$'), '').trim();
+    return readableFolderName(name, version);
   }
 
   /// Hands the data to an extracted game folder. A game that arrived with its

@@ -105,6 +105,38 @@ const _genericFolderNames = {
 ///     higher one if they're equally specific.
 /// Platform tags and junk after the version are dropped, so the result parses
 /// back cleanly: `<Title>-<version>`.
+/// `<title>-<version>` for a folder, but only in a form that [parseFolderName]
+/// reads back as that game and a version with the same number, so the new
+/// folder joins the game as its newest version. Download labels can be loose
+/// ("Chapter 3.6.5 Patched", "Ch.3.6.5"); those fall back to just the version
+/// number. Null when nothing reads back, so the caller can plan another name.
+String? readableFolderName(String title, String version) {
+  String clean(String s) =>
+      s.replaceAll(RegExp(r'[<>:"/\\|?*]'), '').replaceAll(RegExp(r'[. ]+$'), '').trim();
+  final titleKey = parseFolderName(clean(title)).$1;
+  if (titleKey.isEmpty) return null;
+  final number = RegExp(r'\d+(?:\.\d+)*[a-z]?', caseSensitive: false).firstMatch(version)?.group(0);
+  final pre = RegExp(r'\b(alpha|beta|rc\d*|demo|final)\b', caseSensitive: false).firstMatch(version)?.group(0);
+  // With a number, the folder uses just the number, plus a word that changes
+  // its order (Alpha, Beta, RC, Demo, Final), so the same version labelled
+  // differently by two sources gets one folder.
+  final candidates = number != null
+      ? [if (pre != null) ...['$number $pre', '$number-$pre', '$number$pre'], number]
+      : [version.trim(), version.trim().replaceAll(RegExp(r'\s+'), '-')];
+  for (final v in candidates) {
+    if (v.isEmpty) continue;
+    final name = clean('${title.trim()}-$v');
+    final (key, parsed, _) = parseFolderName(name);
+    // Alpha, Beta and RC change the order only if they survive the read-back.
+    // Demo and Final are kept as written; the parser doesn't rank them after
+    // a number yet (#17).
+    final ordered = pre != null && !RegExp(r'^(demo|final)$', caseSensitive: false).hasMatch(pre);
+    final keepsPre = !ordered || v == number || parsed.toLowerCase().contains(pre.toLowerCase());
+    if (key == titleKey && parsed.isNotEmpty && keepsPre && (number == null || parsed.contains(number))) return name;
+  }
+  return null;
+}
+
 String planExtractFolderName({
   required String archiveStem,
   String? innerFolder,
