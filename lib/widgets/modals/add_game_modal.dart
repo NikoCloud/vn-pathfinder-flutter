@@ -353,7 +353,9 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
       });
 
       try {
-        await ScannerService.extractArchive(_selectedFile!, targetDir);
+        await ScannerService.extractArchive(_selectedFile!, targetDir, onProgress: (pr) {
+          if (mounted && pr.bytesTotal > 0) setState(() => _extractionProgress = 0.1 + 0.85 * pr.bytesDone / pr.bytesTotal);
+        });
         setState(() => _extractionProgress = 1.0);
         
         // Now scan the extracted folder

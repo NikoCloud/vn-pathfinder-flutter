@@ -72,7 +72,8 @@ class _CrashReportDialogState extends State<CrashReportDialog> {
             Text(
               'A short report was saved on this PC. Nothing was sent anywhere. '
               'To help fix it, copy the report and paste it wherever you report problems. '
-              'Your folders and Windows user name are left out.',
+              'Your folders and Windows user name are left out, but the names of games the app was '
+              'working with stay in, so read it before posting it anywhere public.',
               style: AppText.ui(fontSize: 12, color: AppColors.textSecondary, height: 1.5),
             ),
             if (_showing) ...[

@@ -350,9 +350,14 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       // `loading` stays on, so update checks wait for the full search.
       if (!_quickDone && cache.isNotEmpty) {
         _quickDone = true;
-        final quick = await ScannerService.scanCached(libraryDirs, cache, merges: ud.gameMerges);
-        ScannerService.autoDetectPatches(quick.groups, ud);
-        if (quick.groups.isNotEmpty) _update((s) => s.copyWith(groups: quick.groups));
+        try {
+          final quick = await ScannerService.scanCached(libraryDirs, cache, merges: ud.gameMerges);
+          ScannerService.autoDetectPatches(quick.groups, ud);
+          if (quick.groups.isNotEmpty) _update((s) => s.copyWith(groups: quick.groups));
+        } catch (e) {
+          // Never let the cache stop a start: the full search below still runs.
+          debugPrint('Quick start from the cache failed: $e');
+        }
       }
       _quickDone = true;
 

@@ -6,6 +6,9 @@ import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
 import '../models/game_version.dart';
 import 'drive_info.dart';
+import 'game_detect.dart';
+import 'old_versions.dart';
+import 'safe_remove.dart';
 
 /// The same version of one game in more than one folder (#21), common when a
 /// library spans several drives. The copy in the highest library folder is
@@ -34,7 +37,9 @@ List<DuplicateSet> findDuplicates(List<GameGroup> groups, List<String> libraryDi
     final byVersion = <String, List<GameVersion>>{};
     for (final v in g.versions) {
       if (v.versionStr.isEmpty) continue;
-      byVersion.putIfAbsent(v.versionStr.toLowerCase(), () => []).add(v);
+      // Only folders with the same name: games joined with Merge into
+      // Another Game (Season 1 and Season 2, both 1.0) are not copies.
+      byVersion.putIfAbsent('${v.baseKey}\u0000${v.versionStr.toLowerCase()}', () => []).add(v);
     }
     for (final copies in byVersion.values) {
       if (copies.length < 2) continue;
@@ -60,7 +65,12 @@ class CopyPlan {
   final Map<String, bool> conflicts;
   final DriveInfo drive;
 
-  const CopyPlan(this.folder, this.bytes, this.files, this.savesToMove, this.conflicts, this.drive);
+  /// The engine isn't one whose save places are known, so saves kept inside
+  /// this folder can't be checked and go with it.
+  final bool savesUnchecked;
+
+  const CopyPlan(this.folder, this.bytes, this.files, this.savesToMove, this.conflicts, this.drive,
+      {this.savesUnchecked = false});
 }
 
 class MergePlan {
@@ -77,7 +87,8 @@ Future<MergePlan> planMerge(DuplicateSet set) async {
   for (final other in set.others) {
     final folder = other.folderPath.path;
     final (bytes, files, move, conflicts) = await Isolate.run(() => _inspect(folder, keep));
-    copies.add(CopyPlan(folder, bytes, files, move, conflicts, await driveInfoFor(folder)));
+    copies.add(CopyPlan(folder, bytes, files, move, conflicts, await driveInfoFor(folder),
+        savesUnchecked: !_knownSaves(other.engine)));
   }
   return MergePlan(set, copies);
 }
@@ -96,35 +107,46 @@ Future<MergePlan> planMerge(DuplicateSet set) async {
   } catch (_) {}
   final move = <String>[];
   final conflicts = <String, bool>{};
-  final from = Directory(p.join(folder, 'game', 'saves'));
-  if (from.existsSync()) {
-    for (final f in from.listSync().whereType<File>()) {
-      final name = p.basename(f.path);
-      final there = File(p.join(keep, 'game', 'saves', name));
+  for (final rel in savesIn(folder)) {
+    try {
+      final there = File(p.join(keep, rel));
       if (!there.existsSync()) {
-        move.add(name);
+        move.add(rel);
       } else {
-        conflicts[name] = f.lastModifiedSync().isAfter(there.lastModifiedSync());
+        conflicts[rel] = File(p.join(folder, rel)).lastModifiedSync().isAfter(there.lastModifiedSync());
       }
-    }
+    } catch (_) {}
   }
   return (bytes, files, move, conflicts);
 }
 
+/// Engines whose saves are in [inFolderSaveDirs] or outside the game folder.
+bool _knownSaves(GameEngine? e) => switch (e) {
+      null || GameEngine.html || GameEngine.flash || GameEngine.other => false,
+      _ => true,
+    };
+
 /// Merges per [plan]: copies saves into the kept copy (the newer file wins a
 /// conflict, with its time kept), then removes each other copy, to the Trash
 /// when [toTrash] and that copy's drive allows it, else permanently.
+///
+/// Removes nothing when the two copies turn out to be one folder reached by
+/// two paths, or when a file in the other copy is open.
 Future<void> runMerge(MergePlan plan, {required bool toTrash}) async {
-  final keepSaves = Directory(p.join(plan.set.keep.folderPath.path, 'game', 'saves'));
+  final keep = plan.set.keep.folderPath.path;
   for (final c in plan.copies) {
+    if (!Directory(keep).existsSync() || sameFolder(keep, c.folder)) {
+      throw FileSystemException('Both copies are the same folder, reached by two paths. Nothing was removed.', c.folder);
+    }
+    checkNotInUse(c.folder);
     final names = [...c.savesToMove, ...c.conflicts.entries.where((e) => e.value).map((e) => e.key)];
-    if (names.isNotEmpty) keepSaves.createSync(recursive: true);
-    for (final name in names) {
-      final src = File(p.join(c.folder, 'game', 'saves', name));
-      final dest = p.join(keepSaves.path, name);
+    for (final rel in names) {
+      final src = File(p.join(c.folder, rel));
+      final dest = File(p.join(keep, rel));
       final time = src.lastModifiedSync();
-      src.copySync(dest);
-      File(dest).setLastModifiedSync(time);
+      dest.parent.createSync(recursive: true);
+      src.copySync(dest.path);
+      dest.setLastModifiedSync(time);
     }
     if (toTrash && c.drive.trashSafe) {
       await moveToTrash(c.folder);

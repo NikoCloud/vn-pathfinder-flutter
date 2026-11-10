@@ -101,7 +101,7 @@ Future<void> moveToTrash(String folder) async {
     '-NonInteractive',
     '-Command',
     "Add-Type -AssemblyName Microsoft.VisualBasic; "
-        "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('$escaped', 'OnlyErrorDialogs', 'SendToRecycleBin')",
+        "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory('$escaped', 'AllDialogs', 'SendToRecycleBin')",
   ]);
   if (r.exitCode != 0 || Directory(folder).existsSync()) {
     throw FileSystemException('Could not move it to the Recycle Bin: ${'${r.stderr}'.trim()}', folder);

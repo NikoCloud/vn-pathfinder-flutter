@@ -82,7 +82,9 @@ class _LocalFetchPanelState extends ConsumerState<LocalFetchPanel> {
         }
         File(p.join(vnpf.path, 'cover${info.coverExt}')).writeAsBytesSync(info.cover!);
       }
-      if (info.icon != null) File(p.join(vnpf.path, 'icon.png')).writeAsBytesSync(info.icon!);
+      // The game's own icon goes with its cover; title or version alone
+      // changes no pictures.
+      if (_useCover && info.icon != null) File(p.join(vnpf.path, 'icon.png')).writeAsBytesSync(info.icon!);
       await ref.read(libraryProvider.notifier).scan();
       if (!mounted) return;
       ref.read(notificationProvider.notifier).success('Read from the game files');

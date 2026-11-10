@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -99,7 +101,7 @@ class _DuplicatesDialogState extends ConsumerState<DuplicatesDialog> {
         await runMerge(plan, toTrash: _toTrash);
         done++;
       } catch (e) {
-        failure = '$e';
+        failure = e is FileSystemException ? '${e.message} (${p.basename(e.path ?? '')})' : '$e';
       }
     }
     await ref.read(libraryProvider.notifier).scan();
@@ -270,7 +272,8 @@ class _PlanCard extends StatelessWidget {
                   if (c.savesToMove.isNotEmpty) '${c.savesToMove.length} save${c.savesToMove.length == 1 ? '' : 's'} move',
                   if (c.conflicts.isNotEmpty)
                     '${c.conflicts.length} in both: ${c.conflicts.values.where((v) => v).length} newer here, kept',
-                  if (c.savesToMove.isEmpty && c.conflicts.isEmpty) 'no saves of its own',
+                  if (c.savesToMove.isEmpty && c.conflicts.isEmpty)
+                    c.savesUnchecked ? "saves kept inside it can't be checked and go with it" : 'no saves of its own',
                 ].join(' · '),
                 style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
               ),

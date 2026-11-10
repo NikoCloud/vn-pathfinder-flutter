@@ -59,9 +59,11 @@ class RpaArchive {
       } else {
         return null; // a developer's own format
       }
+      final indexSize = raf.lengthSync() - offset;
+      if (offset < 0 || indexSize <= 0 || indexSize > _maxIndexBytes) return null;
       raf.setPositionSync(offset);
-      final compressed = raf.readSync(raf.lengthSync() - offset);
-      final raw = Uint8List.fromList(zlib.decode(compressed));
+      final raw = inflateCapped(raf.readSync(indexSize), _maxIndexBytes * 8);
+      if (raw == null) return null;
       final obj = Unpickler(raw).load();
       if (obj is! Map) return null;
       final index = <String, List<(int, int, Uint8List)>>{};
@@ -338,7 +340,8 @@ String? rpycText(Uint8List bytes) {
     } else {
       data = bytes; // the old format: the whole file is zlib
     }
-    return latin1.decode(zlib.decode(data));
+    final text = inflateCapped(data, 64 << 20);
+    return text == null ? null : latin1.decode(text);
   } catch (_) {
     return null;
   }
@@ -493,4 +496,42 @@ LocalGameInfo localFetch(Directory gameFolder) {
     if (icon != null) break;
   }
   return LocalGameInfo(title: title, version: version, cover: cover, coverExt: coverExt, icon: icon);
+}
+
+/// An archive index bigger than this isn't a real game's.
+const _maxIndexBytes = 32 << 20;
+
+/// zlib-decompresses [data], or null when the result would pass [limit]
+/// bytes, so a crafted file can't fill the memory.
+Uint8List? inflateCapped(List<int> data, int limit) {
+  final out = _CappedSink(limit);
+  try {
+    final input = zlib.decoder.startChunkedConversion(out);
+    for (var at = 0; at < data.length; at += 1 << 16) {
+      input.add(data.sublist(at, at + (1 << 16) > data.length ? data.length : at + (1 << 16)));
+    }
+    input.close();
+    return out.bytes.takeBytes();
+  } on _TooBig {
+    return null;
+  }
+}
+
+class _TooBig implements Exception {
+  const _TooBig();
+}
+
+class _CappedSink implements Sink<List<int>> {
+  final int limit;
+  final bytes = BytesBuilder(copy: false);
+  _CappedSink(this.limit);
+
+  @override
+  void add(List<int> chunk) {
+    bytes.add(chunk);
+    if (bytes.length > limit) throw const _TooBig();
+  }
+
+  @override
+  void close() {}
 }

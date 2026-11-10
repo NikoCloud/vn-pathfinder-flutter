@@ -64,8 +64,9 @@ void main() {
     final set = (await scan(['A', 'B'])).single;
     final plan = await planMerge(set);
     final c = plan.copies.single;
-    expect(c.savesToMove, ['3-1-LT1.save']);
-    expect(c.conflicts, {'1-1-LT1.save': true, '2-1-LT1.save': false});
+    String s(String name) => p.join('game', 'saves', name);
+    expect(c.savesToMove, [s('3-1-LT1.save')]);
+    expect(c.conflicts, {s('1-1-LT1.save'): true, s('2-1-LT1.save'): false});
     expect(c.files, greaterThanOrEqualTo(5));
 
     await runMerge(plan, toTrash: false);

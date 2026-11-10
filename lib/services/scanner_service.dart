@@ -11,6 +11,7 @@ import '../models/game_version.dart';
 import '../models/user_data.dart';
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
+import 'extraction_service.dart';
 import 'game_detect.dart';
 
 // Ported from 1.0 Python logic.
@@ -494,7 +495,9 @@ SaveInfo _savesWithCache(Directory local, Directory? appdata, GameEngine engine,
       cached['local_t'] == localTime &&
       cached['appdata_t'] == appdataTime &&
       cached['appdata'] == appdata?.path) {
-    saves = SaveInfo.fromJson(cached['saves'] as Map);
+    try {
+      saves = SaveInfo.fromJson(cached['saves'] as Map);
+    } catch (_) {} // a damaged entry: read the saves again
   }
   saves ??= _readSaves(local, appdata);
   onCache?.call({
@@ -744,10 +747,13 @@ class ScannerService {
         if (!roots.any((r) => p.isWithin(r, path))) continue;
         final dir = Directory(path);
         if (!dir.existsSync()) continue;
-        final e = entry.value as Map;
-        final engine = GameEngine.values.where((g) => g.name == e['engine']).firstOrNull;
-        final v = scanGameVersion(dir, engine: engine, cached: e, onCache: (c) => next[path] = c);
-        if (v != null) versions.add(v);
+        final e = entry.value;
+        if (e is! Map) continue;
+        try {
+          final engine = GameEngine.values.where((g) => g.name == e['engine']).firstOrNull;
+          final v = scanGameVersion(dir, engine: engine, cached: e, onCache: (c) => next[path] = c);
+          if (v != null) versions.add(v);
+        } catch (_) {} // a damaged entry: the full search finds the game
       }
       return ScanResult(_buildGroups(versions, const [], merges), next);
     });
@@ -781,7 +787,7 @@ class ScannerService {
     for (final (i, (folder, engine)) in found.indexed) {
       progress?.call(ScanProgress(ScanStage.saves, done: i, total: found.length, found: found.length, folder: folder.path));
       final v = scanGameVersion(folder,
-          engine: engine, cached: cache[folder.path] as Map?, onCache: (c) => next[folder.path] = c);
+          engine: engine, cached: cache[folder.path] is Map ? cache[folder.path] as Map : null, onCache: (c) => next[folder.path] = c);
       if (v != null) versions.add(v);
     }
 
@@ -862,29 +868,30 @@ class ScannerService {
     }
   }
 
-  /// Extracts an archive into the target directory.
-  static Future<void> extractArchive(File archiveFile, Directory targetDir) async {
-    final bytes = await archiveFile.readAsBytes();
-    final Archive archive;
-    
+  /// Extracts an archive into the target directory (Add a game). ZIPs go
+  /// through the Archive tab's extractor, which streams from disk; entries
+  /// that would land outside [targetDir] ("..\\") are skipped.
+  static Future<void> extractArchive(File archiveFile, Directory targetDir,
+      {void Function(ExtractionProgress)? onProgress}) async {
     final ext = p.extension(archiveFile.path).toLowerCase();
+    targetDir.createSync(recursive: true);
     if (ext == '.zip') {
-      archive = ZipDecoder().decodeBytes(bytes);
-    } else if (ext == '.tar' || ext == '.gz') {
-      archive = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
-    } else {
-      throw Exception('Unsupported archive format: $ext');
+      await ExtractionJob().extractZip(archiveFile.path, targetDir.path, onProgress ?? (_) {});
+      return;
     }
-
+    if (ext != '.tar' && ext != '.gz') throw Exception('Unsupported archive format: $ext');
+    final bytes = await archiveFile.readAsBytes();
+    final archive = TarDecoder().decodeBytes(ext == '.gz' ? GZipDecoder().decodeBytes(bytes) : bytes);
+    final root = p.normalize(targetDir.absolute.path);
     for (final file in archive) {
-      final filename = file.name;
+      final out = p.normalize(p.join(root, file.name));
+      if (!p.isWithin(root, out)) continue;
       if (file.isFile) {
-        final data = file.content as List<int>;
-        final f = File(p.join(targetDir.path, filename));
+        final f = File(out);
         f.parent.createSync(recursive: true);
-        await f.writeAsBytes(data);
+        await f.writeAsBytes(file.content as List<int>);
       } else {
-        Directory(p.join(targetDir.path, filename)).createSync(recursive: true);
+        Directory(out).createSync(recursive: true);
       }
     }
   }

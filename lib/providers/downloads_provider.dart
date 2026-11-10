@@ -13,6 +13,8 @@ import 'library_provider.dart';
 import 'settings_provider.dart';
 import '../services/old_versions.dart';
 import '../services/extraction_log.dart';
+import '../services/safe_remove.dart';
+import 'notification_provider.dart';
 
 enum JobStage { downloading, waiting, extracting, ready, saved, failed }
 
@@ -324,9 +326,18 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
   void _removeReplaced(DownloadJob job) {
     final folder = job.replaceFolder;
     if (folder == null) return;
+    final notes = _ref.read(notificationProvider.notifier);
+    final name = p.basename(folder);
+    final newFolder = ExtractionLog.folderFor(job.path);
+    // The new version landed in the old one's folder (a re-upload with the
+    // same file name, say): that folder is the new install now, so it stays.
+    if (newFolder == null || !Directory(newFolder).existsSync() || sameFolder(newFolder, folder)) {
+      notes.info('Kept $name: the new version is in that folder');
+      return;
+    }
     try {
-      final newFolder = ExtractionLog.folderFor(job.path);
-      if (newFolder != null && !p.equals(newFolder, folder)) carrySaves(folder, newFolder);
+      checkNotInUse(folder);
+      carrySaves(folder, newFolder);
       final archive = job.keepArchive;
       if (archive != null && File(archive).existsSync()) {
         stashArchive(
@@ -338,11 +349,18 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
         );
       }
     } catch (e) {
+      // Saves that didn't make it across stay in the old folder.
       debugPrint('Keeping the old version failed: $e');
+      notes.error('Kept $name: ${e is FileSystemException ? e.message : e}');
+      return;
     }
     Directory(folder).delete(recursive: true).then((_) {
       _ref.read(libraryProvider.notifier).scan();
-    }, onError: (_) {});
+    }, onError: (e) {
+      debugPrint('Removing the old version failed: $e');
+      notes.error("Couldn't fully remove $name. Some files may be left in it.");
+      _ref.read(libraryProvider.notifier).scan();
+    });
   }
 
   void _releaseBrowser() {

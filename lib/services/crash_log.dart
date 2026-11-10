@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -72,27 +73,54 @@ class CrashLog {
 
   @visibleForTesting
   static Future<void> stopForTesting() async {
+    await _rotation;
+    _rotation = null;
     final sink = _sink;
     _sink = null;
+    _pending.clear();
+    _rotating = false;
     await sink?.close();
   }
 
-  /// Appends a line with the time. Rotates once the file passes [maxLogBytes].
+  /// Lines written while the log is being rotated.
+  static final _pending = <String>[];
+  static bool _rotating = false;
+  static Future<void>? _rotation;
+
+  /// Appends a line with the time. Rotates once the file passes [maxLogBytes]:
+  /// Windows won't rename a file that's still open, so the file is closed
+  /// first and lines written meanwhile wait in memory.
   static void write(String message) {
+    final line = '${DateTime.now().toIso8601String().substring(11, 23)} $message\n';
+    if (_rotating) {
+      _pending.add(line);
+      return;
+    }
     final sink = _sink;
     if (sink == null) return;
-    final line = '${DateTime.now().toIso8601String().substring(11, 23)} $message\n';
     try {
       sink.write(line);
       _written += line.length;
-      if (_written > maxLogBytes) {
-        _sink = null;
-        sink.close();
-        _rotateIfLarge(force: true);
-        _sink = _log.openWrite(mode: FileMode.append);
-        _written = 0;
-      }
     } catch (_) {}
+    if (_written <= maxLogBytes) return;
+    _rotating = true;
+    _sink = null;
+    final log = _log;
+    _rotation = sink.close().catchError((_) {}).whenComplete(() {
+      try {
+        _rotateIfLarge(force: true);
+      } catch (_) {}
+      _written = 0;
+      try {
+        final next = _sink = log.openWrite(mode: FileMode.append);
+        for (final l in _pending) {
+          next.write(l);
+          _written += l.length;
+        }
+      } catch (_) {}
+      _pending.clear();
+      _rotating = false;
+    });
   }
 
   /// The updater ends the process with exit(0), which skips the launcher's
@@ -144,9 +172,21 @@ class CrashLog {
     final report = CrashReport(started: started, nativeCrash: native, logTail: logLines);
     try {
       final stamp = DateTime.now().toIso8601String().replaceAll(':', '-').substring(0, 19);
-      File(p.join(logsDir.path, 'crash-$stamp.txt')).writeAsStringSync(report.text());
+      File(p.join(logsDir.path, 'crash-$stamp.txt')).writeAsStringSync(report.text(libraryDirs: _libraryDirs()));
     } catch (_) {}
     return report;
+  }
+
+  /// The library folders from settings.json, read directly because the log
+  /// starts before settings load; used to hide them in the saved report.
+  static List<String> _libraryDirs() {
+    try {
+      final json = jsonDecode(File(p.join(logsDir.parent.path, 'settings.json')).readAsStringSync());
+      final dirs = (json as Map)['library_dirs'];
+      return dirs is List ? dirs.whereType<String>().toList() : const [];
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// The last session's lines, at most [reportLines].

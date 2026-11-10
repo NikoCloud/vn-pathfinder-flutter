@@ -128,17 +128,46 @@ void _move(File from, String to) {
   }
 }
 
-/// Copies saves only [oldFolder] has, or newer ones, into [newFolder]'s
-/// game/saves before the old folder is removed. Ren'Py also keeps every save
-/// in AppData; this covers saves kept only inside the game folder.
+/// Folders inside a game where engines keep saves: Ren'Py `game/saves`,
+/// RPG Maker MV `www/save`, MZ and Wolf `save`, Kirikiri `savedata`. Unity,
+/// Unreal and Godot keep theirs in AppData, outside the game folder.
+const inFolderSaveDirs = ['game/saves', 'www/save', 'save', 'savedata'];
+
+/// RPG Maker VX Ace and XP save next to the exe: Save01.rvdata2 and so on.
+final _rootSave = RegExp(r'^save\d+\.(rvdata2?|rxdata)$', caseSensitive: false);
+
+/// Save files kept inside [folder], as paths relative to it.
+List<String> savesIn(String folder) {
+  final out = <String>[];
+  for (final rel in inFolderSaveDirs) {
+    final dir = Directory(p.join(folder, rel));
+    if (!dir.existsSync()) continue;
+    try {
+      for (final f in dir.listSync(recursive: true, followLinks: false).whereType<File>()) {
+        out.add(p.relative(f.path, from: folder));
+      }
+    } catch (_) {}
+  }
+  try {
+    for (final f in Directory(folder).listSync(followLinks: false).whereType<File>()) {
+      if (_rootSave.hasMatch(p.basename(f.path))) out.add(p.basename(f.path));
+    }
+  } catch (_) {}
+  return out;
+}
+
+/// Copies saves only [oldFolder] has, or newer ones, into the same place in
+/// [newFolder] before the old folder is removed (see [inFolderSaveDirs]).
+/// Ren'Py also keeps every save in AppData; this covers saves kept only
+/// inside the game folder. Throws if a save can't be copied, so the caller
+/// keeps the old folder.
 void carrySaves(String oldFolder, String newFolder) {
-  final from = Directory(p.join(oldFolder, 'game', 'saves'));
-  if (!from.existsSync()) return;
-  final to = Directory(p.join(newFolder, 'game', 'saves'))..createSync(recursive: true);
-  for (final f in from.listSync().whereType<File>()) {
-    final dest = File(p.join(to.path, p.basename(f.path)));
+  for (final rel in savesIn(oldFolder)) {
+    final f = File(p.join(oldFolder, rel));
+    final dest = File(p.join(newFolder, rel));
     final time = f.lastModifiedSync();
     if (dest.existsSync() && !time.isAfter(dest.lastModifiedSync())) continue;
+    dest.parent.createSync(recursive: true);
     f.copySync(dest.path);
     dest.setLastModifiedSync(time);
   }
