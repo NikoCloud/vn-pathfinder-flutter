@@ -9,7 +9,7 @@ import 'crash_log.dart';
 
 /// This build's version, shown in Settings → About and compared with releases.
 /// `tool/package_windows.ps1` reads it too, so it names the installer.
-const appVersion = '2.0.0-beta.2.1';
+const appVersion = '2.0.0-beta.2.2';
 
 /// One published VN Pathfinder release and its Windows installer.
 class AppRelease {

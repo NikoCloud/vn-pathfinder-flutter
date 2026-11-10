@@ -61,6 +61,8 @@
 - Midnight (dark), Paperback (light) and System themes, with your choice of accent color and text size
 - **Discreet** blurs all art, including save previews. Press **Ctrl+Shift+D** or use the eye in the title bar
 - Automatic backups of your user data
+- The same version of a game in two folders gets a banner. **Review** shows what a merge would do: the copy in your highest library folder stays, saves move into it (the newer one wins), and the other copy goes to the Recycle Bin or is deleted. Copies on removable drives or network shares are only deleted, since their trash stays hidden on the drive
+
 
 ### Home
 
@@ -102,6 +104,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 ### Metadata
 
 - Fetch details and images from **VNDB**, **F95Zone**, **LewdCorner**, **itch.io** and **Azkosel's Corner**
+- **Local**, Fetch Metadata's first tab, reads a Ren'Py game's own files on your PC: its name, version and main-menu art as a cover. Nothing goes online, so it works in Lockdown. You see what it found and tick what to use. A folder named without a version takes the one it read
 - Take each field from a different source in one step
 - Click any image to make it the cover, or remove the ones you don't want
 - Saves ratings from F95Zone and VNDB. F95Zone ratings refresh in the background, a few games at a time
@@ -153,7 +156,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 - Pick the site, platform and file host, and the site's own page opens in the app, exactly as it is on the site, with any check, wait or ad. You finish it there
 - The file lands in your first library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP, RAR and 7z archives are extracted for you; anything else stays in the folder for you to handle
 - The game arrives already fetched: its cover, screenshots, description, tags and thread link come with it, and update alerts work from the start
-- For an update, keep the old version or remove it
+- For an update, keep the old version, remove it, or remove it and keep its download. Saves only the old version has move to the new one first. A kept download waits in a hidden folder, and the game page's **Kept downloads** restores it
 - **Download a Version…** in a game page's ⋯ menu gets any version of a game you have, even when no update is detected
 - If a connection drops, the download retries by itself and shows which try it's on. It picks up where it stopped if the host allows that, and otherwise starts again. If it gives up, it tells you why
 
@@ -171,7 +174,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 ### Updating
 
-When a new version is out, an **Update** button appears in the title bar. It shows what's new, and **Update now** downloads the installer, checks it against the checksum GitHub publishes, installs it and reopens the app. Your library, settings and games aren't touched. **Settings → About** has **Check for updates** to look on demand.
+When a new version is out, an **Update** button appears in the title bar. It shows what changed in every version since yours, and **Update now** downloads the installer, checks it against the checksum GitHub publishes, installs it and reopens the app. Your library, settings and games aren't touched. **Settings → About** has **Check for updates** to look on demand.
 
 If the app ever closes unexpectedly, the next start offers a short report to view or copy. Nothing is sent anywhere, and your folders and Windows user name are left out. **Settings → About → Open logs folder** shows the app's log and past reports.
 
@@ -179,9 +182,8 @@ The portable version can't update itself: its Update button shows what's new and
 
 ## Getting started
 
-1. The first time you open the app, a short tour shows you around with made-up games. They're never saved and disappear when it ends. Take it again from **Help** (F1).
-1. Open **Settings → General** and choose your library folder. Games in more than one place? Add each folder.
-2. Lockdown Mode is on by default, so the app stays offline. To use online features, turn it off in **Settings → Network**.
+1. The first time you open the app, a tour shows you around with made-up games. Choose your library folder on its first card and the app reads it while you take the tour; your games are there when it ends. Take the tour again from **Help** (F1). More folders go in **Settings → General**.
+2. Lockdown Mode is on by default, so the app stays offline: no Feed, no update alerts, and Fetch Metadata only reads the game files. To use online features, turn it off in **Settings → Network** or with **Go online** on Home.
 3. In **Settings → Network**, log in to the forums you use.
 4. Select a game and choose **Fetch Metadata**.
 
