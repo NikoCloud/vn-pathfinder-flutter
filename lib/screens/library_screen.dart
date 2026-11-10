@@ -15,6 +15,7 @@ import '../widgets/common/art.dart';
 import '../widgets/common/art_card.dart';
 import '../widgets/common/drag_handle.dart';
 import '../widgets/common/kit.dart';
+import '../widgets/loading_screen.dart' show backgroundLines;
 import '../widgets/common/shell_focus.dart';
 import '../widgets/common/status_menu.dart';
 import '../widgets/game/game_actions.dart';
@@ -319,6 +320,7 @@ class _Toolbar extends ConsumerWidget {
             VpTool(label: 'Select', on: selecting, onTap: onSelect),
             const SizedBox(width: 6),
           ],
+          const _BackgroundSearchNote(),
           const _SizeSlider(),
           const SizedBox(width: 6),
           VpIconButton(icon: Icons.add, tooltip: 'Add a game', size: 32, onTap: () => showAddGameModal(context)),
@@ -329,6 +331,41 @@ class _Toolbar extends ConsumerWidget {
             onTap: () => ref.read(libraryProvider.notifier).scan(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// While new or moved games are looked for behind a library that's already
+/// showing (#13). Plain words in Discreet mode.
+class _BackgroundSearchNote extends ConsumerWidget {
+  const _BackgroundSearchNote();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final searching = ref.watch(libraryProvider.select((l) => l.loading && l.groups.isNotEmpty));
+    if (!searching) return const SizedBox.shrink();
+    final discreet = ref.watch(settingsProvider.select((s) => s.discreet));
+    final line = discreet ? 'Looking for new games…' : backgroundLines[DateTime.now().minute % backgroundLines.length];
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Tooltip(
+        message: '$line\nLooking for new or moved games. The library is ready to use.',
+        child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 1.6, color: AppColors.textMuted),
+          ),
+          // A narrow window shows just the spinner; the line is in its tooltip.
+          if (MediaQuery.sizeOf(context).width >= 1200) ...[
+            const SizedBox(width: 6),
+            Text(line, style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
+          ],
+        ],
+      ),
       ),
     );
   }

@@ -10,6 +10,7 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 - **Search subfolders.** Games inside folders in your library folders are found now, such as `Played\Developer\Game\v0.5`, up to 8 levels down. It's on for every library folder; turn it off per folder in **Settings → General**. A folder named only by its version takes its title from the folder above.
 - **Faster starts.** The app remembers where every game is and opens with those, rereading a game's saves only if its save folders changed, then looks for new or moved games. Ren'Py writes every save as a new file renamed into place, which changes the folder's time, so Home and statuses stay exact.
+- **A loading screen** when the library takes a while to read: a real count instead of a spinner ("Reading saves · 120 of 240"), a folder that stalls by name, and a cheeky line for what it's doing. Plain wording in Discreet mode. It only appears after half a second, and steps aside after two minutes. While new games are looked for behind a library that's already showing, a small note in the Library header says so.
 - **Engines are recognised from the game's files:** Ren'Py, Unity, Unreal, RPG Maker MV, MZ and VX Ace, Godot, Wolf RPG, Kirikiri, HTML and Flash. The game page shows it, and the Engine filter uses it, even for games you haven't fetched.
 
 ### Changed

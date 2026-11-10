@@ -26,6 +26,7 @@ import 'game/game_page.dart';
 import 'get/download_dock.dart';
 import 'title_bar.dart';
 import 'crash_report_prompt.dart';
+import 'loading_screen.dart';
 import 'tutorial_overlay.dart';
 
 /// Looks once per run for a newer VN Pathfinder (Settings → Update Checks).
@@ -124,6 +125,7 @@ class AppShell extends ConsumerWidget {
                   ),
                 ],
               ),
+              const LoadingScreen(),
               Positioned(
                 right: 18,
                 bottom: 16,

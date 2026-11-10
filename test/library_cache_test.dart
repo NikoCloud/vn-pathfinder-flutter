@@ -15,7 +15,7 @@ Directory _game(String rel) {
   return d;
 }
 
-/// What Ren'Py does when it saves: write <name>.new, rename it into place.
+/// What Ren'Py does when it saves: write `name.new`, rename it into place.
 void _renpySave(Directory game, String name) {
   final saves = p.join(game.path, 'game', 'saves');
   File(p.join(saves, '$name.new')).writeAsStringSync('save');

@@ -225,7 +225,8 @@ const archiveExtensions = {'.zip', '.rar', '.7z', '.rpa', '.rpy', '.py'};
 /// over [maxEntriesToOpen] entries aren't opened, and dot-folders, saves and
 /// caches are skipped. A folder of programs with no known engine counts as a
 /// game only at the top (level 0), as it always has.
-LibrarySearch searchLibrary(Directory libraryDir, {bool subfolders = true}) {
+LibrarySearch searchLibrary(Directory libraryDir,
+    {bool subfolders = true, void Function(String folder, int level, int gamesFound)? onFolder}) {
   final games = <(Directory, GameEngine)>[];
   final archives = <File>[];
 
@@ -241,6 +242,7 @@ LibrarySearch searchLibrary(Directory libraryDir, {bool subfolders = true}) {
   for (var level = 0; level <= maxSearchDepth && pending.isNotEmpty; level++) {
     final next = <String>[];
     for (final path in pending) {
+      onFolder?.call(path, level, games.length);
       final l = _list(path);
       final engine = _detect(path, l, allowOther: level == 0);
       if (engine != null) {

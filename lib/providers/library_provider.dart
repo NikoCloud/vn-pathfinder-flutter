@@ -230,11 +230,15 @@ class LibraryState {
   final String? error;
   final String? selectedBaseKey;
 
+  /// The running scan's progress, for the loading screen. Null when idle.
+  final ScanProgress? progress;
+
   const LibraryState({
     this.groups = const [],
     this.loading = false,
     this.error,
     this.selectedBaseKey,
+    this.progress,
   });
 
   LibraryState copyWith({
@@ -243,11 +247,14 @@ class LibraryState {
     String? error,
     String? selectedBaseKey,
     bool clearSelection = false,
+    ScanProgress? progress,
+    bool clearProgress = false,
   }) => LibraryState(
     groups: groups ?? this.groups,
     loading: loading ?? this.loading,
     error: error,
     selectedBaseKey: clearSelection ? null : (selectedBaseKey ?? this.selectedBaseKey),
+    progress: clearProgress ? null : (progress ?? this.progress),
   );
 
   GameGroup? get selectedGroup => selectedBaseKey == null
@@ -354,10 +361,17 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       }
       _quickDone = true;
 
+      var lastShown = DateTime(0);
       final result = await ScannerService.scanLibrary(libraryDirs,
           merges: ud.gameMerges,
           noSubfolders: _ref.read(settingsProvider).noSubfolderDirs.toSet(),
-          cache: cache);
+          cache: cache, onProgress: (prog) {
+        // About ten updates a second is plenty for a progress bar.
+        final now = DateTime.now();
+        if (now.difference(lastShown).inMilliseconds < 100 || _real != null) return;
+        lastShown = now;
+        state = state.copyWith(progress: prog);
+      });
       _cache = result.cache;
       LibraryCache.save(result.cache);
       final groups = result.groups;
@@ -368,9 +382,9 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         _real = _real!.copyWith(groups: groups, loading: false);
         return;
       }
-      state = state.copyWith(groups: groups, loading: false);
+      state = state.copyWith(groups: groups, loading: false, clearProgress: true);
     } catch (e) {
-      state = state.copyWith(loading: false, error: e.toString());
+      state = state.copyWith(loading: false, error: e.toString(), clearProgress: true);
     }
   }
 

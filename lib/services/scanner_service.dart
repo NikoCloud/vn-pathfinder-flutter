@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -682,8 +683,42 @@ class ScannerService {
   static Future<ScanResult> scanLibrary(List<Directory> libraryDirs,
       {Map<String, String> merges = const {},
       Set<String> noSubfolders = const {},
-      Map<String, dynamic> cache = const {}}) {
-    return Isolate.run(() => _scanAllSync(libraryDirs, merges, noSubfolders, cache));
+      Map<String, dynamic> cache = const {},
+      void Function(ScanProgress)? onProgress}) {
+    if (onProgress == null) return Isolate.run(() => _scanAllSync(libraryDirs, merges, noSubfolders, cache, null));
+    return _withProgress((send) => _scanAllSync(libraryDirs, merges, noSubfolders, cache, send), onProgress);
+  }
+
+  /// Runs [work] on a background isolate, passing its progress back.
+  static Future<ScanResult> _withProgress(
+      ScanResult Function(void Function(ScanProgress)) work, void Function(ScanProgress) onProgress) async {
+    final port = ReceivePort();
+    final done = Completer<ScanResult>();
+    port.listen((msg) {
+      if (msg is ScanProgress) {
+        onProgress(msg);
+      } else if (msg is ScanResult) {
+        done.complete(msg);
+        port.close();
+      } else if (msg is List && msg.length == 2) {
+        done.completeError(msg[0] as Object, StackTrace.fromString('${msg[1]}'));
+        port.close();
+      }
+    });
+    final send = port.sendPort;
+    try {
+      await Isolate.spawn((SendPort out) {
+        try {
+          out.send(work(out.send));
+        } catch (e, st) {
+          out.send(['$e', '$st']);
+        }
+      }, send);
+    } catch (e) {
+      port.close();
+      rethrow;
+    }
+    return done.future;
   }
 
   /// The quick pass for a normal start: only the games the cache knows,
@@ -710,24 +745,35 @@ class ScannerService {
   }
 
   static ScanResult _scanAllSync(List<Directory> libraryDirs, Map<String, String> merges,
-      Set<String> noSubfolders, Map<String, dynamic> cache) {
+      Set<String> noSubfolders, Map<String, dynamic> cache, void Function(ScanProgress)? progress) {
     final versions = <GameVersion>[];
     final archives = <ArchiveItem>[];
     final next = <String, dynamic>{};
 
+    // Finding games, every library folder first.
+    final found = <(Directory, GameEngine)>[];
+    var checked = 0;
     for (final dir in libraryDirs) {
       // A folder that isn't reachable right now is skipped; its games come
       // back when it is.
+      progress?.call(ScanProgress(ScanStage.finding, done: checked, found: found.length, folder: dir.path));
       if (!dir.existsSync()) continue;
-      final found = searchLibrary(dir, subfolders: !noSubfolders.contains(dir.path));
-      for (final (folder, engine) in found.games) {
-        final v = scanGameVersion(folder,
-            engine: engine, cached: cache[folder.path] as Map?, onCache: (c) => next[folder.path] = c);
-        if (v != null) versions.add(v);
-      }
-      for (final f in found.archives) {
+      final s = searchLibrary(dir, subfolders: !noSubfolders.contains(dir.path), onFolder: (path, level, games) {
+        checked++;
+        progress?.call(ScanProgress(ScanStage.finding, done: checked, found: found.length + games, folder: path));
+      });
+      found.addAll(s.games);
+      for (final f in s.archives) {
         archives.add(scanArchive(f));
       }
+    }
+
+    // Reading each game: metadata and saves.
+    for (final (i, (folder, engine)) in found.indexed) {
+      progress?.call(ScanProgress(ScanStage.saves, done: i, total: found.length, found: found.length, folder: folder.path));
+      final v = scanGameVersion(folder,
+          engine: engine, cached: cache[folder.path] as Map?, onCache: (c) => next[folder.path] = c);
+      if (v != null) versions.add(v);
     }
 
     return ScanResult(_buildGroups(versions, archives, merges), next);
@@ -876,4 +922,25 @@ class ScanResult {
   final List<GameGroup> groups;
   final Map<String, dynamic> cache;
   const ScanResult(this.groups, this.cache);
+}
+
+enum ScanStage { finding, saves }
+
+/// How far a scan has got, sent from its isolate for the loading screen.
+class ScanProgress {
+  final ScanStage stage;
+
+  /// Folders checked while finding; games read while reading saves.
+  final int done;
+
+  /// Games to read (reading saves only; 0 while finding).
+  final int total;
+  final int found;
+
+  /// The folder being looked at, to name one that stalls.
+  final String? folder;
+
+  const ScanProgress(this.stage, {this.done = 0, this.total = 0, this.found = 0, this.folder});
+
+  double? get fraction => stage == ScanStage.saves && total > 0 ? done / total : null;
 }
