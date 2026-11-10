@@ -459,7 +459,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                   title: widget.group.effectiveTitle,
                   onClose: () => Navigator.of(context).pop(),
                 ),
-                if (locked)
+                // Local works in Lockdown, so the warning is for the online side.
+                if (locked && !_local)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     color: AppColors.danger.withValues(alpha: 0.12),

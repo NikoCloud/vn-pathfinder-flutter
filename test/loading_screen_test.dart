@@ -81,4 +81,13 @@ void main() {
     await t.pump(const Duration(milliseconds: 300));
     expect(find.byType(LinearProgressIndicator), findsNothing);
   });
+
+  testWidgets('a new stage gets a line from its own set at once', (t) async {
+    await _pump(t, finding);
+    await t.pump(const Duration(milliseconds: 900));
+    _lib.set(const LibraryState(loading: true, progress: ScanProgress(ScanStage.saves, done: 1, total: 10)));
+    await t.pump(const Duration(milliseconds: 300));
+    await t.pump(const Duration(milliseconds: 400));
+    expect(find.byWidgetPredicate((w) => w is Text && loadingLines[ScanStage.saves]!.contains(w.data)), findsOneWidget);
+  });
 }

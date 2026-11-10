@@ -84,6 +84,7 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
   int _lineAt = -1000;
   String? _folder;
   int _folderAt = 0;
+  ScanStage? _lineStage;
 
   Duration _since(int tick) => _tickLength * (_ticks - tick);
 
@@ -132,7 +133,10 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
     }
     final stalled = _folder != null && _since(_folderAt) >= LoadingScreen.slowAfter;
 
-    if (_line == null || _since(_lineAt) >= LoadingScreen.lineEvery) {
+    // A new line on a timer, and at once when the stage changes, so a
+    // "finding" line never sits over "Reading saves".
+    if (_line == null || _since(_lineAt) >= LoadingScreen.lineEvery || stage != _lineStage) {
+      _lineStage = stage;
       _line = discreet
           ? _plainLines[stage]
           : stalled
@@ -146,7 +150,13 @@ class _LoadingScreenState extends ConsumerState<LoadingScreen> {
       ScanStage.saves => 'Reading saves · ${prog!.done} of ${prog.total}',
     };
 
-    return Positioned.fill(
+    // Below the title bar, so the window can still be moved, minimised or
+    // closed while the library loads.
+    return Positioned(
+      top: AppLayout.titleBarHeight,
+      left: 0,
+      right: 0,
+      bottom: 0,
       child: Semantics(
         liveRegion: true,
         label: '$status. ${_line ?? ''}',

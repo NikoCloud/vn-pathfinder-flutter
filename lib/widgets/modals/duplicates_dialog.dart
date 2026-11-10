@@ -8,6 +8,7 @@ import '../../services/disk_space.dart' show formatBytes;
 import '../../services/duplicates.dart';
 import '../../theme.dart';
 import '../common/kit.dart';
+import 'package:path/path.dart' as p;
 
 /// Games with the same version in more than one folder (#21).
 final duplicatesProvider = Provider<List<DuplicateSet>>((ref) {
@@ -147,7 +148,7 @@ class _DuplicatesDialogState extends ConsumerState<DuplicatesDialog> {
                     ? Padding(
                         padding: const EdgeInsets.all(24),
                         child: Center(
-                          child: Text('Comparing the copies…',
+                          child: Text('Comparing the copies and checking their drives…',
                               style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
                         ),
                       )
@@ -265,7 +266,7 @@ class _PlanCard extends StatelessWidget {
               padding: const EdgeInsets.only(left: 64, top: 2),
               child: Text(
                 [
-                  '${formatBytes(c.bytes)}, ${c.files} files',
+                  '${formatBytes(c.bytes)}, ${c.files} file${c.files == 1 ? '' : 's'}',
                   if (c.savesToMove.isNotEmpty) '${c.savesToMove.length} save${c.savesToMove.length == 1 ? '' : 's'} move',
                   if (c.conflicts.isNotEmpty)
                     '${c.conflicts.length} in both: ${c.conflicts.values.where((v) => v).length} newer here, kept',
@@ -297,7 +298,9 @@ class _PathLine extends StatelessWidget {
             Expanded(
               child: Tooltip(
                 message: tooltip == null ? path : '$path\n$tooltip',
-                child: Text(path,
+                // The end of the path, where copies differ; the full path is
+                // in the tooltip.
+                child: Text(_tail(path),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.mono(fontSize: 11, color: AppColors.textSecondary)),
@@ -306,4 +309,11 @@ class _PathLine extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// The last three parts of a path ("…\LibA\Game-0.6-pc"), so two copies with
+/// a long shared beginning still read differently.
+String _tail(String path) {
+  final parts = p.split(path);
+  return parts.length <= 3 ? path : p.joinAll(['…', ...parts.sublist(parts.length - 3)]);
 }

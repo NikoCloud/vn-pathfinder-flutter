@@ -362,7 +362,7 @@ class _BackgroundSearchNote extends ConsumerWidget {
             child: CircularProgressIndicator(strokeWidth: 1.6, color: AppColors.textMuted),
           ),
           // A narrow window shows just the spinner; the line is in its tooltip.
-          if (MediaQuery.sizeOf(context).width >= 1200) ...[
+          if (MediaQuery.sizeOf(context).width >= 1500) ...[
             const SizedBox(width: 6),
             Text(line, style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
           ],

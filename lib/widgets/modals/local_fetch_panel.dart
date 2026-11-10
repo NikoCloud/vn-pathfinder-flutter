@@ -44,7 +44,13 @@ class _LocalFetchPanelState extends ConsumerState<LocalFetchPanel> {
       return;
     }
     final folder = v.folderPath.path;
-    final info = await Isolate.run(() => localFetch(Directory(folder)));
+    LocalGameInfo info;
+    try {
+      info = await Isolate.run(_localFetchJob(folder));
+    } catch (e) {
+      debugPrint('Local fetch failed for $folder: $e');
+      info = const LocalGameInfo();
+    }
     if (!mounted) return;
     final meta = v.metadata;
     final hasCover = Directory(p.join(folder, '.vnpf')).existsSync() &&
@@ -223,3 +229,8 @@ class _Note extends StatelessWidget {
         ),
       );
 }
+
+/// The background job, made outside the widget so it carries only the
+/// folder: a closure made in a State method also carries the State, which
+/// can't be sent to another isolate.
+LocalGameInfo Function() _localFetchJob(String folder) => () => localFetch(Directory(folder));
