@@ -16,6 +16,7 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ### Changed
 
+- **Lockdown is clearer.** The Feed tab is greyed out while Lockdown is on, with a tooltip saying why, and Home says what Lockdown holds back (covers and descriptions from Fetch Metadata, update alerts, the Feed) with a **Go online** button.
 - **Fewer false games.** A folder of installers or a split archive (`part1.exe` with `.rar` parts) no longer shows up as a game, and a game is launched with its own program rather than a crash handler or uninstaller that happens to sort first.
 
 - **Crash reports.** If the app closes unexpectedly, the next start says so and offers the report to view or copy, to paste wherever you report problems. It records crashes in native code too, which the app couldn't see before, and notices runs that ended without a crash being caught (a force-quit or a power cut). Reports stay on your PC, with your folders and Windows user name left out. **Settings → About** has **Open logs folder**.

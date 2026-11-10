@@ -11,6 +11,7 @@ import 'common/kit.dart';
 import 'modals/app_update_dialog.dart';
 import 'modals/help_modal.dart';
 import 'modals/settings_modal.dart';
+import 'tutorial_overlay.dart';
 
 /// The app's only chrome: tabs, quick find, Discreet, the network state and
 /// the window buttons, all in one bar. Empty space drags the window.
@@ -23,6 +24,12 @@ class AppTitleBar extends ConsumerWidget {
     final page = ref.watch(gamePageProvider);
     final updates = ref.watch(availableUpdatesProvider).length;
     final scanning = ref.watch(libraryProvider.select((s) => s.loading));
+    final locked = ref.watch(lockdownProvider);
+    // The Feed needs to go online (#15): in Lockdown its tab can't be chosen,
+    // and the app leaves it if Lockdown comes on while it's open.
+    if (locked && tab == AppTab.feed && page == null && ref.read(tutorialProvider) == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(activeTabProvider.notifier).state = AppTab.home);
+    }
 
     void open(AppTab t) {
       ref.read(gamePageProvider.notifier).state = null;
@@ -51,6 +58,7 @@ class AppTitleBar extends ConsumerWidget {
                       tab: t,
                       selected: page == null && t == tab,
                       count: t == AppTab.feed ? updates : 0,
+                      disabled: locked && t == AppTab.feed,
                       onTap: () => open(t),
                     ),
                   const Spacer(),
@@ -104,10 +112,33 @@ class _TabButton extends StatelessWidget {
   final int count;
   final VoidCallback onTap;
 
-  const _TabButton({required this.tab, required this.selected, required this.count, required this.onTap});
+  /// The Feed in Lockdown: shown, greyed out, and explained in a tooltip.
+  final bool disabled;
+
+  const _TabButton(
+      {required this.tab, required this.selected, required this.count, required this.onTap, this.disabled = false});
 
   @override
   Widget build(BuildContext context) {
+    if (disabled) {
+      return Tooltip(
+        message: 'The Feed needs to go online. Turn off Lockdown to use it.',
+        child: Semantics(
+          label: '${tab.label}, unavailable in Lockdown',
+          child: SizedBox(
+            height: AppLayout.titleBarHeight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Center(
+                child: Text(tab.label,
+                    style: AppText.ui(
+                        fontSize: 14, height: 18 / 14, fontWeight: FontWeight.w500, color: AppColors.textMuted.withValues(alpha: 0.5))),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Pressable(
       onTap: onTap,
       selected: selected,

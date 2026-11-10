@@ -65,6 +65,7 @@ class HomeScreen extends ConsumerWidget {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
+        const _LockdownNote(),
         _ContinueHero(group: hero, updateVersion: updates[hero.baseKey]?.version, played: recent.isNotEmpty),
         Padding(
           padding: const EdgeInsets.fromLTRB(AppLayout.gutter, 4, AppLayout.gutter, 96),
@@ -100,6 +101,58 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Hidden for the rest of the session once "Not now" is pressed.
+final _lockdownNoteDismissed = StateProvider<bool>((ref) => false);
+
+/// In Lockdown, says what's held back and offers to go online (#15). Shown on
+/// Home until it's dismissed for the session or Lockdown is turned off.
+class _LockdownNote extends ConsumerWidget {
+  const _LockdownNote();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(lockdownProvider) || ref.watch(_lockdownNoteDismissed)) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppLayout.gutter, 16, AppLayout.gutter, 0),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: AppColors.bgCard,
+          borderRadius: AppRadius.borderSm,
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.lock_outline, size: 16, color: AppColors.textMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Lockdown is on, so nothing goes online: no covers or descriptions from Fetch Metadata, no update '
+                'alerts and no Feed. Fetch Metadata can still read names and versions from the game files.',
+                style: AppText.ui(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+              ),
+            ),
+            const SizedBox(width: 10),
+            VpButton(
+              label: 'Not now',
+              tone: VpTone.quiet,
+              small: true,
+              onTap: () => ref.read(_lockdownNoteDismissed.notifier).state = true,
+            ),
+            const SizedBox(width: 6),
+            VpButton(
+              label: 'Go online',
+              tone: VpTone.primary,
+              small: true,
+              onTap: () => ref.read(settingsProvider.notifier).setLockdown(false),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
