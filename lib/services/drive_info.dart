@@ -100,8 +100,16 @@ Future<String?> _busType(String letter) async {
 /// folder; for one too big for the Recycle Bin, Windows asks before deleting
 /// it permanently, and No keeps it.
 Future<void> moveToTrash(String folder) async {
+  // Windows deletes permanently, without asking, a path that isn't a full
+  // one, so it's always made full here.
+  final full = p.normalize(p.absolute(folder));
+  // The Recycle Bin call can't take paths of 260 characters or more.
+  if (full.length >= 260) {
+    throw FileSystemException(
+        'Its path is too long for the Recycle Bin. Nothing was deleted; choose Delete permanently instead.', folder);
+  }
   final owner = _appWindow();
-  final (code, aborted) = await Isolate.run(() => _shellDelete(folder, owner));
+  final (code, aborted) = await Isolate.run(() => _shellDelete(full, owner));
   if (aborted) throw FileSystemException('Cancelled. Nothing was deleted.', folder);
   if (code != 0 || Directory(folder).existsSync()) {
     throw FileSystemException('Could not move it to the Recycle Bin (Windows error $code).', folder);
@@ -168,7 +176,7 @@ int _appWindow() {
   final shell32 = DynamicLibrary.open('shell32.dll');
   final op = shell32.lookupFunction<_ShFileOpN, _ShFileOpD>('SHFileOperationW');
   // The path list ends with two nulls.
-  final units = p.normalize(folder).codeUnits;
+  final units = folder.codeUnits; // a full path, from [moveToTrash]
   final from = calloc<Uint16>(units.length + 2);
   for (var i = 0; i < units.length; i++) {
     from[i] = units[i];

@@ -192,10 +192,18 @@ void main() {
     expect(inflateCapped(zlib.encode(utf8.encode('hello')), 1 << 20), utf8.encode('hello'));
   });
 
-  test('Send to the Recycle Bin moves a folder with no prompt for an ordinary size', () async {
+  // Uses the real Recycle Bin, so it runs only when asked:
+  // VNPF_TRASH_TEST=1 flutter test test/removal_safety_test.dart
+  test('Send to the Recycle Bin moves a folder with no prompt for an ordinary size',
+      skip: Platform.environment['VNPF_TRASH_TEST'] != '1', () async {
     final d = Directory(p.join(root.path, 'vnp-trash-test-folder'))..createSync();
     File(p.join(d.path, 'a.txt')).writeAsStringSync('tiny');
     await moveToTrash(d.path);
     expect(d.existsSync(), isFalse);
+  });
+
+  test('a path too long for the Recycle Bin is refused before anything is touched', () async {
+    final long = p.join(root.path, 'x' * 250);
+    await expectLater(moveToTrash(long), throwsA(isA<FileSystemException>()));
   });
 }
