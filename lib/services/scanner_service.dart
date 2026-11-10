@@ -804,11 +804,18 @@ class ScannerService {
             }();
     }
 
-    // Sort versions within each group by version tuple
+    // Sort versions within each group by version tuple. Copies of the same
+    // version in different folders (#21) keep the one found first, which is
+    // in the highest library folder, last: latestVersion is what Play opens.
+    final foundAt = {for (final (i, v) in versions.indexed) identityHashCode(v): i};
+    int order(GameVersion v) => foundAt[identityHashCode(v)] ?? 0;
     for (final k in groups.keys) {
       final g = groups[k]!;
       final sorted = [...g.versions]
-        ..sort((a, b) => compareVersionStrings(a.versionStr, b.versionStr));
+        ..sort((a, b) {
+          final c = compareVersionStrings(a.versionStr, b.versionStr);
+          return c != 0 ? c : order(b).compareTo(order(a));
+        });
       groups[k] = g.copyWith(versions: sorted);
     }
 

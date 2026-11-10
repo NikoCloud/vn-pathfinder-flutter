@@ -16,6 +16,7 @@ import '../widgets/common/art_card.dart';
 import '../widgets/common/drag_handle.dart';
 import '../widgets/common/kit.dart';
 import '../widgets/loading_screen.dart' show backgroundLines;
+import '../widgets/modals/duplicates_dialog.dart';
 import '../widgets/common/shell_focus.dart';
 import '../widgets/common/status_menu.dart';
 import '../widgets/game/game_actions.dart';
@@ -133,6 +134,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               onPanel: () => setState(() => _panelOpen = !_panelOpen),
               onSelect: () => _selecting ? _stopSelecting() : setState(() => _selecting = true),
             ),
+            const DuplicatesBanner(),
             Expanded(
               child: error != null && groups.isEmpty
                   ? _Message(error)
