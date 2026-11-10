@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/game_group.dart';
+import '../models/game_version.dart';
+import '../services/game_detect.dart';
 import '../models/game_status.dart';
 import '../models/user_data.dart';
 import 'library_provider.dart';
@@ -233,17 +235,7 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   // Engine filter (only when not all engines selected)
   const allEngines = {'renpy', 'rpgm', 'unity', 'html', 'unreal', 'other'};
   if (!filter.engines.containsAll(allEngines)) {
-    result = result.where((g) {
-      final v = g.latestVersion;
-      if (v == null) return filter.engines.contains('other');
-      final meta = v.metaEngine.toLowerCase();
-      if (v.isRenpy || meta == 'renpy') return filter.engines.contains('renpy');
-      if (meta == 'rpgm' || meta == 'rpg maker') return filter.engines.contains('rpgm');
-      if (meta == 'unity') return filter.engines.contains('unity');
-      if (meta == 'html' || meta == 'web') return filter.engines.contains('html');
-      if (meta == 'unreal') return filter.engines.contains('unreal');
-      return filter.engines.contains('other');
-    }).toList();
+    result = result.where((g) => filter.engines.contains(engineFilterKey(g.latestVersion))).toList();
   }
 
   if (filter.updatesOnly) {
@@ -404,3 +396,33 @@ final allTagsProvider = Provider<List<String>>((ref) {
   }
   return all.toList()..sort();
 });
+
+/// Which Engine filter a version falls under: the engine recognised from its
+/// files (#13), else what Fetch Metadata found, else Other. Godot, Wolf RPG,
+/// Kirikiri and Flash count as Other.
+String engineFilterKey(GameVersion? v) {
+  if (v == null) return 'other';
+  switch (v.engine) {
+    case GameEngine.renpy || GameEngine.renpyMac:
+      return 'renpy';
+    case GameEngine.rpgmMv || GameEngine.rpgmMz || GameEngine.rpgmVx:
+      return 'rpgm';
+    case GameEngine.unity:
+      return 'unity';
+    case GameEngine.html:
+      return 'html';
+    case GameEngine.unreal:
+      return 'unreal';
+    case GameEngine.godot || GameEngine.wolf || GameEngine.kirikiri || GameEngine.flash || GameEngine.other:
+      return 'other';
+    case null:
+      break;
+  }
+  final meta = v.metaEngine.toLowerCase();
+  if (v.isRenpy || meta == 'renpy') return 'renpy';
+  if (meta == 'rpgm' || meta == 'rpg maker') return 'rpgm';
+  if (meta == 'unity') return 'unity';
+  if (meta == 'html' || meta == 'web') return 'html';
+  if (meta == 'unreal') return 'unreal';
+  return 'other';
+}

@@ -801,6 +801,22 @@ class _LibraryFolderRow extends ConsumerWidget {
                 Text(status,
                     style: AppText.ui(
                         fontSize: 11, color: offline ? AppColors.warning : AppColors.textMuted)),
+                const SizedBox(height: 6),
+                Tooltip(
+                  message: r'Also find games inside folders in this folder, such as Played\Developer\Game.'
+                      '\nTurn off to look only at the top level.',
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ToggleSwitch(
+                        value: !ref.watch(settingsProvider.select((s) => s.noSubfolderDirs.contains(dir))),
+                        onChanged: (on) => ref.read(settingsProvider.notifier).setSearchSubfolders(dir, on),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('Search subfolders', style: AppText.ui(fontSize: 11, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

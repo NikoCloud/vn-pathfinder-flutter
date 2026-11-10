@@ -10,6 +10,7 @@ import '../models/game_version.dart';
 import '../models/user_data.dart';
 import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
+import 'game_detect.dart';
 
 // Ported from 1.0 Python logic.
 
@@ -232,29 +233,32 @@ List<int> _versionNumbers(String v) =>
 
 // ── Game Detection ────────────────────────────────────────────────────────────
 
-bool isRenpyDir(Directory dir) {
-  if (!dir.existsSync()) return false;
-  if (Directory(p.join(dir.path, 'game')).existsSync()) return true;
-  try {
-    return dir.listSync().any((e) => e is File && e.path.endsWith('.py'));
-  } catch (_) {
-    return false;
-  }
-}
+/// True when [dir] holds a Ren'Py game (see [detectEngine]).
+bool isRenpyDir(Directory dir) => detectEngine(dir) == GameEngine.renpy;
 
-bool isExeGameDir(Directory dir) {
-  if (!dir.existsSync()) return false;
-  if (isRenpyDir(dir)) return false;
-  try {
-    if (dir.listSync().any((e) => e is File && e.path.endsWith('.exe'))) {
-      return true;
-    }
-    final subdirs = dir.listSync().whereType<Directory>().toList();
-    if (subdirs.length == 1) {
-      return subdirs.first.listSync().any((e) => e is File && e.path.endsWith('.exe'));
-    }
-  } catch (_) {}
-  return false;
+/// Programs that ship beside a game but aren't it.
+final _helperExe = RegExp(r'(crashhandler|crashpad|unins\d*|setup|install|uninstall|-32|notification_helper|dxwebsetup|vc_?redist|ue4prereq|unitycrash)',
+    caseSensitive: false);
+
+/// The program that starts the game in [dir]: the one named like the game's
+/// own files (`Name.exe` beside `Name_Data` or `Name.py`), else the first
+/// that isn't a crash handler, installer or uninstaller.
+File? pickGameExe(Directory dir) {
+  final entries = dir.listSync(followLinks: false);
+  final exes = entries.whereType<File>().where((f) => f.path.toLowerCase().endsWith('.exe')).toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+  if (exes.isEmpty) return null;
+  final stems = <String>{
+    for (final e in entries)
+      if (e is Directory && e.path.toLowerCase().endsWith('_data'))
+        p.basename(e.path).substring(0, p.basename(e.path).length - 5).toLowerCase()
+      else if (e is File && e.path.toLowerCase().endsWith('.py'))
+        p.basenameWithoutExtension(e.path).toLowerCase(),
+  };
+  for (final exe in exes) {
+    if (stems.contains(p.basenameWithoutExtension(exe.path).toLowerCase())) return exe;
+  }
+  return exes.where((e) => !_helperExe.hasMatch(p.basename(e.path))).firstOrNull ?? exes.first;
 }
 
 // ── Save Directory Detection ──────────────────────────────────────────────────
@@ -406,32 +410,28 @@ void _addScreenshots(GameGroup g, List<File> paths) {
 
 // ── Scanner ───────────────────────────────────────────────────────────────────
 
-GameVersion? scanGameVersion(Directory dir) {
-  final renpy = isRenpyDir(dir);
-  final nonRenpy = !renpy && isExeGameDir(dir);
-  if (!renpy && !nonRenpy) return null;
+/// Reads one game folder. [engine] is passed when the library search has
+/// already recognised it; otherwise it's detected here, with a folder of
+/// programs and no known engine accepted (a top folder or one picked by hand).
+GameVersion? scanGameVersion(Directory dir, {GameEngine? engine}) {
+  engine ??= detectEngine(dir, allowOther: true);
+  if (engine == null) return null;
+  final renpy = engine == GameEngine.renpy;
 
-  final (baseKey, versionStr, displayName) = parseFolderName(p.basename(dir.path));
+  // A folder named only by its version (Game/v0.5) takes its title from the
+  // folder above.
+  final folder = p.basename(dir.path);
+  final parsedName = isVersionOnlyName(folder) ? '${p.basename(dir.parent.path)}-$folder' : folder;
+  final (baseKey, versionStr, displayName) = parseFolderName(parsedName);
   if (baseKey.isEmpty) return null;
 
   // Find exe
   File? exePath;
   try {
-    final exes = dir.listSync().whereType<File>()
-        .where((f) => f.path.endsWith('.exe') && !f.path.contains('-32'))
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
-    exePath = exes.isEmpty ? null : exes.first;
-
+    exePath = pickGameExe(dir);
     if (exePath == null && !renpy) {
       final subdirs = dir.listSync().whereType<Directory>().toList();
-      if (subdirs.length == 1) {
-        final subExes = subdirs.first.listSync().whereType<File>()
-            .where((f) => f.path.endsWith('.exe') && !f.path.contains('-32'))
-            .toList()
-          ..sort((a, b) => a.path.compareTo(b.path));
-        exePath = subExes.isEmpty ? null : subExes.first;
-      }
+      if (subdirs.length == 1) exePath = pickGameExe(subdirs.first);
     }
   } catch (_) {}
 
@@ -448,6 +448,7 @@ GameVersion? scanGameVersion(Directory dir) {
     appdataSaveDir: appdataSaves,
     metadata: loadGameMetadata(dir),
     isRenpy: renpy,
+    engine: engine,
     saves: _readSaves(localSaves, appdataSaves),
     hasVnpf: Directory(p.join(dir.path, _metadataDir)).existsSync(),
   );
@@ -631,40 +632,29 @@ class ScannerService {
   /// Every folder in [libraryDirs] is scanned. Versions of one game in
   /// different folders group into one game. A folder that can't be read,
   /// such as a drive that isn't plugged in, is skipped.
+  /// Folders in [noSubfolders] are searched at their top level only; every
+  /// other folder is also searched in its subfolders (#13).
   static Future<List<GameGroup>> scanAll(List<Directory> libraryDirs,
-      {Map<String, String> merges = const {}}) {
-    return Isolate.run(() => _scanAllSync(libraryDirs, merges));
+      {Map<String, String> merges = const {}, Set<String> noSubfolders = const {}}) {
+    return Isolate.run(() => _scanAllSync(libraryDirs, merges, noSubfolders));
   }
 
-  static List<GameGroup> _scanAllSync(List<Directory> libraryDirs, Map<String, String> merges) {
+  static List<GameGroup> _scanAllSync(
+      List<Directory> libraryDirs, Map<String, String> merges, Set<String> noSubfolders) {
     final versions = <GameVersion>[];
     final archives = <ArchiveItem>[];
 
-    final entries = <FileSystemEntity>[];
     for (final dir in libraryDirs) {
-      try {
-        entries.addAll(dir.listSync());
-      } catch (_) {
-        // Not reachable right now. Its games come back when it is.
-      }
-    }
-
-    for (final e in entries) {
-      if (e is Directory) {
-        // Dot-folders are hidden/system — including in-progress extractions
-        // (.vnp-extract-…).
-        if (p.basename(e.path).startsWith('.')) continue;
-        final v = scanGameVersion(e);
+      // A folder that isn't reachable right now is skipped; its games come
+      // back when it is.
+      if (!dir.existsSync()) continue;
+      final found = searchLibrary(dir, subfolders: !noSubfolders.contains(dir.path));
+      for (final (folder, engine) in found.games) {
+        final v = scanGameVersion(folder, engine: engine);
         if (v != null) versions.add(v);
-      } else if (e is File) {
-        final ext = p.extension(e.path).toLowerCase();
-        // Archive types shown in the Archives tab.
-        // .rpa/.rpy/.py = Ren'Py assets/scripts loose in library root
-        // .zip/.rar/.7z = game download archives
-        // Anything else at library root that isn't a game folder → orphan
-        if (['.zip', '.rar', '.7z', '.rpa', '.rpy', '.py'].contains(ext)) {
-          archives.add(scanArchive(e));
-        }
+      }
+      for (final f in found.archives) {
+        archives.add(scanArchive(f));
       }
     }
 

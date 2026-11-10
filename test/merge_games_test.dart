@@ -30,7 +30,10 @@ void main() {
     setUp(() => lib = Directory.systemTemp.createTempSync('vnp_merge'));
     tearDown(() => lib.deleteSync(recursive: true));
 
-    void folder(String name) => Directory(p.join(lib.path, name, 'game')).createSync(recursive: true);
+    void folder(String name) {
+      final game = Directory(p.join(lib.path, name, 'game'))..createSync(recursive: true);
+      File(p.join(game.path, 'script.rpy')).writeAsStringSync('label start:\n    return\n');
+    }
     String key(String name) => parseFolderName(name).$1;
 
     test('merged folders become versions of one game, in version order', () async {

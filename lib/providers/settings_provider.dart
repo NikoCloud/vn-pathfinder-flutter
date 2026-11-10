@@ -47,6 +47,7 @@ class AppSettings {
   final double archiveCardWidth; // Archive card width
   final bool archiveDetails;     // Archive shows every archive as a list row
   final List<String> hiddenArchives; // archive paths cleared from the Archive screen
+  final List<String> noSubfolderDirs; // library folders searched at their top level only
   final bool keepOldVersion;     // keep the old version when an update lands
   final Map<String, Map<String, dynamic>> savedViews; // Library views by name
 
@@ -80,6 +81,7 @@ class AppSettings {
     this.archiveCardWidth = 272,
     this.archiveDetails = false,
     this.hiddenArchives = const [],
+    this.noSubfolderDirs = const [],
     this.keepOldVersion = true,
     this.savedViews = const {},
   });
@@ -116,6 +118,7 @@ class AppSettings {
     archiveCardWidth: (json['archive_card_width'] as num?)?.toDouble() ?? 272,
     archiveDetails: json['archive_details'] as bool? ?? false,
     hiddenArchives: [for (final p in json['hidden_archives'] as List? ?? const []) '$p'],
+    noSubfolderDirs: [for (final p in json['library_no_subfolders'] as List? ?? const []) '$p'],
     keepOldVersion: json['keep_old_version'] as bool? ?? true,
     savedViews: (json['saved_views'] as Map? ?? {}).map(
       (k, v) => MapEntry(k as String, Map<String, dynamic>.from(v as Map))),
@@ -163,6 +166,7 @@ class AppSettings {
     'archive_card_width': archiveCardWidth,
     'archive_details': archiveDetails,
     'hidden_archives': hiddenArchives,
+    'library_no_subfolders': noSubfolderDirs,
     'keep_old_version': keepOldVersion,
     'saved_views': savedViews,
   };
@@ -197,6 +201,7 @@ class AppSettings {
     double? archiveCardWidth,
     bool? archiveDetails,
     List<String>? hiddenArchives,
+    List<String>? noSubfolderDirs,
     bool? keepOldVersion,
     Map<String, Map<String, dynamic>>? savedViews,
   }) => AppSettings(
@@ -229,6 +234,7 @@ class AppSettings {
     archiveCardWidth: archiveCardWidth ?? this.archiveCardWidth,
     archiveDetails: archiveDetails ?? this.archiveDetails,
     hiddenArchives: hiddenArchives ?? this.hiddenArchives,
+    noSubfolderDirs: noSubfolderDirs ?? this.noSubfolderDirs,
     keepOldVersion: keepOldVersion ?? this.keepOldVersion,
     savedViews: savedViews ?? this.savedViews,
   );
@@ -319,6 +325,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setCardWidth(double v) => update((s) => s.copyWith(cardWidth: v));
   void setArchiveCardWidth(double v) => update((s) => s.copyWith(archiveCardWidth: v));
   void setArchiveDetails(bool v) => update((s) => s.copyWith(archiveDetails: v));
+
+  /// Search Subfolders for one library folder (#13). On unless turned off.
+  void setSearchSubfolders(String dir, bool on) => update((s) => s.copyWith(
+      noSubfolderDirs: on
+          ? [for (final d in s.noSubfolderDirs) if (d != dir) d]
+          : {...s.noSubfolderDirs, dir}.toList()));
 
   /// Clears archives from the Archive screen without touching the files.
   void hideArchives(Iterable<String> paths) => update((s) =>

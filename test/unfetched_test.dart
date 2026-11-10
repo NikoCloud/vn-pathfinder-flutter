@@ -55,6 +55,7 @@ void main() {
     Directory gameFolder() {
       final dir = Directory(p.join(lib.path, 'Game-1.0'));
       Directory(p.join(dir.path, 'game')).createSync(recursive: true);
+      File(p.join(dir.path, 'game', 'script.rpy')).writeAsStringSync('label start:\n    return\n');
       return dir;
     }
 

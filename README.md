@@ -37,7 +37,7 @@
 
 ### Library
 
-- Finds Ren'Py games and other Windows games in your library folders. Add as many folders as you like, on any drive, in **Settings → General**. Versions of one game in different folders show as one game
+- Finds games in your library folders and in folders inside them (Search subfolders, on by default per folder), and recognises their engine: Ren'Py, Unity, Unreal, RPG Maker, Godot, Wolf RPG, Kirikiri, HTML and Flash. Add as many folders as you like, on any drive, in **Settings → General**. Versions of one game in different folders show as one game
 - Each folder shows how much room its drive has left. Downloads go to the first folder, and you drag the folders to choose which one that is
 - A folder on a drive that isn't plugged in is skipped, and its games come back when it is. Nothing you've saved about them is lost
 - Groups every installed version of a game under one entry
@@ -206,7 +206,6 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 - The first time the Feed sees a LewdCorner thread it has no history for it, so a small edit can pass as that release's date once.
 - Logged out of F95Zone or LewdCorner, the public feeds only know a thread's latest reply, so an old thread can show as recent the first time it's seen.
 - Games that have a `.vnpf` folder from Game Properties or Add Game don't count as Unfetched, even if nothing was fetched.
-- Only the folders directly inside each library folder are looked at. A game inside another folder, such as `Library\Ren'Py\Game`, isn't found yet. Add each inner folder (`Library\Ren'Py`) as a library folder instead of the folder above it.
 - Windows only for now. macOS and Linux need a different built-in browser.
 - Windows 11's Snap Layouts menu doesn't appear when you hover the maximize button. Dragging a window to a screen edge and Win+Z still work.
 

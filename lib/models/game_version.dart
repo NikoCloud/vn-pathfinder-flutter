@@ -1,5 +1,6 @@
 import 'dart:io';
 import '../utils/formatters.dart';
+import '../services/game_detect.dart';
 
 /// What a version's Ren'Py save files say — read at scan time.
 class SaveInfo {
@@ -42,6 +43,10 @@ class GameVersion {
   final Directory? appdataSaveDir;
   final Map<String, dynamic> metadata;
   final bool isRenpy;
+
+  /// The engine recognised from the game's files (#13). Null for versions
+  /// built by hand in tests or older code paths.
+  final GameEngine? engine;
   final SaveInfo saves;
 
   /// This folder has a .vnpf folder, where Fetch Metadata saves its results.
@@ -58,6 +63,7 @@ class GameVersion {
     this.appdataSaveDir,
     this.metadata = const {},
     this.isRenpy = true,
+    this.engine,
     this.saves = const SaveInfo(),
     this.hasVnpf = false,
   });
@@ -95,6 +101,10 @@ class GameVersion {
 
   /// The engine as people write it, from the scan or the fetched metadata.
   String get engineName {
+    final e = engine;
+    // Recognised from the game's files; "Other" says nothing, so fall back
+    // to what Fetch Metadata found.
+    if (e != null && e != GameEngine.other) return e.label;
     if (isRenpy) return "Ren'Py";
     return switch (metaEngine.toLowerCase()) {
       'renpy' => "Ren'Py",
@@ -127,6 +137,7 @@ class GameVersion {
     appdataSaveDir: appdataSaveDir ?? this.appdataSaveDir,
     metadata: metadata ?? this.metadata,
     isRenpy: isRenpy,
+    engine: engine,
     saves: saves,
     hasVnpf: hasVnpf,
   );

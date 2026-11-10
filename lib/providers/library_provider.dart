@@ -331,7 +331,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(loading: true, error: null);
     try {
       final ud = _ref.read(userDataProvider);
-      final groups = await ScannerService.scanAll([for (final d in dirs) Directory(d)], merges: ud.gameMerges);
+      final groups = await ScannerService.scanAll([for (final d in dirs) Directory(d)],
+          merges: ud.gameMerges, noSubfolders: _ref.read(settingsProvider).noSubfolderDirs.toSet());
       ScannerService.autoDetectPatches(groups, ud);
       // A scan that was already running when the tour began lands in the
       // real list, not over the samples.
@@ -370,6 +371,10 @@ final libraryScanProvider = Provider<void>((ref) {
   }
   // Re-scan whenever a folder is added or removed. Reordering doesn't change
   // what's found, so it doesn't rescan.
+  // Turning Search subfolders on or off for a folder changes what's found.
+  ref.listen<List<String>>(settingsProvider.select((s) => s.noSubfolderDirs), (prev, next) {
+    if (!listEquals(prev, next)) ref.read(libraryProvider.notifier).scan();
+  });
   ref.listen<List<String>>(libraryDirsProvider, (prev, next) {
     final before = {...?prev}, after = {...next};
     if (before.length != after.length || !before.containsAll(after)) {

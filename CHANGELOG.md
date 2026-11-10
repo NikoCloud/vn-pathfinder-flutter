@@ -8,6 +8,13 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ### Added
 
+- **Search subfolders.** Games inside folders in your library folders are found now, such as `Played\Developer\Game\v0.5`, up to 8 levels down. It's on for every library folder; turn it off per folder in **Settings → General**. A folder named only by its version takes its title from the folder above.
+- **Engines are recognised from the game's files:** Ren'Py, Unity, Unreal, RPG Maker MV, MZ and VX Ace, Godot, Wolf RPG, Kirikiri, HTML and Flash. The game page shows it, and the Engine filter uses it, even for games you haven't fetched.
+
+### Changed
+
+- **Fewer false games.** A folder of installers or a split archive (`part1.exe` with `.rar` parts) no longer shows up as a game, and a game is launched with its own program rather than a crash handler or uninstaller that happens to sort first.
+
 - **Crash reports.** If the app closes unexpectedly, the next start says so and offers the report to view or copy, to paste wherever you report problems. It records crashes in native code too, which the app couldn't see before, and notices runs that ended without a crash being caught (a force-quit or a power cut). Reports stay on your PC, with your folders and Windows user name left out. **Settings → About** has **Open logs folder**.
 
 ### Bug fixes
