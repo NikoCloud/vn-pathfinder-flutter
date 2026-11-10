@@ -54,7 +54,20 @@ class _AppUpdateDialog extends ConsumerWidget {
                   ),
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(14),
-                    child: _ReleaseNotes(release.notes),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Every version since yours, newest first, with only
+                        // what changed in each (#23).
+                        for (final (i, r) in (release.since.isEmpty ? [release] : release.since).indexed) ...[
+                          if (i > 0) const SizedBox(height: 16),
+                          Text('Version ${r.version}',
+                              style: AppText.ui(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                          const SizedBox(height: 4),
+                          _ReleaseNotes(releaseChanges(r.notes)),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),

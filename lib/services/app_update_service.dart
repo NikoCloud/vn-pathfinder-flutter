@@ -24,6 +24,10 @@ class AppRelease {
   /// Lowercase hex SHA-256 of the installer, as GitHub reports it.
   final String? installerSha256;
 
+  /// Every release newer than this build, newest first, this one included
+  /// (#23): someone skipping versions sees what each of them changed.
+  final List<AppRelease> since;
+
   const AppRelease({
     required this.tag,
     required this.name,
@@ -33,7 +37,20 @@ class AppRelease {
     this.installerName,
     this.installerSize = 0,
     this.installerSha256,
+    this.since = const [],
   });
+
+  AppRelease withSince(List<AppRelease> releases) => AppRelease(
+        tag: tag,
+        name: name,
+        notes: notes,
+        pageUrl: pageUrl,
+        installerUrl: installerUrl,
+        installerName: installerName,
+        installerSize: installerSize,
+        installerSha256: installerSha256,
+        since: releases,
+      );
 
   /// "v2.0.0-beta.2" → "2.0.0-beta.2".
   String get version => tag.replaceFirst(RegExp(r'^[vV]'), '');
@@ -70,7 +87,11 @@ class AppUpdateService {
   /// The releases list rather than `releases/latest`, which skips pre-releases.
   /// Every release counts until there is a stable one. Setting
   /// VNPF_RELEASES_URL points this at another list, for testing.
+  /// For tests.
+  static String? releasesUrlForTesting;
+
   static String get _releasesApi =>
+      releasesUrlForTesting ??
       Platform.environment['VNPF_RELEASES_URL'] ??
       'https://api.github.com/repos/NikoCloud/vn-pathfinder-flutter/releases?per_page=20';
 
@@ -86,15 +107,16 @@ class AppUpdateService {
     if (resp.statusCode != 200) throw HttpException('GitHub answered ${resp.statusCode}');
     final list = jsonDecode(resp.body);
     if (list is! List) throw const FormatException('Unexpected answer from GitHub');
-    AppRelease? newest;
+    final newer = <AppRelease>[];
     for (final r in list) {
       if (r is! Map || r['draft'] == true) continue;
       final release = AppRelease.fromJson(r);
       if (release.tag.isEmpty) continue;
-      if (newest == null || compareAppVersions(release.version, newest.version) > 0) newest = release;
+      if (compareAppVersions(release.version, appVersion) > 0) newer.add(release);
     }
-    if (newest == null || compareAppVersions(newest.version, appVersion) <= 0) return null;
-    return newest;
+    if (newer.isEmpty) return null;
+    newer.sort((a, b) => compareAppVersions(b.version, a.version));
+    return newer.first.withSince(newer);
   }
 
   /// True when this copy was put here by the installer, which can update it.
@@ -208,4 +230,27 @@ int compareAppVersions(String a, String b) {
     if (c != 0) return c;
   }
   return ap.length.compareTo(bp.length);
+}
+
+/// What a release changed, from its GitHub notes: the Install and Checksums
+/// sections and code blocks are left out, since they only matter on the
+/// release page (#23).
+String releaseChanges(String notes) {
+  final out = <String>[];
+  var skipping = false, inCode = false;
+  for (final raw in notes.replaceAll('\r', '').split('\n')) {
+    final line = raw.trimRight();
+    if (line.trimLeft().startsWith('```')) {
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) continue;
+    final heading = RegExp(r'^#{1,6}\s+(.*)').firstMatch(line);
+    if (heading != null) {
+      final h = heading[1]!.toLowerCase();
+      skipping = h.startsWith('install') || h.startsWith('checksum') || h.startsWith('download');
+    }
+    if (!skipping) out.add(line);
+  }
+  return out.join('\n').trim();
 }

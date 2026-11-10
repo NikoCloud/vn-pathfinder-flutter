@@ -16,6 +16,7 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ### Changed
 
+- **The update dialog shows what changed in every version since yours,** newest first, so you can see whether an update fixes your problem. Install steps and checksums stay on the release page.
 - **Lockdown is clearer.** The Feed tab is greyed out while Lockdown is on, with a tooltip saying why, and Home says what Lockdown holds back (covers and descriptions from Fetch Metadata, update alerts, the Feed) with a **Go online** button.
 - **Fewer false games.** A folder of installers or a split archive (`part1.exe` with `.rar` parts) no longer shows up as a game, and a game is launched with its own program rather than a crash handler or uninstaller that happens to sort first.
 
