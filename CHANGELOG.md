@@ -6,6 +6,11 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ## Unreleased
 
+### Bug fixes
+
+- **A downloaded update could install as the wrong version.** When a thread labelled its version with extra words ("Chapter 3.6.5 Patched", "Ch.3.6.5"), the extracted folder's name lost the number or split the game in two, so Play kept opening the old version and the update still looked available. Download folders now always read back as the game and its version number, and the same version from two sources lands in one folder.
+- **.7z archives** showed in Archive as an unknown type that couldn't be extracted. They now have their own 7Z filter and extract like RAR, through 7-Zip, including downloads, which extract by themselves when they finish. Assign accepts them too.
+
 ## 2.0.0-beta.2.1 - 2026-11-10
 
 ### Bug fixes

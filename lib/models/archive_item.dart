@@ -1,11 +1,12 @@
 import 'dart:io';
 
-enum ArchiveType { zip, rar, rpa, rpy, py, unknown }
+enum ArchiveType { zip, rar, sevenZip, rpa, rpy, py, unknown }
 
 extension ArchiveTypeExt on ArchiveType {
   String get label => switch (this) {
     ArchiveType.zip => 'ZIP',
     ArchiveType.rar => 'RAR',
+    ArchiveType.sevenZip => '7Z',
     ArchiveType.rpa => 'RPA',
     ArchiveType.rpy => 'RPY',
     ArchiveType.py  => 'PY',
@@ -15,11 +16,18 @@ extension ArchiveTypeExt on ArchiveType {
   static ArchiveType fromExtension(String ext) => switch (ext.toLowerCase()) {
     '.zip' => ArchiveType.zip,
     '.rar' => ArchiveType.rar,
+    '.7z'  => ArchiveType.sevenZip,
     '.rpa' => ArchiveType.rpa,
     '.rpy' => ArchiveType.rpy,
     '.py'  => ArchiveType.py,
     _      => ArchiveType.unknown,
   };
+
+  /// A game download the app can extract.
+  bool get canExtract => this == ArchiveType.zip || needs7Zip;
+
+  /// Extracted with 7-Zip, which has to be installed.
+  bool get needs7Zip => this == ArchiveType.rar || this == ArchiveType.sevenZip;
 }
 
 class ArchiveItem {

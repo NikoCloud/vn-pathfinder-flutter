@@ -465,7 +465,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     final extracted = _isExtracted(item);
     final installed = extracted || archiveIsInstalled(item, entry.game);
     final selected = item.archivePath.path == _selectedPath;
-    final canExtract = item.type == ArchiveType.zip || item.type == ArchiveType.rar;
+    final canExtract = item.type.canExtract;
     final game = entry.game;
     final art = entry.card?.cover ?? (game == null ? null : localArt(game, ref));
 
@@ -547,7 +547,7 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
       bool isExtracted, _ExState exState) {
     final hidden = ref.read(settingsProvider).hiddenArchives.contains(item.archivePath.path);
     setState(() => _selectedPath = item.archivePath.path);
-    final canExtract = item.type == ArchiveType.zip || item.type == ArchiveType.rar;
+    final canExtract = item.type.canExtract;
 
     showMenu<String>(
       context: context,
@@ -673,8 +673,8 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     try {
       if (item.type == ArchiveType.zip) {
         await _extractZip(item, job, onProgress);
-      } else if (item.type == ArchiveType.rar) {
-        await _extractRar(item, job, onProgress);
+      } else if (item.type.needs7Zip) {
+        await _extract7Zip(item, job, onProgress);
       } else {
         throw 'Extraction not supported for ${item.type.label} files.';
       }
@@ -718,10 +718,10 @@ class _ArchiveScreenState extends ConsumerState<ArchiveScreen> {
     if (ref.read(settingsProvider).deleteAfterExtract) await item.archivePath.delete();
   }
 
-  Future<void> _extractRar(
+  Future<void> _extract7Zip(
       ArchiveItem item, ExtractionJob job, void Function(ExtractionProgress) onProgress) async {
     final sevenZip = _findSevenZip();
-    if (sevenZip == null) throw '7-Zip not found. Install 7-Zip to extract RAR archives.';
+    if (sevenZip == null) throw '7-Zip not found. Install 7-Zip to extract RAR and 7z archives.';
 
     final staging = _stagingDir(item);
     try {
@@ -1054,7 +1054,7 @@ class _ArchiveHeaderState extends State<_ArchiveHeader> {
           // Subtitle
           Expanded(
             child: Text(
-              'Archives (.zip, .rar, .rpa, .rpy)',
+              'Archives (.zip, .rar, .7z, .rpa, .rpy)',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppText.ui(
@@ -1067,7 +1067,7 @@ class _ArchiveHeaderState extends State<_ArchiveHeader> {
           const SizedBox(width: 8),
 
           // Type filters
-          for (final type in [null, ArchiveType.zip, ArchiveType.rar, ArchiveType.rpa])
+          for (final type in [null, ArchiveType.zip, ArchiveType.rar, ArchiveType.sevenZip, ArchiveType.rpa])
             Padding(
               padding: const EdgeInsets.only(left: 4),
               child: _Chip(
@@ -1088,11 +1088,15 @@ class _ArchiveHeaderState extends State<_ArchiveHeader> {
 
           const SizedBox(width: 12),
 
-          // Search
-          SizedBox(
-            width: 190,
-            height: 28,
-            child: TextField(
+          // Search: 190 wide when there's room, narrower on a small window
+          // so the buttons beside it always fit.
+          Flexible(
+            flex: 4,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 190),
+              child: SizedBox(
+                height: 28,
+                child: TextField(
               onChanged: widget.onQueryChanged,
               style: AppText.ui(fontSize: 11, color: AppColors.textPrimary),
               decoration: InputDecoration(
@@ -1103,6 +1107,8 @@ class _ArchiveHeaderState extends State<_ArchiveHeader> {
                 isDense: true,
                 prefixIcon:
                     Icon(Icons.search, size: 13, color: AppColors.textMuted),
+              ),
+            ),
               ),
             ),
           ),
@@ -1925,7 +1931,7 @@ class _TypeBadge extends StatelessWidget {
 
   Color get _bg => switch (type) {
     ArchiveType.zip => AppColors.statusUpdated.withValues(alpha: 0.15),
-    ArchiveType.rar => AppColors.statusSkimmed.withValues(alpha: 0.15),
+    ArchiveType.rar || ArchiveType.sevenZip => AppColors.statusSkimmed.withValues(alpha: 0.15),
     ArchiveType.rpa => AppColors.accent.withValues(alpha: 0.15),
     ArchiveType.rpy || ArchiveType.py => AppColors.accent.withValues(alpha: 0.15),
     _ => AppColors.bgHover,
@@ -1933,7 +1939,7 @@ class _TypeBadge extends StatelessWidget {
 
   Color get _fg => switch (type) {
     ArchiveType.zip => AppColors.statusUpdated,
-    ArchiveType.rar => AppColors.statusSkimmed,
+    ArchiveType.rar || ArchiveType.sevenZip => AppColors.statusSkimmed,
     ArchiveType.rpa => AppColors.accentLight,
     ArchiveType.rpy || ArchiveType.py => AppColors.accentLight,
     _ => AppColors.textMuted,
@@ -2134,7 +2140,7 @@ class _ActionBar extends StatelessWidget {
   bool get _canExtract {
     if (selected == null) return false;
     final t = selected!.type;
-    if (t != ArchiveType.zip && t != ArchiveType.rar) return false;
+    if (!t.canExtract) return false;
     final s = exState?.status;
     return s != _ExStatus.running && s != _ExStatus.queued;
   }
@@ -2320,7 +2326,7 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             hasLibrary
-                ? 'Place .zip, .rar, or .rpa files in your library folder.'
+                ? 'Place .zip, .rar, .7z or .rpa files in your library folder.'
                 : 'Archives will appear here once your library is configured.',
             style: AppText.ui(fontSize: 12, color: AppColors.textMuted),
           ),
@@ -2497,7 +2503,7 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
   ArchiveCard? _linked;
 
   bool get _canHoldGame =>
-      widget.item.type == ArchiveType.zip || widget.item.type == ArchiveType.rar;
+      widget.item.type.canExtract;
 
   @override
   void initState() {
@@ -2751,7 +2757,7 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
 
       if (patchExtensions.contains(suffix)) {
         await _assignLoose(patchesDir, metaKey);
-      } else if (suffix == '.zip' || suffix == '.rar') {
+      } else if (ArchiveTypeExt.fromExtension(suffix).canExtract) {
         await _assignArchive(patchesDir, metaKey);
       } else {
         throw 'Unsupported patch format: $suffix';
@@ -2857,9 +2863,9 @@ class _AssignPatchDialogState extends ConsumerState<_AssignPatchDialog> {
     final tmp = Directory(p.join(patchesDir.path, '.tmp_${DateTime.now().millisecondsSinceEpoch}'));
     tmp.createSync(recursive: true);
     try {
-      if (widget.item.type == ArchiveType.rar) {
+      if (widget.item.type.needs7Zip) {
         final sevenZip = _findSevenZip();
-        if (sevenZip == null) throw '7-Zip not found. Install 7-Zip to assign RAR patches.';
+        if (sevenZip == null) throw '7-Zip not found. Install 7-Zip to assign RAR and 7z patches.';
         final result = await Process.run(sevenZip, ['x', archive, '-o${tmp.path}', '-y']);
         if (result.exitCode != 0) throw '7-Zip extraction failed:\n${result.stderr}';
       } else {

@@ -2194,7 +2194,7 @@ class _ArchivesPanel extends ConsumerWidget {
       _SettingGroup(title: 'Requirements', children: [
         _SettingRow(
           label: '7-Zip Status',
-          subtitle: 'Required for .rar and .rpa formats',
+          subtitle: 'Required for .rar and .7z archives',
           trailing: sevenZipOk
               ? Text('✓ Installed',
                   style: AppText.ui(

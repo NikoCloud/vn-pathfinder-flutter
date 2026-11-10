@@ -269,7 +269,7 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
   void _finished(WebviewDownload d) {
     _cards.remove(d.id);
     final ext = p.extension(d.path).toLowerCase();
-    if (ext != '.zip' && ext != '.rar') {
+    if (ext != '.zip' && ext != '.rar' && ext != '.7z') {
       _update(d.id, (j) => j.copyWith(
             stage: JobStage.saved,
             received: d.received,

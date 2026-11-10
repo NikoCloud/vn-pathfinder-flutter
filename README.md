@@ -113,7 +113,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 - Browse the ZIP, RAR, RPA and RPY files in your library folders
 - Downloads from the Feed and files that match a game you have show as cards with their art. Anything else is a plain row
-- Extract ZIP and RAR archives from inside the app, with real speed and time left, and cancel at any point. Files are written as they unpack, so a large game doesn't have to fit in memory
+- Extract ZIP, RAR and 7z archives from inside the app, with real speed and time left, and cancel at any point. Files are written as they unpack, so a large game doesn't have to fit in memory
 - If an extraction fails, Archive tells you why
 - Run several extractions at once (**Settings → Archives**)
 - Extracted games are named from the best of the archive's name and the folder inside it
@@ -151,7 +151,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 - Download or Update from a card or a game's page
 - Pick the site, platform and file host, and the site's own page opens in the app, exactly as it is on the site, with any check, wait or ad. You finish it there
-- The file lands in your first library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP and RAR archives are extracted for you; anything else stays in the folder for you to handle
+- The file lands in your first library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP, RAR and 7z archives are extracted for you; anything else stays in the folder for you to handle
 - The game arrives already fetched: its cover, screenshots, description, tags and thread link come with it, and update alerts work from the start
 - For an update, keep the old version or remove it
 - **Download a Version…** in a game page's ⋯ menu gets any version of a game you have, even when no update is detected
@@ -161,7 +161,7 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 - Windows 10 or 11, 64-bit (developed and tested on Windows 11)
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) for forum logins and fetching (included with Windows 11)
-- [7-Zip](https://www.7-zip.org/) to extract RAR archives
+- [7-Zip](https://www.7-zip.org/) to extract RAR and 7z archives
 
 ## Install
 

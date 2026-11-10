@@ -28,7 +28,6 @@ Never built.
 
 - **Mute a developer.** Muting works per game today.
 - **The rest of the Archive redesign.** Cards are in. The extraction banner, queue sections and table still have the old layout, and NikoCloud has that on the back burner.
-- **7z archives.** They're listed but can't be extracted, though 7-Zip could do it.
 - **Clearing saved game data nothing uses.** A card whose file was deleted in Explorer stays in `.vnpf-archives` so it can be assigned again.
 - **Snap Layouts on the maximize button.** The custom title bar loses the Windows 11 flyout. It needs a native hit-test change in the runner. Edge snapping and Win+Z work.
 - **Discord in the Feed.** Settings shows it as Coming soon. It needs an easier setup than a personal bot token, typed channel lines and a bot invited to every server. The first version is in git at `a23b0b8`.
@@ -40,7 +39,7 @@ Never built.
 - **Direct update checks for LewdCorner and Azkosel's Corner.** They only come through the Feed today. LewdCorner's Latest Updates data could look up a whole tier, which would catch games that drop out of the 60-game feed.
 - **A LewdCorner tier filter in the Feed.** The data supports All, Standard, Plus, AI and AI+.
 - **Follow MEGA downloads made through the MEGA desktop app.** The page hands the link straight to that app, so the browser never sees a download. Updates to a game you own already show its art. For a new game, a file landing in the library while a Get is open could be matched to that game and keep its data.
-- **Search subfolders.** Several library folders shipped in 2.0.0-beta.2, with drag to reorder, downloads to the first and free space per drive. Still to do: a Search subfolders checkbox per folder, which has logic traps to work out first; the empty-Library nudge to turn it on; keyboard reordering (undecided); and a warning when a download is bigger than the free space. Design in [#13](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/13).
+- **Search subfolders.** Several library folders shipped in 2.0.0-beta.2, with drag to reorder, downloads to the first and free space per drive. Still to do: a Search subfolders checkbox per folder, using engine signatures and a level-by-level scan (designed and tested on a real library in #13); the empty-Library nudge to turn it on; keyboard reordering (undecided); and a warning when a download is bigger than the free space. Design in [#13](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/13).
 - **Statuses for games that aren't Ren'Py.** Statuses come from Ren'Py saves, so other engines stay Unplayed. [#14](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/14).
 - **First run with Lockdown on.** Explain what Lockdown holds back, and read Ren'Py's own version so unversioned folders get one offline. [#15](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/15).
 - **Update alerts without a saved forum link.** Looser title matching or a nudge to fetch. [#16](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/16).
