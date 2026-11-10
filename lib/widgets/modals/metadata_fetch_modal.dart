@@ -10,6 +10,7 @@ import '../../providers/settings_provider.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart' show ScrapingException, ScrapingService, scrapingServiceProvider, scrapingSessionProvider;
 import '../../services/scanner_service.dart';
+import 'local_fetch_panel.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -84,6 +85,10 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   late final TextEditingController _queryCtrl;
   _Provider _activeTab = _Provider.vndb;
 
+  /// The Local source (#25): the game's own files. Shown first in Lockdown,
+  /// or with Metadata Scraping off, where it's the only one that works.
+  late bool _local;
+
   // ── Per-provider parallel search state ────────────────────────────────────
   final Map<_Provider, List<MetadataResult>> _resultsByProvider = {};
   final Map<_Provider, bool> _loadingByProvider = {};
@@ -136,6 +141,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   void initState() {
     super.initState();
     _queryCtrl = TextEditingController(text: widget.group.effectiveTitle);
+    final s = ref.read(settingsProvider);
+    _local = s.lockdown || !s.fetchMetadata;
     _scraping = ref.read(scrapingServiceProvider);
     _sessions = ref.read(scrapingSessionProvider.notifier);
     // Acquire a scraping session — this brings the WebView2 instance online.
@@ -467,6 +474,10 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                       ),
                     ]),
                   ),
+                _SourceTabs(local: _local, onChanged: (v) => setState(() => _local = v)),
+                if (_local)
+                  Expanded(child: LocalFetchPanel(group: widget.group))
+                else
                 Expanded(
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -554,6 +565,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                   ),
                 ),
                 Divider(height: 1, color: AppColors.border),
+                if (!_local)
                 _Footer(
                   anyPicked: _anyPicked,
                   applying: _applying,
@@ -1789,6 +1801,44 @@ class _FooterBtnState extends State<_FooterBtn> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Local (this game's files) first, then the online sources.
+class _SourceTabs extends StatelessWidget {
+  final bool local;
+  final ValueChanged<bool> onChanged;
+  const _SourceTabs({required this.local, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tab(String label, String hint, bool on, VoidCallback onTap) => Expanded(
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: on ? AppColors.accent : AppColors.border, width: on ? 2 : 1)),
+              ),
+              child: Column(
+                children: [
+                  Text(label,
+                      style: AppText.ui(
+                          fontSize: 13,
+                          fontWeight: on ? FontWeight.w600 : FontWeight.w500,
+                          color: on ? AppColors.textPrimary : AppColors.textSecondary)),
+                  Text(hint, style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
+                ],
+              ),
+            ),
+          ),
+        );
+    return Row(
+      children: [
+        tab('Local', "This game's files, works offline", local, () => onChanged(true)),
+        tab('Online', 'VNDB, F95Zone, LewdCorner, Azkosel\'s, itch.io', !local, () => onChanged(false)),
+      ],
     );
   }
 }

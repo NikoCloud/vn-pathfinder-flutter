@@ -428,8 +428,12 @@ GameVersion? scanGameVersion(Directory dir,
   // folder above.
   final folder = p.basename(dir.path);
   final parsedName = isVersionOnlyName(folder) ? '${p.basename(dir.parent.path)}-$folder' : folder;
-  final (baseKey, versionStr, displayName) = parseFolderName(parsedName);
+  final (baseKey, folderVersion, displayName) = parseFolderName(parsedName);
   if (baseKey.isEmpty) return null;
+  // A folder named without a version uses the one local fetch read from the
+  // game's files (#15, #25); a version in the folder name always wins.
+  final metadata = loadGameMetadata(dir);
+  final versionStr = folderVersion.isNotEmpty ? folderVersion : '${metadata['local_version'] ?? ''}'.trim();
 
   // Find exe
   File? exePath;
@@ -452,7 +456,7 @@ GameVersion? scanGameVersion(Directory dir,
     exePath: exePath,
     localSaveDir: localSaves,
     appdataSaveDir: appdataSaves,
-    metadata: loadGameMetadata(dir),
+    metadata: metadata,
     isRenpy: renpy,
     engine: engine,
     saves: _savesWithCache(localSaves, appdataSaves, engine, cached, onCache),
