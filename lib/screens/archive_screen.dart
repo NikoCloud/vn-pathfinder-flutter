@@ -3048,6 +3048,7 @@ class _ArchiveSize extends ConsumerWidget {
       width: ref.watch(settingsProvider.select((s) => s.archiveCardWidth)),
       onDetails: notifier.setArchiveDetails,
       onWidth: notifier.setArchiveCardWidth,
+      onEnd: notifier.save,
     );
   }
 }

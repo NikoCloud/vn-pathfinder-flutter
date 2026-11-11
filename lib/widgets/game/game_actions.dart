@@ -50,10 +50,30 @@ Future<void> playGame(BuildContext context, WidgetRef ref, GameGroup group, [Gam
 }
 
 /// The local cover of a library game, if it has one.
+///
+/// Finding it reads the disk (cover files, each version's .vnpf folder), and
+/// cards ask on every rebuild, so the answer is remembered per game. It's
+/// looked up again after a rescan (which makes new [GameGroup]s), when the
+/// game's images change (imageEpochProvider) or its custom art is set.
 String? localArt(GameGroup g, WidgetRef ref) {
-  final images = groupCarouselPaths(g, ref.read(userDataProvider).customArt[g.baseKey]);
-  return images.isEmpty ? null : images.first.path;
+  final custom = ref.read(userDataProvider).customArt[g.baseKey];
+  final epoch = ref.read(imageEpochProvider);
+  final known = _artMemo[g];
+  if (known != null && known.custom == custom && known.epoch == epoch) return known.path;
+  final images = groupCarouselPaths(g, custom);
+  final path = images.isEmpty ? null : images.first.path;
+  _artMemo[g] = _Art(custom, epoch, path);
+  return path;
 }
+
+class _Art {
+  final String? custom;
+  final int epoch;
+  final String? path;
+  const _Art(this.custom, this.epoch, this.path);
+}
+
+final _artMemo = Expando<_Art>();
 
 /// The right art for a Feed row: your copy's if you have one.
 String feedArt(FeedRow row, WidgetRef ref) {

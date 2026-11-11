@@ -263,12 +263,31 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     } catch (_) {}
   }
 
-  Future<void> save() async {
-    final f = _settingsFile();
-    f.parent.createSync(recursive: true);
-    await f.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(state.toJson()),
-    );
+  Future<void>? _saving;
+  bool _saveAgain = false;
+
+  /// Writes settings.json. One write at a time: a save asked for while one
+  /// is running waits and then writes the newest settings, so two writes
+  /// never overlap in the file.
+  Future<void> save() {
+    if (_saving != null) {
+      _saveAgain = true;
+      return _saving!;
+    }
+    return _saving = _write().whenComplete(() => _saving = null);
+  }
+
+  Future<void> _write() async {
+    do {
+      _saveAgain = false;
+      try {
+        final f = _settingsFile();
+        f.parent.createSync(recursive: true);
+        await f.writeAsString(const JsonEncoder.withIndent('  ').convert(state.toJson()));
+      } catch (e) {
+        debugPrint('Saving settings failed: $e');
+      }
+    } while (_saveAgain);
   }
 
   void update(AppSettings Function(AppSettings) updater) {
@@ -322,8 +341,11 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   void setFeedSourceLC(bool v) => update((s) => s.copyWith(feedSourceLC: v));
   void setDiscreet(bool v) => update((s) => s.copyWith(discreet: v));
   void markFeedSeen() => update((s) => s.copyWith(feedSeenAt: DateTime.now().toIso8601String()));
-  void setCardWidth(double v) => update((s) => s.copyWith(cardWidth: v));
-  void setArchiveCardWidth(double v) => update((s) => s.copyWith(archiveCardWidth: v));
+
+  /// The size sliders call these on every step of a drag, so they only change
+  /// what's on screen; the slider calls [save] once when it's let go.
+  void setCardWidth(double v) => state = state.copyWith(cardWidth: v);
+  void setArchiveCardWidth(double v) => state = state.copyWith(archiveCardWidth: v);
   void setArchiveDetails(bool v) => update((s) => s.copyWith(archiveDetails: v));
 
   /// Search Subfolders for one library folder (#13). On unless turned off.
@@ -407,7 +429,11 @@ String libraryRootFor(List<String> dirs, String path) {
 
 // Reactive ThemeData derived from persisted settings
 final appThemeDataProvider = Provider<ThemeData>((ref) {
-  final s = ref.watch(settingsProvider);
+  // Only the settings the theme is made from. A new theme rebuilds every
+  // widget in the app, so it must not be remade when anything else changes
+  // (the card size slider changes a setting on every step of a drag).
+  final s = ref.watch(
+      settingsProvider.select((s) => (theme: s.theme, accentColor: s.accentColor, fontSize: s.fontSize)));
   final dark = switch (s.theme) {
     'light' => false,
     'system' => WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark,
@@ -421,7 +447,7 @@ final appThemeDataProvider = Provider<ThemeData>((ref) {
 
 // Reactive ThemeMode derived from persisted settings
 final appThemeModeProvider = Provider<ThemeMode>((ref) {
-  return switch (ref.watch(settingsProvider).theme) {
+  return switch (ref.watch(settingsProvider.select((s) => s.theme))) {
     'light'  => ThemeMode.light,
     'system' => ThemeMode.system,
     _        => ThemeMode.dark,

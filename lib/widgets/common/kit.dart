@@ -809,12 +809,17 @@ class VpSizeSlider extends StatelessWidget {
   final ValueChanged<bool> onDetails;
   final ValueChanged<double> onWidth;
 
+  /// Called once when the slider is let go, to save the size. [onWidth] runs
+  /// on every step of a drag and should only change what's on screen.
+  final VoidCallback? onEnd;
+
   const VpSizeSlider({
     super.key,
     required this.details,
     required this.width,
     required this.onDetails,
     required this.onWidth,
+    this.onEnd,
   });
 
   static const _details = 170.0;
@@ -846,6 +851,7 @@ class VpSizeSlider extends StatelessWidget {
                 if (toDetails != details) onDetails(toDetails);
                 if (!toDetails) onWidth(v.clamp(minCard, maxCard));
               },
+              onChangeEnd: (_) => onEnd?.call(),
             ),
           ),
           Icon(Icons.grid_view_rounded, size: 16, color: details ? AppColors.textMuted : AppColors.accent),
@@ -984,7 +990,10 @@ class _VpSliderState extends State<VpSlider> {
               _dragging = false;
               widget.onChangeEnd?.call(_current);
             },
-            onHorizontalDragCancel: () => _dragging = false,
+            onHorizontalDragCancel: () {
+              _dragging = false;
+              widget.onChangeEnd?.call(_current);
+            },
             child: SizedBox(
               width: width,
               height: height,

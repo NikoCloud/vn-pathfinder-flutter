@@ -383,6 +383,7 @@ class _SizeSlider extends ConsumerWidget {
         width: ref.watch(settingsProvider.select((s) => s.cardWidth)),
         onDetails: (v) => ref.read(libraryDetailsProvider.notifier).state = v,
         onWidth: ref.read(settingsProvider.notifier).setCardWidth,
+        onEnd: ref.read(settingsProvider.notifier).save,
       );
 }
 

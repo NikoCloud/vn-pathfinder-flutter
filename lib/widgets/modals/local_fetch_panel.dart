@@ -86,6 +86,14 @@ class _LocalFetchPanelState extends ConsumerState<LocalFetchPanel> {
       // changes no pictures.
       if (_useCover && info.icon != null) File(p.join(vnpf.path, 'icon.png')).writeAsBytesSync(info.icon!);
       await ref.read(libraryProvider.notifier).scan();
+      // A new cover can reuse the old file's name: drop the decoded copy and
+      // rebuild what shows it, as the online fetch does.
+      if (_useCover && info.cover != null) {
+        PaintingBinding.instance.imageCache
+          ..clear()
+          ..clearLiveImages();
+        ref.read(imageEpochProvider.notifier).state++;
+      }
       if (!mounted) return;
       ref.read(notificationProvider.notifier).success('Read from the game files');
       Navigator.of(context).pop();
