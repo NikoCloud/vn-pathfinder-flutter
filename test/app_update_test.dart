@@ -6,7 +6,7 @@ import 'package:vn_pathfinder/services/app_update_service.dart';
 void main() {
   group('compareAppVersions', () {
     test('orders pre-releases below the release they lead to', () {
-      final ordered = ['2.0.0-alpha', '2.0.0-alpha.2', '2.0.0-beta.1', '2.0.0-beta.2', '2.0.0-beta.10', '2.0.0-rc.1', '2.0.0', '2.0.1', '2.1.0'];
+      final ordered = ['2.0.0-alpha', '2.0.0-alpha.2', '2.0.0-beta.1', '2.0.0-beta.2', '2.0.0-beta.2.1', '2.0.0-beta.3', '2.0.0-beta.10', '2.0.0-rc.1', '2.0.0', '2.0.1', '2.1.0'];
       for (var i = 0; i < ordered.length - 1; i++) {
         expect(compareAppVersions(ordered[i + 1], ordered[i]), greaterThan(0), reason: '${ordered[i + 1]} > ${ordered[i]}');
         expect(compareAppVersions(ordered[i], ordered[i + 1]), lessThan(0), reason: '${ordered[i]} < ${ordered[i + 1]}');

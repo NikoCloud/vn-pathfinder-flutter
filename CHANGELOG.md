@@ -4,7 +4,7 @@ What's in each version of VN Pathfinder 2.0, newest first.
 
 Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutter/releases) page. `0.9.0` is a source snapshot with no download.
 
-## Unreleased
+## 2.0.0-beta.3 - 2026-11-10
 
 ### Added
 
