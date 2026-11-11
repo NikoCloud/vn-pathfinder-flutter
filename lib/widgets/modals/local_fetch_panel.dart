@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -85,7 +86,17 @@ class _LocalFetchPanelState extends ConsumerState<LocalFetchPanel> {
       // The game's own icon goes with its cover; title or version alone
       // changes no pictures.
       if (_useCover && info.icon != null) File(p.join(vnpf.path, 'icon.png')).writeAsBytesSync(info.icon!);
-      await ref.read(libraryProvider.notifier).scan();
+      // Only this game changed, so only it is read again and Apply returns
+      // at once; waiting for a full scan here meant waiting for the whole
+      // library. The full scan still runs, in the background, to settle
+      // anything that depends on the new version (which archive belongs to
+      // which version, for one).
+      final library = ref.read(libraryProvider.notifier);
+      if (await library.refreshFolder(v.folderPath)) {
+        unawaited(library.scan());
+      } else {
+        await library.scan();
+      }
       // A new cover can reuse the old file's name: drop the decoded copy and
       // rebuild what shows it, as the online fetch does.
       if (_useCover && info.cover != null) {

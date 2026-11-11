@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
 import '../models/game_status.dart';
+import '../models/game_version.dart';
+import '../services/game_detect.dart';
 import '../models/user_data.dart';
 import '../services/library_cache.dart';
 import '../services/scanner_service.dart';
@@ -264,6 +267,12 @@ class LibraryState {
             orElse: () => null);
 }
 
+/// Made outside the notifier so it carries only the path and engine: a
+/// closure made in a method also carries the notifier, which can't be sent to
+/// another isolate.
+GameVersion? Function() _rereadJob(String path, GameEngine? engine) =>
+    () => scanGameVersion(Directory(path), engine: engine);
+
 class LibraryNotifier extends StateNotifier<LibraryState> {
   final Ref _ref;
 
@@ -384,6 +393,37 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       _update((s) => s.copyWith(loading: false, error: e.toString(), clearProgress: true));
       _ref.read(scanProgressProvider.notifier).state = null;
     }
+  }
+
+  /// Rereads one game folder and puts the result in the list, without
+  /// searching the library again. For a change to a single game's own files
+  /// (its metadata or cover), where a full scan would make the user wait for
+  /// every other game to be read too. Returns false when the folder isn't in
+  /// the list, so the caller can fall back to [scan].
+  Future<bool> refreshFolder(Directory folder) async {
+    bool holds(GameGroup g) => g.versions.any((v) => p.equals(v.folderPath.path, folder.path));
+    final current = (_real ?? state).groups.where(holds).firstOrNull;
+    final old = current?.versions.where((v) => p.equals(v.folderPath.path, folder.path)).firstOrNull;
+    if (old == null) return false;
+    final engine = old.engine;
+    final path = folder.path;
+    final fresh = await Isolate.run(_rereadJob(path, engine));
+    if (fresh == null) return false;
+    _update((s) {
+      final groups = [
+        for (final g in s.groups)
+          if (!holds(g))
+            g
+          else
+            g.copyWith(
+              versions: [
+                for (final v in g.versions) p.equals(v.folderPath.path, path) ? fresh : v,
+              ]..sort((a, b) => compareVersionStrings(a.versionStr, b.versionStr)),
+            ),
+      ]..sort((a, b) => a.effectiveTitle.toLowerCase().compareTo(b.effectiveTitle.toLowerCase()));
+      return s.copyWith(groups: groups);
+    });
+    return true;
   }
 
   void select(String? baseKey) =>
