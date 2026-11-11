@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -410,7 +411,15 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         }
       }
 
-      await ref.read(libraryProvider.notifier).scan();
+      // Only this game changed, so only it is read again and the window
+      // closes at once; the full scan runs in the background (see
+      // LibraryNotifier.refreshFolder).
+      final library = ref.read(libraryProvider.notifier);
+      if (await library.refreshFolder(v.folderPath)) {
+        unawaited(library.scan());
+      } else {
+        await library.scan();
+      }
       // The new image files reuse the old names: drop cached decodes and
       // rebuild the widgets showing them so they appear without a restart.
       PaintingBinding.instance.imageCache
