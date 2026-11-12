@@ -208,6 +208,30 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
     await Future.wait(_Provider.values.map((p) => _searchOne(p, query, scraping)));
   }
 
+  String _knownDeveloper() {
+    for (final p in const [
+      _Provider.f95zone,
+      _Provider.lewdcorner,
+      _Provider.azc,
+      _Provider.vndb,
+    ]) {
+      final dev = _pickedByProvider[p]?.developer.trim() ?? '';
+      if (dev.isNotEmpty) return dev;
+    }
+    return widget.group.effectiveDeveloper.trim();
+  }
+
+  List<String> _knownItchHintUrls() => [
+        for (final p in const [
+          _Provider.f95zone,
+          _Provider.lewdcorner,
+          _Provider.azc,
+          _Provider.vndb,
+        ])
+          ...?_pickedByProvider[p]?.supportLinks,
+        ...widget.group.newestMetaSupportLinks,
+      ];
+
   Future<void> _searchOne(
       _Provider prov, String query, ScrapingService scraping) async {
     try {
@@ -222,7 +246,12 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         _Provider.f95zone    => await MetadataService.searchF95Zone(query, scraping),
         _Provider.lewdcorner => await MetadataService.searchLewdCorner(query, scraping),
         _Provider.azc        => await MetadataService.searchAzkosel(query, scraping),
-        _Provider.itchio     => await MetadataService.searchItchio(query, scraping),
+        _Provider.itchio     => await MetadataService.searchItchio(
+            query,
+            scraping,
+            developer: _knownDeveloper(),
+            hintUrls: _knownItchHintUrls(),
+          ),
       });
 
       if (!mounted) return;
@@ -233,9 +262,19 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       });
 
       // Auto-pick first result for every provider, not just the active tab.
-      // This pre-populates the field mixer as results arrive.
+      // For itch.io, only auto-pick when the top result actually matches the
+      // game so unrelated jam results don't pollute itch_url or developer.
       if (results.isNotEmpty && _pickedByProvider[prov] == null) {
-        await _pickResult(prov, results.first, autoAssign: true);
+        final shouldPick = prov != _Provider.itchio ||
+            MetadataService.isRelevantItchMatch(
+              results.first,
+              query: query,
+              developer: _knownDeveloper(),
+              hintUrls: _knownItchHintUrls(),
+            );
+        if (shouldPick) {
+          await _pickResult(prov, results.first, autoAssign: true);
+        }
       }
     } catch (e) {
       if (!mounted) return;
@@ -256,13 +295,22 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       if (autoAssign) _autoAssignFields(prov, r);
     });
 
-    // Enrich XenForo results (F95/LC/AzC) — fetches the thread page for full images/synopsis/tags
-    if (r.provider == 'f95zone' || r.provider == 'lewdcorner' || r.provider == 'azc') {
+    if (prov != _Provider.itchio && (r.developer.isNotEmpty || r.supportLinks.isNotEmpty)) {
+      unawaited(_reconcileItchWithKnownCreator(_queryCtrl.text.trim(), _scraping));
+    }
+
+    // Enrich XenForo results (F95/LC/AzC) or itch.io game pages for full images/synopsis/tags
+    if (r.provider == 'f95zone' ||
+        r.provider == 'lewdcorner' ||
+        r.provider == 'azc' ||
+        r.provider == 'itchio') {
       if (!mounted) return;
       setState(() => _enrichingByProvider[prov] = true);
       final scraping = ref.read(scrapingServiceProvider);
       try {
-        final enriched = await MetadataService.fetchThreadDetails(r, scraping);
+        final enriched = r.provider == 'itchio'
+            ? await MetadataService.fetchItchDetails(r, scraping)
+            : await MetadataService.fetchThreadDetails(r, scraping);
         if (!mounted) return;
         if (_pickedByProvider[prov] == r) {
           setState(() {
@@ -275,10 +323,107 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                 'This thread hides its images from your account. '
                 'Log in, or check you have the forum role it needs.');
           }
+          if (prov != _Provider.itchio &&
+              (enriched.developer.isNotEmpty || enriched.supportLinks.isNotEmpty)) {
+            unawaited(_reconcileItchWithKnownCreator(_queryCtrl.text.trim(), scraping));
+          }
         }
       } catch (_) {
         if (mounted) setState(() => _enrichingByProvider[prov] = false);
       }
+    }
+  }
+
+  /// When VNDB or a forum thread reveals the game's developer or creator
+  /// `*.itch.io` link after `searchItchio` has already started/finished:
+  /// 1. Drops any auto-picked itch.io jam game whose author conflicts with the
+  ///    real developer.
+  /// 2. Queries the creator's itch.io profile so de-indexed NSFW games appear
+  ///    at the top of the itch.io tab and get auto-picked.
+  Future<void> _reconcileItchWithKnownCreator(
+    String query,
+    ScrapingService scraping,
+  ) async {
+    if (!mounted || query.isEmpty) return;
+    final dev = _knownDeveloper();
+    final hints = _knownItchHintUrls();
+    if (dev.isEmpty && hints.isEmpty) return;
+
+    final currentItch = _pickedByProvider[_Provider.itchio];
+    if (currentItch != null &&
+        !MetadataService.isRelevantItchMatch(
+          currentItch,
+          query: query,
+          developer: dev,
+          hintUrls: hints,
+        )) {
+      setState(() {
+        _pickedByProvider[_Provider.itchio] = null;
+        for (final field in _kFields) {
+          if (_fieldSource[field] == _Provider.itchio) {
+            _fieldSource[field] = null;
+          }
+        }
+        for (final p in const [
+          _Provider.f95zone,
+          _Provider.lewdcorner,
+          _Provider.azc,
+          _Provider.vndb,
+        ]) {
+          final picked = _pickedByProvider[p];
+          if (picked != null) _autoAssignFields(p, picked);
+        }
+      });
+    }
+
+    final existing = _resultsByProvider[_Provider.itchio] ?? const [];
+    final hasVerified = existing.any((c) => MetadataService.isRelevantItchMatch(
+          c,
+          query: query,
+          developer: dev,
+          hintUrls: hints,
+        ));
+
+    var combined = MetadataService.rankItchResults(
+      existing,
+      query: query,
+      developer: dev,
+      hintUrls: hints,
+    );
+
+    if (!hasVerified) {
+      final fromCreator = await MetadataService.discoverItchFromCreator(
+        query,
+        scraping,
+        developer: dev,
+        hintUrls: hints,
+      );
+      if (!mounted) return;
+      if (fromCreator.isNotEmpty) {
+        combined = MetadataService.rankItchResults(
+          [...fromCreator, ...combined],
+          query: query,
+          developer: dev,
+          hintUrls: hints,
+        ).take(15).toList();
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _resultsByProvider[_Provider.itchio] = combined;
+      if (combined.isNotEmpty) _errorByProvider[_Provider.itchio] = null;
+    });
+
+    if (_pickedByProvider[_Provider.itchio] == null &&
+        combined.isNotEmpty &&
+        MetadataService.isRelevantItchMatch(
+          combined.first,
+          query: query,
+          developer: dev,
+          hintUrls: hints,
+        )) {
+      await _pickResult(_Provider.itchio, combined.first, autoAssign: true);
     }
   }
 

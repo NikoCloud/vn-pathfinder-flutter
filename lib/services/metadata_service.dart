@@ -411,33 +411,310 @@ class MetadataService {
 
   // ── itch.io ────────────────────────────────────────────────────────────────
 
-  /// Search itch.io for games.
+  static final _itchSuffixNoise = RegExp(
+    r'\s*(?:\((?:nsfw|18\+|adult|sfw|demo|free|prototype|win|mac|linux|pc|android)\)|'
+    r'\[(?:nsfw|18\+|adult|sfw|demo|free|prototype|v?\d+(?:\.\d+)*[^\]]*)\]|'
+    r'\b(?:v\d+(?:\.\d+)+[a-z]?)\b)\s*',
+    caseSensitive: false,
+  );
+
+  static final _itchExtraWords = RegExp(
+    r'\b(?:tradu[cç][aã]o|translation|espanol|espa[nñ]ol|rus|russian|deutsch|'
+    r'français|francais|voice\s*mod|mod\s*menu|walkthrough|guide|soundtrack|'
+    r'ost|bgms?|artbook|wallpaper|manual|patch)\b',
+    caseSensitive: false,
+  );
+
+  static final _studioSuffix = RegExp(
+    r'\b(?:games?|studios?|productions?|entertainment|interactive|works|'
+    r'creations?|media|team|dev|official|inc|llc|ltd)\b',
+    caseSensitive: false,
+  );
+
+  /// Strips `(NSFW)`, `[18+]`, `[Demo]`, and version tags from an itch.io title.
+  static String cleanItchTitle(String raw) {
+    var t = raw
+        .replaceAll(RegExp(r'\s+by\s+[^|–—-]+$', caseSensitive: false), '')
+        .replaceAll(_itchSuffixNoise, ' ')
+        .replaceAll(RegExp(r'[\s\-–—:|]+$'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    return t.isEmpty ? raw.trim() : t;
+  }
+
+  static String _looseDev(String s) {
+    final cleaned = cleanDeveloperName(s);
+    final stripped = cleaned.replaceAll(_studioSuffix, ' ');
+    final core = _loose(stripped);
+    return core.isNotEmpty ? core : _loose(cleaned);
+  }
+
+  /// Subdomain of a `https://<creator>.itch.io/...` URL, or empty string.
+  static String _itchSubdomain(String url) {
+    final host = (Uri.tryParse(url.trim())?.host ?? '').toLowerCase();
+    if (!host.endsWith('.itch.io') || host == 'www.itch.io' || host == 'itch.io') {
+      return '';
+    }
+    return host.substring(0, host.length - '.itch.io'.length);
+  }
+
+  /// Whether two developer names or handles refer to the same creator.
+  static bool sameDeveloper(String a, String b) {
+    final devA = _looseDev(a);
+    final devB = _looseDev(b);
+    if (devA.isEmpty || devB.isEmpty) return false;
+    return devA == devB || devA.startsWith(devB) || devB.startsWith(devA);
+  }
+
+  /// Whether an itch.io candidate [r] genuinely matches [query] (and [developer]
+  /// / [hintUrls] when known), used to rank results and gate auto-pick so
+  /// unrelated jam games aren't selected automatically.
+  static bool isRelevantItchMatch(
+    MetadataResult r, {
+    required String query,
+    String developer = '',
+    Iterable<String> hintUrls = const [],
+  }) {
+    final wantedTitle = _loose(cleanItchTitle(query));
+    final gotTitle = _loose(cleanItchTitle(r.title));
+    if (wantedTitle.isEmpty || gotTitle.isEmpty) return false;
+
+    // Exclude translations/mods/OSTs unless the query itself asked for them.
+    if (_itchExtraWords.hasMatch(r.title) && !_itchExtraWords.hasMatch(query)) {
+      return false;
+    }
+
+    final sub = _itchSubdomain(r.sourceUrl);
+    final knownSubs = {
+      for (final u in hintUrls)
+        if (_itchSubdomain(u).isNotEmpty) _itchSubdomain(u),
+    };
+    final knownGameUrls = {
+      for (final u in hintUrls)
+        if (_itchSubdomain(u).isNotEmpty &&
+            (Uri.tryParse(u)?.pathSegments.where((s) => s.isNotEmpty).isNotEmpty ?? false))
+          u.trim().toLowerCase().replaceAll(RegExp(r'/+$'), ''),
+    };
+    final normUrl = r.sourceUrl.trim().toLowerCase().replaceAll(RegExp(r'/+$'), '');
+    if (knownGameUrls.contains(normUrl)) return true;
+
+    final fromKnownCreator = sub.isNotEmpty && knownSubs.contains(sub);
+    final hasKnownDev = _looseDev(developer).isNotEmpty;
+    final devMatches = hasKnownDev &&
+        (sameDeveloper(r.developer, developer) ||
+            (sub.isNotEmpty && sameDeveloper(sub, developer)));
+
+    // If we know the game's developer (and this isn't from a hint URL), reject
+    // candidates whose author is a different developer (e.g. a jam game that
+    // happens to share the title).
+    if (hasKnownDev && !fromKnownCreator && !devMatches && r.developer.trim().isNotEmpty) {
+      return false;
+    }
+
+    if (gotTitle == wantedTitle) return true;
+    if ((fromKnownCreator || devMatches) &&
+        (gotTitle.startsWith(wantedTitle) || wantedTitle.startsWith(gotTitle))) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Candidate `https://<creator>.itch.io` root URLs and direct game URLs
+  /// derived from [hintUrls] and [developer].
+  static ({List<String> directGameUrls, List<String> creatorUrls}) _itchDiscoveryTargets({
+    String developer = '',
+    Iterable<String> hintUrls = const [],
+  }) {
+    final direct = <String>[];
+    final creators = <String>[];
+    final seenDirect = <String>{};
+    final seenCreators = <String>{};
+
+    void addCreator(String sub) {
+      final clean = sub.toLowerCase().replaceAll(RegExp(r'[^a-z0-9-]'), '');
+      if (clean.length < 2 || clean == 'www') return;
+      final url = 'https://$clean.itch.io';
+      if (seenCreators.add(url)) creators.add(url);
+    }
+
+    for (final raw in hintUrls) {
+      final sub = _itchSubdomain(raw);
+      if (sub.isEmpty) continue;
+      addCreator(sub);
+      final uri = Uri.tryParse(raw.trim());
+      final segs = uri?.pathSegments.where((s) => s.isNotEmpty).toList() ?? const [];
+      if (segs.length == 1 &&
+          !const {'devlog', 'comments', 'purchase', 'download'}.contains(segs.first.toLowerCase())) {
+        final gameUrl = 'https://$sub.itch.io/${segs.first}';
+        if (seenDirect.add(gameUrl.toLowerCase())) direct.add(gameUrl);
+      }
+    }
+
+    final cleanDev = cleanDeveloperName(developer);
+    if (cleanDev.isNotEmpty) {
+      final fullSlug = _loose(cleanDev);
+      final coreSlug = _looseDev(cleanDev);
+      final hyphenSlug = cleanDev
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+          .replaceAll(RegExp(r'^-+|-+$'), '');
+      if (fullSlug.length >= 3) addCreator(fullSlug);
+      if (coreSlug.length >= 3 && coreSlug != fullSlug) addCreator(coreSlug);
+      if (hyphenSlug.length >= 3 && hyphenSlug.contains('-')) addCreator(hyphenSlug);
+    }
+
+    return (directGameUrls: direct, creatorUrls: creators.take(4).toList());
+  }
+
+  static Future<String> _fetchItchHtmlFast(
+    String url,
+    ScrapingService? scrapingService, {
+    bool useWebViewFallback = false,
+  }) async {
+    try {
+      final resp = await http
+          .get(Uri.parse(url), headers: _baseHeaders)
+          .timeout(const Duration(seconds: 6));
+      if (resp.statusCode == 200 && resp.body.isNotEmpty && !_isItchRateLimited(resp.body)) {
+        return resp.body;
+      }
+    } catch (_) {}
+    if (useWebViewFallback && scrapingService != null) {
+      try {
+        return await scrapingService.getString(url);
+      } catch (_) {}
+    }
+    return '';
+  }
+
+  static bool _isItchRateLimited(String html) =>
+      html.contains('<title>429 Too Many Requests</title>') ||
+      html.contains('<h1>429 Too Many Requests</h1>');
+
+  /// Discovers itch.io games directly from a creator's profile page or direct
+  /// `*.itch.io` links (which still list NSFW titles that `itch.io/search`
+  /// hides with `noindex`).
+  static Future<List<MetadataResult>> discoverItchFromCreator(
+    String query,
+    ScrapingService? scrapingService, {
+    String developer = '',
+    Iterable<String> hintUrls = const [],
+  }) async {
+    final targets = _itchDiscoveryTargets(developer: developer, hintUrls: hintUrls);
+    final discovered = <MetadataResult>[];
+
+    for (final directUrl in targets.directGameUrls) {
+      final html = await _fetchItchHtmlFast(directUrl, scrapingService);
+      if (html.isEmpty) continue;
+      final seed = MetadataResult(
+        provider: 'itchio',
+        id: directUrl,
+        title: query,
+        developer: cleanDeveloperName(developer),
+        sourceUrl: directUrl,
+      );
+      final parsed = parseItchGamePage(seed, html);
+      if (parsed.title.isNotEmpty) discovered.add(parsed);
+    }
+
+    for (final creatorUrl in targets.creatorUrls) {
+      final html = await _fetchItchHtmlFast(creatorUrl, scrapingService);
+      if (html.isEmpty || !html.contains('game_cell')) continue;
+      final cells = _parseItchSearchHtml(
+        html,
+        query,
+        defaultDeveloper: cleanDeveloperName(developer),
+      );
+      discovered.addAll(cells);
+    }
+
+    return rankItchResults(
+      discovered,
+      query: query,
+      developer: developer,
+      hintUrls: hintUrls,
+    );
+  }
+
+  /// Search itch.io for games, combining creator-profile discovery (for
+  /// de-indexed NSFW games) with `itch.io/search` and ranking relevant matches
+  /// to the top.
   static Future<List<MetadataResult>> searchItchio(
     String query,
-    ScrapingService scrapingService,
-  ) async {
+    ScrapingService scrapingService, {
+    String developer = '',
+    Iterable<String> hintUrls = const [],
+  }) async {
+    final fromCreatorFuture = discoverItchFromCreator(
+      query,
+      scrapingService,
+      developer: developer,
+      hintUrls: hintUrls,
+    );
+
     final uri = Uri.https('itch.io', '/search', {
       'q': query,
       'type': 'games',
     });
-    final html = await scrapingService.getString(uri.toString());
-    if (html.isEmpty) throw const ScrapingException('itch.io returned an empty page.');
+    String searchHtml = '';
+    try {
+      searchHtml = await scrapingService.getString(uri.toString());
+    } catch (e) {
+      final fromCreator = await fromCreatorFuture;
+      if (fromCreator.isNotEmpty) return fromCreator;
+      rethrow;
+    }
 
-    return _parseItchSearchHtml(html, query);
+    final fromCreator = await fromCreatorFuture;
+    if (_isItchRateLimited(searchHtml)) {
+      if (fromCreator.isNotEmpty) return fromCreator;
+      throw const ScrapingException('itch.io rate-limited the request — try again in a moment.');
+    }
+    if (searchHtml.isEmpty && fromCreator.isEmpty) {
+      throw const ScrapingException('itch.io returned an empty page.');
+    }
+
+    final fromSearch = searchHtml.isEmpty ? const <MetadataResult>[] : _parseItchSearchHtml(searchHtml, query);
+    return rankItchResults(
+      [...fromCreator, ...fromSearch],
+      query: query,
+      developer: developer,
+      hintUrls: hintUrls,
+    ).take(15).toList();
   }
 
-  static List<MetadataResult> _parseItchSearchHtml(String body, String query) {
+  static List<MetadataResult> _parseItchSearchHtml(
+    String body,
+    String query, {
+    String defaultDeveloper = '',
+  }) {
     final doc = html_parser.parse(body);
     final cells = doc.querySelectorAll('div.game_cell');
     if (cells.isEmpty) return [];
-    return cells.take(12).map((el) {
+
+    // Creator profile pages sometimes omit `.game_author` on each card because
+    // every game on the page belongs to that creator.
+    var pageAuthor = defaultDeveloper;
+    if (pageAuthor.isEmpty) {
+      final headerTitle = doc.querySelector('h1.profile_header, .profile_banner h1, title')?.text ?? '';
+      final cleanHeader = headerTitle.replaceAll(RegExp(r'\s*-\s*itch\.io.*$', caseSensitive: false), '').trim();
+      if (cleanHeader.isNotEmpty && !cleanHeader.toLowerCase().contains('top games')) {
+        pageAuthor = cleanHeader;
+      }
+    }
+
+    return cells.map((el) {
       final titleEl = el.querySelector('a.title.game_link') ??
           el.querySelector('.game_cell_data .title');
-      final title = titleEl?.text.trim() ?? '';
+      final rawTitle = titleEl?.text.trim() ?? '';
+      final title = cleanItchTitle(rawTitle);
       final href =
           titleEl?.attributes['href'] ?? el.querySelector('a')?.attributes['href'] ?? '';
-      final devEl = el.querySelector('div.game_author a');
-      final developer = devEl?.text.trim() ?? '';
+      final devEl = el.querySelector('div.game_author a') ?? el.querySelector('div.game_author');
+      final developer = (devEl?.text.trim().isNotEmpty ?? false)
+          ? devEl!.text.trim()
+          : pageAuthor;
+      final synopsis = el.querySelector('div.game_text')?.text.trim() ?? '';
       final imgEl = el.querySelector('img.thumb_img') ??
           el.querySelector('img.lazy_loaded') ??
           el.querySelector('img');
@@ -446,25 +723,323 @@ class MetadataService {
           '';
       final url =
           href.startsWith('http') ? href : 'https://itch.io$href';
-      // Tags: itch.io search cells sometimes include genre badges
       final tagEls = el.querySelectorAll(
-          '.game_genre a, .tag_cloud a, .tag_container a, '
+          '.game_genre a, .game_genre, .tag_cloud a, .tag_container a, '
           'a.tag, span.tag_label');
-      final tags = tagEls
-          .map((t) => t.text.trim())
-          .where((t) => t.isNotEmpty && t.length < 40)
-          .take(10)
-          .toList();
+      final tags = <String>{
+        for (final t in tagEls)
+          if (t.text.trim().isNotEmpty &&
+              t.text.trim().length < 40 &&
+              !_xfMetaTags.contains(t.text.trim().toLowerCase()))
+            t.text.trim(),
+      }.take(10).toList();
       return MetadataResult(
         provider: 'itchio',
-        id: href,
+        id: href.isEmpty ? url : href,
         title: title.isEmpty ? query : title,
         developer: developer,
+        synopsis: synopsis,
         coverUrl: coverUrl,
         sourceUrl: url,
         tags: tags,
       );
     }).where((r) => r.title.isNotEmpty && r.sourceUrl.isNotEmpty).toList();
+  }
+
+  /// Ranks and deduplicates itch.io candidates so exact title + developer
+  /// matches and games from the creator's own profile appear first.
+  static List<MetadataResult> rankItchResults(
+    Iterable<MetadataResult> candidates, {
+    required String query,
+    String developer = '',
+    Iterable<String> hintUrls = const [],
+  }) {
+    final wantedTitle = _loose(cleanItchTitle(query));
+    final knownSubs = {
+      for (final u in hintUrls)
+        if (_itchSubdomain(u).isNotEmpty) _itchSubdomain(u),
+    };
+    final hasKnownDev = _looseDev(developer).isNotEmpty;
+
+    final byUrl = <String, MetadataResult>{};
+    for (final r in candidates) {
+      final key = r.sourceUrl.trim().toLowerCase().replaceAll(RegExp(r'/+$'), '');
+      if (key.isEmpty) continue;
+      byUrl.putIfAbsent(key, () => r);
+    }
+
+    int score(MetadataResult r) {
+      final gotTitle = _loose(cleanItchTitle(r.title));
+      final sub = _itchSubdomain(r.sourceUrl);
+      final fromKnownCreator = sub.isNotEmpty && knownSubs.contains(sub);
+      final devMatches = hasKnownDev &&
+          (sameDeveloper(r.developer, developer) ||
+              (sub.isNotEmpty && sameDeveloper(sub, developer)));
+      final isExtra = _itchExtraWords.hasMatch(r.title) && !_itchExtraWords.hasMatch(query);
+      final relevant = isRelevantItchMatch(
+        r,
+        query: query,
+        developer: developer,
+        hintUrls: hintUrls,
+      );
+
+      var s = 0;
+      if (relevant) s += 100;
+      if (fromKnownCreator) s += 60;
+      if (devMatches) s += 50;
+      if (wantedTitle.isNotEmpty && gotTitle == wantedTitle) {
+        s += 40;
+      } else if (wantedTitle.isNotEmpty &&
+          (gotTitle.startsWith(wantedTitle) || wantedTitle.startsWith(gotTitle))) {
+        s += 20;
+      } else if (wantedTitle.isNotEmpty && gotTitle.contains(wantedTitle)) {
+        s += 10;
+      }
+      if (isExtra) s -= 45;
+      if (hasKnownDev && !fromKnownCreator && !devMatches && r.developer.trim().isNotEmpty) {
+        s -= 50;
+      }
+      return s;
+    }
+
+    final indexed = byUrl.values.toList().asMap().entries.toList();
+    indexed.sort((a, b) {
+      final cmp = score(b.value).compareTo(score(a.value));
+      return cmp != 0 ? cmp : a.key.compareTo(b.key);
+    });
+    return [for (final e in indexed) e.value];
+  }
+
+  /// Fetches and parses a picked itch.io game page (`https://<creator>.itch.io/<game>`)
+  /// for high-res cover art, screenshots, synopsis, tags, rating, and links.
+  static Future<MetadataResult> fetchItchDetails(
+    MetadataResult result,
+    ScrapingService scrapingService,
+  ) async {
+    if (result.sourceUrl.isEmpty) return result;
+    try {
+      final html = await _fetchItchHtmlFast(
+        result.sourceUrl,
+        scrapingService,
+        useWebViewFallback: true,
+      );
+      if (html.isEmpty || _isItchRateLimited(html)) return result;
+      return parseItchGamePage(result, html);
+    } catch (e) {
+      debugPrint('itch.io detail fetch failed: $e');
+      return result;
+    }
+  }
+
+  /// Parses an itch.io game page (`view_game`) into an enriched [MetadataResult].
+  static MetadataResult parseItchGamePage(MetadataResult seed, String html) {
+    final doc = html_parser.parse(html);
+
+    // ── Title ─────────────────────────────────────────────────────────────
+    final h1Title = doc.querySelector('h1.game_title')?.text.trim() ?? '';
+    final metaTitle = doc.querySelector('meta[property="og:title"]')?.attributes['content'] ??
+        doc.querySelector('meta[name="twitter:title"]')?.attributes['content'] ??
+        '';
+    final rawTitle = h1Title.isNotEmpty ? h1Title : metaTitle;
+    final title = rawTitle.isNotEmpty ? cleanItchTitle(rawTitle) : seed.title;
+
+    // ── Info panel rows (Author, Genre, Tags, Published, Links) ───────────
+    var developer = seed.developer;
+    var releaseDate = seed.releaseDate;
+    final tags = <String>[...seed.tags];
+    final infoLinks = <String>[];
+
+    for (final tr in doc.querySelectorAll('.info_panel_wrapper tr, .game_info_panel_widget tr')) {
+      final cells = tr.querySelectorAll('td');
+      if (cells.length < 2) continue;
+      final label = cells[0].text.trim().toLowerCase();
+      final valCell = cells[1];
+
+      if (label == 'author' || label == 'authors') {
+        final authors = valCell
+            .querySelectorAll('a')
+            .map((a) => a.text.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        final authorText = authors.isNotEmpty ? authors.join(', ') : valCell.text.trim();
+        if (authorText.isNotEmpty) developer = cleanDeveloperName(authorText);
+      } else if (label == 'genre' || label == 'tags') {
+        for (final a in valCell.querySelectorAll('a')) {
+          final t = a.text.trim();
+          if (t.isNotEmpty &&
+              !_xfMetaTags.contains(t.toLowerCase()) &&
+              !tags.any((existing) => existing.toLowerCase() == t.toLowerCase())) {
+            tags.add(t);
+          }
+        }
+      } else if (label == 'published' || label == 'release date') {
+        final abbr = valCell.querySelector('abbr')?.attributes['title'] ?? '';
+        final rawDate = abbr.isNotEmpty ? abbr.split('@').first.trim() : valCell.text.trim();
+        if (rawDate.isNotEmpty) releaseDate = rawDate;
+      }
+
+      for (final a in valCell.querySelectorAll('a[href]')) {
+        final href = (a.attributes['href'] ?? '').trim();
+        if (href.isNotEmpty) infoLinks.add(href);
+      }
+    }
+
+    if (developer.isEmpty) {
+      final byMatch = RegExp(r'\s+by\s+(.+?)(?:\s*-\s*itch\.io)?$', caseSensitive: false)
+          .firstMatch(metaTitle.isNotEmpty ? metaTitle : (doc.querySelector('title')?.text ?? ''));
+      if (byMatch != null) {
+        developer = cleanDeveloperName(byMatch.group(1) ?? '');
+      } else {
+        final mobileLabel = doc.querySelector('a.view_more .mobile_label')?.text.trim() ?? '';
+        if (mobileLabel.isNotEmpty) developer = cleanDeveloperName(mobileLabel);
+      }
+    }
+
+    // ── Cover & Screenshots ───────────────────────────────────────────────
+    final ogImage = (doc.querySelector('meta[property="og:image"]')?.attributes['content'] ??
+            doc.querySelector('meta[name="twitter:image"]')?.attributes['content'] ??
+            '')
+        .trim();
+    final coverUrl = ogImage.isNotEmpty ? ogImage : seed.coverUrl;
+
+    final screenshots = <String>[];
+    final previews = <String, String>{...seed.previewUrls};
+    for (final a in doc.querySelectorAll(
+        '.screenshot_list a[data-image_lightbox], a[data-image_lightbox="true"], .screenshot_list a[href]')) {
+      final full = (a.attributes['href'] ?? '').trim();
+      if (full.isEmpty || !full.startsWith('http')) continue;
+      if (!screenshots.contains(full)) screenshots.add(full);
+      final img = a.querySelector('img');
+      final thumb = (img?.attributes['data-lazy_src'] ?? img?.attributes['src'] ?? '').trim();
+      if (thumb.isNotEmpty && thumb != full) {
+        previews[full] = thumb;
+      }
+    }
+
+    // ── Rating ────────────────────────────────────────────────────────────
+    var rating = seed.rating;
+    final ratingAttr = doc
+        .querySelector('.aggregate_rating [itemprop="ratingValue"]')
+        ?.attributes['content'];
+    if (ratingAttr != null) {
+      rating = double.tryParse(ratingAttr) ?? rating;
+    } else {
+      for (final script in doc.querySelectorAll('script[type="application/ld+json"]')) {
+        final m = RegExp(r'"ratingValue"\s*:\s*"?([\d.]+)"?').firstMatch(script.text);
+        if (m != null) {
+          rating = double.tryParse(m.group(1)!) ?? rating;
+          break;
+        }
+      }
+    }
+
+    // ── Synopsis & Support Links ──────────────────────────────────────────
+    final descEl = doc.querySelector('div.formatted_description');
+    final descLinks = <String>[
+      if (descEl != null)
+        for (final a in descEl.querySelectorAll('a[href]'))
+          if ((a.attributes['href'] ?? '').trim().isNotEmpty) a.attributes['href']!.trim(),
+    ];
+    final synopsis = _extractItchSynopsis(descEl, doc, fallback: seed.synopsis);
+
+    final sub = _itchSubdomain(seed.sourceUrl);
+    final support = supportLinksFromUrls([
+      ...infoLinks,
+      ...descLinks,
+      if (sub.isNotEmpty) 'https://$sub.itch.io/',
+      ...seed.supportLinks,
+    ]).map((l) => l.url).toList();
+
+    return MetadataResult(
+      provider: seed.provider,
+      id: seed.id,
+      title: title,
+      developer: developer,
+      synopsis: synopsis,
+      coverUrl: coverUrl,
+      screenshotUrls: screenshots.take(9).toList(),
+      sourceUrl: seed.sourceUrl,
+      tags: tags.take(20).toList(),
+      releaseDate: releaseDate,
+      rating: rating,
+      previewUrls: previews,
+      supportLinks: support,
+    );
+  }
+
+  static final _itchPlotHeading = RegExp(
+    r'^(?:plot|synopsis|story|overview|summary|description|about(?:\s+the\s+game)?)\s*:?$',
+    caseSensitive: false,
+  );
+  static final _itchStopHeading = RegExp(
+    r'^(?:about\s+(?:me|us|the\s+(?:author|dev|developer|creator))|features?|'
+    r'characters?|links?|support|patreon|subscribestar|discord|changelog|'
+    r'credits?|controls?|install(?:ation)?|how\s+to\s+install|downloads?|'
+    r'system\s+requirements?|warnings?|content\s+warnings?)\s*:?$',
+    caseSensitive: false,
+  );
+
+  static String _extractItchSynopsis(
+    Element? descEl,
+    Document doc, {
+    required String fallback,
+  }) {
+    if (descEl != null) {
+      final blocks = <({bool isHeading, String text})>[];
+      for (final child in descEl.children) {
+        final tag = child.localName ?? '';
+        final copy = child.clone(true);
+        for (final br in copy.querySelectorAll('br')) {
+          br.replaceWith(Text('\n'));
+        }
+        final text = copy.text
+            .split('\n')
+            .map((l) => l.replaceAll(RegExp(r'\s+'), ' ').trim())
+            .where((l) => l.isNotEmpty && !RegExp(r'^[_=\-*~—–]{3,}$').hasMatch(l))
+            .join('\n')
+            .trim();
+        if (text.isEmpty) continue;
+        final isHeading = const {'h1', 'h2', 'h3', 'h4'}.contains(tag) ||
+            (text.length < 40 && !text.contains('.'));
+        blocks.add((isHeading: isHeading, text: text));
+      }
+
+      // Pass 1: if there is an explicit "Plot" / "Story" / "Synopsis" heading,
+      // collect paragraphs after it until the next section heading.
+      final plotIdx = blocks.indexWhere((b) => b.isHeading && _itchPlotHeading.hasMatch(b.text));
+      if (plotIdx >= 0) {
+        final picked = <String>[];
+        for (var i = plotIdx + 1; i < blocks.length; i++) {
+          if (blocks[i].isHeading && _itchStopHeading.hasMatch(blocks[i].text)) break;
+          if (blocks[i].isHeading && blocks[i].text.length < 30 && picked.isNotEmpty) break;
+          picked.add(blocks[i].text);
+        }
+        if (picked.isNotEmpty) return picked.join('\n\n').trim();
+      }
+
+      // Pass 2: collect general narrative paragraphs, skipping link-only banners.
+      final paragraphs = <String>[];
+      for (final b in blocks) {
+        if (b.isHeading && _itchStopHeading.hasMatch(b.text)) {
+          if (paragraphs.isNotEmpty) break;
+          continue;
+        }
+        if (b.isHeading && b.text.length < 35) continue;
+        if (RegExp(r'^(?:patreon|subscribestar|discord|itch\.io|\s*[|•-]\s*)+$', caseSensitive: false)
+            .hasMatch(b.text)) {
+          continue;
+        }
+        paragraphs.add(b.text);
+        if (paragraphs.join('\n\n').length >= 900) break;
+      }
+      if (paragraphs.isNotEmpty) return paragraphs.join('\n\n').trim();
+    }
+
+    final metaDesc = (doc.querySelector('meta[property="og:description"]')?.attributes['content'] ??
+            doc.querySelector('meta[name="description"]')?.attributes['content'] ??
+            '')
+        .trim();
+    return metaDesc.isNotEmpty ? metaDesc : fallback;
   }
 
   /// XenForo thread-prefix labels that appear at the START of thread titles,

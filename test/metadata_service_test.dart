@@ -182,4 +182,142 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
       expect(found, isEmpty);
     });
   });
+
+  group('itch.io ranking, relevance, and page parsing', () {
+    test('cleanItchTitle strips (NSFW), [18+], and trailing author suffixes', () {
+      expect(MetadataService.cleanItchTitle('Neko Paradise (NSFW) by Alorth'), 'Neko Paradise');
+      expect(MetadataService.cleanItchTitle('Tale of Eros(NSFW)'), 'Tale of Eros');
+      expect(MetadataService.cleanItchTitle('Some Game [18+] [v0.2.1]'), 'Some Game');
+    });
+
+    test('rankItchResults and isRelevantItchMatch prefer matching creator/title and reject unrelated jam games', () {
+      const jamWrongTitle = MetadataResult(
+        provider: 'itchio',
+        id: '1',
+        title: 'Neko No Sentouki',
+        developer: 'skredjun',
+        sourceUrl: 'https://skredjun.itch.io/neko-no-sentouki',
+      );
+      const jamSameTitleWrongDev = MetadataResult(
+        provider: 'itchio',
+        id: '2',
+        title: 'Light Of My Life',
+        developer: 'LightOfMyLife, ATRS',
+        sourceUrl: 'https://lightofmylife.itch.io/light-of-my-life',
+      );
+      const translationMod = MetadataResult(
+        provider: 'itchio',
+        id: '3',
+        title: 'ETERNUM — Tradução PT-BR',
+        developer: 'ushinyu',
+        sourceUrl: 'https://ushinyu.itch.io/eternum-ptbr',
+      );
+      const realNeko = MetadataResult(
+        provider: 'itchio',
+        id: '4',
+        title: 'Neko Paradise',
+        developer: 'Alorth',
+        sourceUrl: 'https://alorth.itch.io/neko-paradise',
+      );
+
+      expect(
+        MetadataService.isRelevantItchMatch(
+          jamWrongTitle,
+          query: 'Neko Paradise',
+          developer: 'Alorth',
+        ),
+        isFalse,
+      );
+      expect(
+        MetadataService.isRelevantItchMatch(
+          jamSameTitleWrongDev,
+          query: 'Light of My Life',
+          developer: 'Naughty Road Productions',
+        ),
+        isFalse,
+      );
+      expect(
+        MetadataService.isRelevantItchMatch(
+          translationMod,
+          query: 'Eternum',
+          developer: 'Caribdis',
+        ),
+        isFalse,
+      );
+      expect(
+        MetadataService.isRelevantItchMatch(
+          realNeko,
+          query: 'Neko Paradise',
+          developer: 'Alorth',
+        ),
+        isTrue,
+      );
+
+      final ranked = MetadataService.rankItchResults(
+        [jamWrongTitle, realNeko],
+        query: 'Neko Paradise',
+        developer: 'Alorth',
+      );
+      expect(ranked.first.sourceUrl, 'https://alorth.itch.io/neko-paradise');
+    });
+
+    test('parseItchGamePage extracts Plot synopsis, og:image cover, screenshots, rating, tags, and support links', () {
+      const html = '''
+<!DOCTYPE html><html><head>
+<meta property="og:image" content="https://img.itch.zone/cover/original/full.png"/>
+<meta name="twitter:title" content="Eternum (NSFW) by Caribdis"/>
+</head><body>
+<h1 class="game_title">Eternum (NSFW)</h1>
+<div class="formatted_description">
+  <h2><a href="https://www.patreon.com/onceinalifetime">PATREON</a> | <a href="https://subscribestar.adult/caribdis">SUBSCRIBESTAR</a></h2>
+  <h2>________________________</h2>
+  <h2>Plot</h2>
+  <p>You are moving with your best friend to the city of Kredon.</p>
+  <p>Thousands of servers form the network of Eternum.</p>
+  <h2>About me</h2>
+  <p>The game currently has over 11,000 renders.</p>
+</div>
+<div class="screenshot_list">
+  <a data-image_lightbox="true" href="https://img.itch.zone/shot1/original/1.jpg"><img data-lazy_src="https://img.itch.zone/shot1/thumb/1.jpg"/></a>
+  <a data-image_lightbox="true" href="https://img.itch.zone/shot2/original/2.jpg"><img src="https://img.itch.zone/shot2/thumb/2.jpg"/></a>
+</div>
+<div class="info_panel_wrapper"><table><tbody>
+  <tr><td>Updated</td><td><abbr title="03 November 2026 @ 12:37 UTC">8 days ago</abbr></td></tr>
+  <tr><td>Rating</td><td><div class="aggregate_rating"><div itemprop="ratingValue" content="4.9"></div></div></td></tr>
+  <tr><td>Author</td><td><a href="https://caribdis.itch.io">Caribdis</a></td></tr>
+  <tr><td>Genre</td><td><a href="https://itch.io/games/genre-visual-novel">Visual Novel</a></td></tr>
+  <tr><td>Tags</td><td><a href="#">3D</a>, <a href="#">Romance</a>, <a href="#">Ren'Py</a></td></tr>
+</tbody></table></div>
+</body></html>''';
+      const seed = MetadataResult(
+        provider: 'itchio',
+        id: 'https://caribdis.itch.io/eternum',
+        title: 'Eternum',
+        developer: '',
+        sourceUrl: 'https://caribdis.itch.io/eternum',
+      );
+      final parsed = MetadataService.parseItchGamePage(seed, html);
+      expect(parsed.title, 'Eternum');
+      expect(parsed.developer, 'Caribdis');
+      expect(parsed.coverUrl, 'https://img.itch.zone/cover/original/full.png');
+      expect(parsed.screenshotUrls, [
+        'https://img.itch.zone/shot1/original/1.jpg',
+        'https://img.itch.zone/shot2/original/2.jpg',
+      ]);
+      expect(parsed.previewUrls['https://img.itch.zone/shot1/original/1.jpg'],
+          'https://img.itch.zone/shot1/thumb/1.jpg');
+      expect(parsed.rating, 4.9);
+      expect(parsed.tags, ['3D', 'Romance']);
+      expect(
+        parsed.synopsis,
+        'You are moving with your best friend to the city of Kredon.\n\n'
+        'Thousands of servers form the network of Eternum.',
+      );
+      expect(parsed.supportLinks, [
+        'https://caribdis.itch.io',
+        'https://www.patreon.com/onceinalifetime',
+        'https://subscribestar.adult/caribdis',
+      ]);
+    });
+  });
 }
