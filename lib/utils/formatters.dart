@@ -70,6 +70,45 @@ String cleanDeveloperName(String raw) {
 /// A creator-support link recognized from its web address.
 typedef SupportLink = ({String label, String url});
 
+/// Where a creator link was found (#43). The first three name the developer,
+/// so their links are trusted; a link anywhere else in a post or page could be
+/// a modder's, an uploader's or a translator's.
+enum LinkWhere {
+  creatorRecord('creator record'),
+  developerLinks('Developer links field'),
+  developerLine('Developer line'),
+  elsewhere('elsewhere on the page');
+
+  final String label;
+  const LinkWhere(this.label);
+
+  bool get trusted => this != elsewhere;
+}
+
+/// A link a source found, with where it was found.
+typedef FoundLink = ({String url, LinkWhere where});
+
+/// [links] cut to recognised creator platforms, each address once (cleaned
+/// as [supportLinksFromUrls] cleans it) at the most trusted place it was
+/// found. Unlike [supportLinksFromUrls], two addresses on one platform both
+/// stay: which one is saved is the user's choice.
+List<FoundLink> foundLinksFrom(Iterable<FoundLink> links) {
+  final out = <String, FoundLink>{};
+  for (final l in links) {
+    final link = supportLinksFromUrls([l.url]).firstOrNull;
+    if (link == null) continue;
+    // "…/name" and "…/name/" are one address.
+    final key = link.url.toLowerCase().replaceAll(RegExp(r'/+$'), '');
+    final old = out[key];
+    if (old == null) {
+      out[key] = (url: link.url, where: l.where);
+    } else if (!old.where.trusted && l.where.trusted) {
+      out[key] = (url: old.url, where: l.where);
+    }
+  }
+  return out.values.toList();
+}
+
 /// Known creator-support platforms, matched by host. Each platform appears at
 /// most once, keeping a creator page over a single post when both are linked.
 List<SupportLink> supportLinksFromUrls(Iterable<String> urls) {

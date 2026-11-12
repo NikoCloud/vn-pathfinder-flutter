@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vn_pathfinder/services/metadata_service.dart';
 import 'package:vn_pathfinder/services/scanner_service.dart';
 import 'package:vn_pathfinder/services/scraping_service.dart';
+import 'package:vn_pathfinder/utils/formatters.dart';
 
 /// Serves canned HTML instead of driving the WebView.
 class FakeScraping extends ScrapingService {
@@ -56,7 +57,7 @@ void main() {
   group('fetchThreadDetails', () {
     test('F95-style post: synopsis keeps "z", stops at the next label, developer drops links', () async {
       final html = _page(
-        h1: '<span class="label">Ren\'Py</span> Frozen Past [v0.43] [Leonave]',
+        h1: '<span class="label">Ren\'Py</span> Frozen Past [v0.43] [Marrowind]',
         post: '''
 <article class="message message--post"><div class="message-userContent">
 <article class="message-body"><div class="bbWrapper">
@@ -64,21 +65,21 @@ void main() {
 <b>Overview</b>:<br />
 Frozen Past is set in the near future.<br />
 But is it worth it?​<br /><b>Thread Updated</b>: 2021-09-21<br />
-<b>Developer</b>: Leonave - <a href="https://www.patreon.com/leonave">Patreon</a> - <a href="https://discord.gg/abc">Discord</a><br />
-<b>Other Games</b>: <a href="https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/">Tale of Eros</a> - <a href="https://f95zone.to/sam/latest_alpha/#/cat=games/page=1/creator=Leonave">Link</a><br />
+<b>Developer</b>: Marrowind - <a href="https://www.patreon.com/marrowind">Patreon</a> - <a href="https://discord.gg/abc">Discord</a><br />
+<b>Other Games</b>: <a href="https://f95zone.to/threads/ember-accord-ch-4-brasswick.25093/">Ember Accord</a> - <a href="https://f95zone.to/sam/latest_alpha/#/cat=games/page=1/creator=Marrowind">Link</a><br />
 <a href="https://attachments.f95zone.to/shot1.jpg?h=2"><img src="https://attachments.f95zone.to/thumb/shot1.jpg"></a>
 </div></article></div></article>''',
       );
       final r = await MetadataService.fetchThreadDetails(_seed('f95zone'), FakeScraping(html));
       expect(r.title, 'Frozen Past');
-      expect(r.developer, 'Leonave');
+      expect(r.developer, 'Marrowind');
       expect(r.version, 'v0.43');
       expect(r.synopsis, 'Frozen Past is set in the near future.\nBut is it worth it?');
       expect(r.coverUrl, 'https://attachments.f95zone.to/banner.png?h=1');
       expect(r.screenshotUrls, ['https://attachments.f95zone.to/shot1.jpg?h=2']);
-      expect(r.supportLinks, ['https://www.patreon.com/leonave', 'https://discord.gg/abc']);
+      expect(r.supportLinks, ['https://www.patreon.com/marrowind', 'https://discord.gg/abc']);
       expect(r.otherGames, [
-        (title: 'Tale of Eros', url: 'https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/'),
+        (title: 'Ember Accord', url: 'https://f95zone.to/threads/ember-accord-ch-4-brasswick.25093/'),
       ]);
     });
 
@@ -91,7 +92,7 @@ But is it worth it?​<br /><b>Thread Updated</b>: 2021-09-21<br />
 <div class="message-fields message-fields--before">
   <dl class="pairs pairs--customField"><dt>Developer Name</dt><dd><div class="bbWrapper">ElfieEven</div></dd></dl>
   <dl class="pairs pairs--customField"><dt>Release Date</dt><dd>Aug 29, 2025</dd></dl>
-  <dl class="pairs pairs--customField"><dt>Developer Links</dt><dd><div class="bbWrapper"><a href="https://subscribestar.adult/elfieeven">SubscribeStar</a> - <a href="https://discord.gg/abc">Discord</a></div></dd></dl>
+  <dl class="pairs pairs--customField"><dt>Developer Links</dt><dd><div class="bbWrapper"><a href="https://subscribestar.adult/tidalnook">SubscribeStar</a> - <a href="https://discord.gg/abc">Discord</a></div></dd></dl>
 </div>
 <article class="message-body"><div class="bbWrapper">
 Overview:<br />
@@ -110,7 +111,7 @@ View attachment Trailer.mp4<br />
       expect(r.synopsis, 'It seemed like such an easy decision.');
       expect(r.coverUrl, 'https://lewdcorner.com/attachments/title3-png.864396/');
       expect(r.screenshotUrls, ['https://lewdcorner.com/attachments/shot1-png.855056/']);
-      expect(r.supportLinks, ['https://subscribestar.adult/elfieeven', 'https://discord.gg/abc']);
+      expect(r.supportLinks, ['https://subscribestar.adult/tidalnook', 'https://discord.gg/abc']);
       // Attachment pages need a login, so previews use the public thumbnails.
       expect(r.previewUrls, {
         'https://lewdcorner.com/attachments/title3-png.864396/':
@@ -185,8 +186,8 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
 
   group('itch.io ranking, relevance, and page parsing', () {
     test('cleanItchTitle strips (NSFW), [18+], and trailing author suffixes', () {
-      expect(MetadataService.cleanItchTitle('Neko Paradise (NSFW) by Alorth'), 'Neko Paradise');
-      expect(MetadataService.cleanItchTitle('Tale of Eros(NSFW)'), 'Tale of Eros');
+      expect(MetadataService.cleanItchTitle('Velvet Burrow (NSFW) by Brasswick'), 'Velvet Burrow');
+      expect(MetadataService.cleanItchTitle('Ember Accord(NSFW)'), 'Ember Accord');
       expect(MetadataService.cleanItchTitle('Some Game [18+] [v0.2.1]'), 'Some Game');
     });
 
@@ -201,44 +202,44 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
       const jamWrongTitle = MetadataResult(
         provider: 'itchio',
         id: '1',
-        title: 'Neko No Sentouki',
-        developer: 'skredjun',
-        sourceUrl: 'https://skredjun.itch.io/neko-no-sentouki',
+        title: 'Velvet Sentry',
+        developer: 'mossgrave',
+        sourceUrl: 'https://mossgrave.itch.io/velvet-sentry',
       );
       const jamSameTitleWrongDev = MetadataResult(
         provider: 'itchio',
         id: '2',
-        title: 'Light Of My Life',
-        developer: 'LightOfMyLife, ATRS',
-        sourceUrl: 'https://lightofmylife.itch.io/light-of-my-life',
+        title: 'Paper Lanterns',
+        developer: 'PaperLanterns, OKTV',
+        sourceUrl: 'https://paperlanterns.itch.io/paper-lanterns',
       );
       const translationMod = MetadataResult(
         provider: 'itchio',
         id: '3',
-        title: 'ETERNUM — Tradução PT-BR',
-        developer: 'ushinyu',
-        sourceUrl: 'https://ushinyu.itch.io/eternum-ptbr',
+        title: 'HOLLOWMERE — Tradução PT-BR',
+        developer: 'corvela',
+        sourceUrl: 'https://corvela.itch.io/hollowmere-ptbr',
       );
-      const realNeko = MetadataResult(
+      const realBurrow = MetadataResult(
         provider: 'itchio',
         id: '4',
-        title: 'Neko Paradise',
-        developer: 'Alorth',
-        sourceUrl: 'https://alorth.itch.io/neko-paradise',
+        title: 'Velvet Burrow',
+        developer: 'Brasswick',
+        sourceUrl: 'https://brasswick.itch.io/velvet-burrow',
       );
 
       expect(
         MetadataService.isRelevantItchMatch(
           jamWrongTitle,
-          query: 'Neko Paradise',
-          developer: 'Alorth',
+          query: 'Velvet Burrow',
+          developer: 'Brasswick',
         ),
         isFalse,
       );
       expect(
         MetadataService.isRelevantItchMatch(
           jamSameTitleWrongDev,
-          query: 'Light of My Life',
+          query: 'Paper Lanterns',
           developer: 'Naughty Road Productions',
         ),
         isFalse,
@@ -246,41 +247,41 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
       expect(
         MetadataService.isRelevantItchMatch(
           translationMod,
-          query: 'Eternum',
-          developer: 'Caribdis',
+          query: 'Hollowmere',
+          developer: 'Quillfen',
         ),
         isFalse,
       );
       expect(
         MetadataService.isRelevantItchMatch(
-          realNeko,
-          query: 'Neko Paradise',
-          developer: 'Alorth',
+          realBurrow,
+          query: 'Velvet Burrow',
+          developer: 'Brasswick',
         ),
         isTrue,
       );
 
       final ranked = MetadataService.rankItchResults(
-        [jamWrongTitle, realNeko],
-        query: 'Neko Paradise',
-        developer: 'Alorth',
+        [jamWrongTitle, realBurrow],
+        query: 'Velvet Burrow',
+        developer: 'Brasswick',
       );
-      expect(ranked.first.sourceUrl, 'https://alorth.itch.io/neko-paradise');
+      expect(ranked.first.sourceUrl, 'https://brasswick.itch.io/velvet-burrow');
     });
 
     test('parseItchGamePage extracts Plot synopsis, og:image cover, screenshots, rating, tags, and support links', () {
       const html = '''
 <!DOCTYPE html><html><head>
 <meta property="og:image" content="https://img.itch.zone/cover/original/full.png"/>
-<meta name="twitter:title" content="Eternum (NSFW) by Caribdis"/>
+<meta name="twitter:title" content="Hollowmere (NSFW) by Quillfen"/>
 </head><body>
-<h1 class="game_title">Eternum (NSFW)</h1>
+<h1 class="game_title">Hollowmere (NSFW)</h1>
 <div class="formatted_description">
-  <h2><a href="https://www.patreon.com/onceinalifetime">PATREON</a> | <a href="https://subscribestar.adult/caribdis">SUBSCRIBESTAR</a></h2>
+  <h2><a href="https://www.patreon.com/quillfenstudio">PATREON</a> | <a href="https://subscribestar.adult/quillfen">SUBSCRIBESTAR</a></h2>
   <h2>________________________</h2>
   <h2>Plot</h2>
-  <p>You are moving with your best friend to the city of Kredon.</p>
-  <p>Thousands of servers form the network of Eternum.</p>
+  <p>You arrive in the river town of Larkspur with one bag.</p>
+  <p>Every lantern in Hollowmere hides a name.</p>
   <h2>About me</h2>
   <p>The game currently has over 11,000 renders.</p>
 </div>
@@ -291,21 +292,21 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
 <div class="info_panel_wrapper"><table><tbody>
   <tr><td>Updated</td><td><abbr title="03 November 2026 @ 12:37 UTC">8 days ago</abbr></td></tr>
   <tr><td>Rating</td><td><div class="aggregate_rating"><div itemprop="ratingValue" content="4.9"></div></div></td></tr>
-  <tr><td>Author</td><td><a href="https://caribdis.itch.io">Caribdis</a></td></tr>
+  <tr><td>Author</td><td><a href="https://quillfen.itch.io">Quillfen</a></td></tr>
   <tr><td>Genre</td><td><a href="https://itch.io/games/genre-visual-novel">Visual Novel</a></td></tr>
   <tr><td>Tags</td><td><a href="#">3D</a>, <a href="#">Romance</a>, <a href="#">Ren'Py</a></td></tr>
 </tbody></table></div>
 </body></html>''';
       const seed = MetadataResult(
         provider: 'itchio',
-        id: 'https://caribdis.itch.io/eternum',
-        title: 'Eternum',
+        id: 'https://quillfen.itch.io/hollowmere',
+        title: 'Hollowmere',
         developer: '',
-        sourceUrl: 'https://caribdis.itch.io/eternum',
+        sourceUrl: 'https://quillfen.itch.io/hollowmere',
       );
       final parsed = MetadataService.parseItchGamePage(seed, html);
-      expect(parsed.title, 'Eternum');
-      expect(parsed.developer, 'Caribdis');
+      expect(parsed.title, 'Hollowmere');
+      expect(parsed.developer, 'Quillfen');
       expect(parsed.coverUrl, 'https://img.itch.zone/cover/original/full.png');
       expect(parsed.screenshotUrls, [
         'https://img.itch.zone/shot1/original/1.jpg',
@@ -317,14 +318,20 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
       expect(parsed.tags, ['3D', 'Romance']);
       expect(
         parsed.synopsis,
-        'You are moving with your best friend to the city of Kredon.\n\n'
-        'Thousands of servers form the network of Eternum.',
+        'You arrive in the river town of Larkspur with one bag.\n\n'
+        'Every lantern in Hollowmere hides a name.',
       );
-      expect(parsed.supportLinks, [
-        'https://caribdis.itch.io',
-        'https://www.patreon.com/onceinalifetime',
-        'https://subscribestar.adult/caribdis',
-      ]);
+      // The author link in the info table is the creator's; links in the
+      // description are shown in Fetch Metadata but not ticked (#43).
+      expect(parsed.supportLinks, ['https://quillfen.itch.io']);
+      expect(
+        {for (final l in parsed.foundLinks) l.url: l.where},
+        {
+          'https://quillfen.itch.io': LinkWhere.creatorRecord,
+          'https://www.patreon.com/quillfenstudio': LinkWhere.elsewhere,
+          'https://subscribestar.adult/quillfen': LinkWhere.elsewhere,
+        },
+      );
     });
   });
 }

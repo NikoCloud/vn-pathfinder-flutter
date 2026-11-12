@@ -8,6 +8,7 @@ import '../../models/game_group.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/fetch_merge.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart' show ScrapingException, ScrapingService, scrapingServiceProvider, scrapingSessionProvider;
 import '../../services/scanner_service.dart';
@@ -71,7 +72,17 @@ extension _ProviderX on _Provider {
 
 // ── Field keys ────────────────────────────────────────────────────────────────
 
-const _kFields = ['title', 'developer', 'synopsis', 'tags', 'images'];
+/// Fields that come from one source. Tags and creator links combine sources
+/// instead (#43).
+const _kFields = ['title', 'developer', 'synopsis', 'images'];
+
+/// Source order for the name, developer, synopsis, tags and links: the
+/// curated database first (GameStoryLog would join it, #42), then the forums.
+const _curatedFirst = [_Provider.vndb, _Provider.f95zone, _Provider.lewdcorner, _Provider.azc, _Provider.itchio];
+
+/// Source order for the release date: a thread is updated the day a build is
+/// out, a curated entry can lag.
+const _forumsFirst = [_Provider.f95zone, _Provider.lewdcorner, _Provider.azc, _Provider.vndb, _Provider.itchio];
 
 // ── Root widget ───────────────────────────────────────────────────────────────
 
@@ -105,6 +116,13 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   final Map<String, _Provider?> _fieldSource = {
     for (final f in _kFields) f: null,
   };
+
+  /// Fields the user chose a source for; automatic picks leave them alone.
+  final Set<String> _manualFields = {};
+
+  /// The user's ticks on tag sources and creator links, over the defaults.
+  final Map<_Provider, bool> _tagChoice = {};
+  final Map<String, bool> _linkChoice = {};
 
   // Which image is the cover and which are left out, for the images source.
   String? _coverPick;
@@ -202,6 +220,9 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       for (final f in _kFields) {
         _fieldSource[f] = null;
       }
+      _manualFields.clear();
+      _tagChoice.clear();
+      _linkChoice.clear();
       _applyError = null;
     });
 
@@ -444,37 +465,87 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
     }
   }
 
-  /// Auto-assigns fields to [prov] where no source is set, or the current
-  /// source has no data for that field. User manual picks are never overwritten.
-  void _autoAssignFields(_Provider prov, MetadataResult r) {
-    final hasData = {
-      'title':     r.title.isNotEmpty,
-      'developer': r.developer.isNotEmpty,
-      'synopsis':  r.synopsis.isNotEmpty,
-      'tags':      r.tags.isNotEmpty,
-      'images':    r.coverUrl.isNotEmpty || r.screenshotUrls.isNotEmpty,
-    };
+  // ── Same-game check and combined fields (#43) ───────────────────────────
 
-    for (final field in _kFields) {
-      if (!hasData[field]!) continue;
-      final current = _fieldSource[field];
-      if (current == null || !_providerHasDataFor(field, current)) {
-        _fieldSource[field] = prov;
-      }
+  /// The picked result the others are checked against: the highest-priority
+  /// one that is clearly this game (see [anchorResult]).
+  MetadataResult? get _anchor => anchorResult(
+        [for (final p in _curatedFirst) ?_pickedByProvider[p]],
+        title: widget.group.effectiveTitle,
+        query: _queryCtrl.text,
+        developer: widget.group.effectiveDeveloper,
+      );
+
+  /// Whether [p]'s picked result is this game. Only these start ticked.
+  bool _matches(_Provider p, [MetadataResult? anchor]) {
+    final r = _pickedByProvider[p];
+    return r != null && passesSameGame(r, anchor ?? _anchor);
+  }
+
+  bool _tagTicked(_Provider p, MetadataResult? anchor) =>
+      (_pickedByProvider[p]?.tags.isNotEmpty ?? false) && (_tagChoice[p] ?? _matches(p, anchor));
+
+  List<MergedTag> _mergedTags(MetadataResult? anchor) => mergeTags([
+        for (final p in _curatedFirst)
+          if (_tagTicked(p, anchor)) (p.label, _pickedByProvider[p]!.tags),
+      ]);
+
+  static List<FoundLink> _linksOf(MetadataResult r) => r.foundLinks.isNotEmpty
+      ? r.foundLinks
+      : [for (final u in r.supportLinks) (url: u, where: LinkWhere.creatorRecord)];
+
+  /// Every creator link of every picked source, highest priority first.
+  List<LinkRow> get _linkRows => [
+        for (final p in _curatedFirst)
+          if (_pickedByProvider[p] != null) ...linkRowsFor(p.label, _linksOf(_pickedByProvider[p]!)),
+      ];
+
+  bool _linkTicked(LinkRow row, MetadataResult? anchor) {
+    final prov = _Provider.values.firstWhere((p) => p.label == row.source);
+    return _linkChoice[row.id] ?? linkStartsTicked(row, sourceMatches: _matches(prov, anchor));
+  }
+
+  bool _hasDataFor(String field, MetadataResult r) => switch (field) {
+        'title'     => r.title.isNotEmpty,
+        'developer' => r.developer.isNotEmpty,
+        'synopsis'  => r.synopsis.isNotEmpty,
+        'tags'      => r.tags.isNotEmpty,
+        'images'    => r.coverUrl.isNotEmpty || r.screenshotUrls.isNotEmpty,
+        _           => false,
+      };
+
+  /// The source for a one-source field: the first of [order] with data that
+  /// is this game, else the first with data at all (shown, so it can be
+  /// changed).
+  _Provider? _bestSource(String field, List<_Provider> order, MetadataResult? anchor) {
+    _Provider? fallback;
+    for (final p in order) {
+      final r = _pickedByProvider[p];
+      if (r == null || !_hasDataFor(field, r)) continue;
+      if (_matches(p, anchor)) return p;
+      fallback ??= p;
+    }
+    return fallback;
+  }
+
+  /// Chooses the source for each one-source field the user hasn't chosen:
+  /// title, developer and synopsis by [_curatedFirst]; images as before, the
+  /// first source with images, kept while it has them.
+  void _autoAssignFields(_Provider prov, MetadataResult r) {
+    final anchor = _anchor;
+    for (final field in const ['title', 'developer', 'synopsis']) {
+      if (_manualFields.contains(field)) continue;
+      _fieldSource[field] = _bestSource(field, _curatedFirst, anchor);
+    }
+    if (!_manualFields.contains('images') && _hasDataFor('images', r)) {
+      final current = _fieldSource['images'];
+      if (current == null || !_providerHasDataFor('images', current)) _fieldSource['images'] = prov;
     }
   }
 
   bool _providerHasDataFor(String field, _Provider prov) {
     final r = _pickedByProvider[prov];
-    if (r == null) return false;
-    return switch (field) {
-      'title'     => r.title.isNotEmpty,
-      'developer' => r.developer.isNotEmpty,
-      'synopsis'  => r.synopsis.isNotEmpty,
-      'tags'      => r.tags.isNotEmpty,
-      'images'    => r.coverUrl.isNotEmpty || r.screenshotUrls.isNotEmpty,
-      _           => false,
-    };
+    return r != null && _hasDataFor(field, r);
   }
 
   // ── Apply ─────────────────────────────────────────────────────────────────
@@ -503,12 +574,26 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       applyField('title',     (r) { if (r.title.isNotEmpty)     meta['title']        = r.title; });
       applyField('developer', (r) { if (r.developer.isNotEmpty) meta['developer']    = r.developer; });
       applyField('synopsis',  (r) { if (r.synopsis.isNotEmpty)  meta['synopsis']     = r.synopsis; });
-      applyField('tags',      (r) { if (r.tags.isNotEmpty)      meta['tags_fetched'] = r.tags; });
 
-      // Release date — use first picked provider that has one
-      for (final r in _pickedByProvider.values) {
-        if (r?.releaseDate.isNotEmpty == true) {
-          meta['release_date'] = r!.releaseDate;
+      // Tags from every ticked source, one per key, with where each came
+      // from so later features can weigh them (#43).
+      final anchor = _anchor;
+      final tags = _mergedTags(anchor);
+      if (tags.isNotEmpty) {
+        meta['tags_fetched'] = [for (final t in tags) t.tag];
+        meta['tag_sources'] = {for (final t in tags) t.tag: t.sources};
+      }
+
+      // Release date: forums first, from this game.
+      for (final p in [
+        for (final p in _forumsFirst)
+          if (_matches(p, anchor)) p,
+        for (final p in _forumsFirst)
+          if (!_matches(p, anchor)) p,
+      ]) {
+        final r = _pickedByProvider[p];
+        if (r != null && r.releaseDate.isNotEmpty) {
+          meta['release_date'] = r.releaseDate;
           break;
         }
       }
@@ -520,25 +605,22 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       ].whereType<MetadataResult>().where((r) => r.rating > 0);
       if (rated.isNotEmpty) meta['rating'] = rated.first.rating;
 
-      // Creator-support links — prefer the developer field's provider first,
-      // then merge any other picked providers, deduplicated by platform.
-      final devSrc = _fieldSource['developer'];
-      final support = supportLinksFromUrls([
-        if (devSrc != null) ...?_pickedByProvider[devSrc]?.supportLinks,
-        for (final r in _pickedByProvider.values.whereType<MetadataResult>())
-          ...r.supportLinks,
-      ]);
+      // Creator links: only the ticked rows, one per platform; Discord only
+      // from a ticked link (#43).
+      final support = chosenLinks(_linkRows, (row) => _linkTicked(row, anchor));
       if (support.isNotEmpty) {
         meta['support_links'] = support.map((l) => l.url).toList();
         final discord = support.where((l) => l.label == 'Discord').firstOrNull;
         if (discord != null) meta['discord_url'] = discord.url;
       }
 
+      // Other games by the developer, from sources that are this game.
+      final devSrc = _fieldSource['developer'];
       final otherGames = otherGameLinksFrom(
         [
-          if (devSrc != null) ...?_pickedByProvider[devSrc]?.otherGames,
-          for (final r in _pickedByProvider.values.whereType<MetadataResult>())
-            ...r.otherGames,
+          if (devSrc != null && _matches(devSrc, anchor)) ...?_pickedByProvider[devSrc]?.otherGames,
+          for (final p in _curatedFirst)
+            if (_matches(p, anchor)) ...?_pickedByProvider[p]?.otherGames,
         ],
         excludeTitle: (meta['title'] as String?) ?? widget.group.effectiveTitle,
       );
@@ -548,10 +630,13 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         ];
       }
 
-      // Store source URLs for every picked provider
+      // Source addresses: for sources that are this game, or that a field
+      // uses. A different game's page is never saved as this one's.
+      final used = {for (final p in _fieldSource.values) ?p};
       for (final entry in _pickedByProvider.entries) {
         final r = entry.value;
         if (r == null || r.sourceUrl.isEmpty) continue;
+        if (!_matches(entry.key, anchor) && !used.contains(entry.key)) continue;
         switch (entry.key) {
           case _Provider.vndb:       meta['vndb_url'] = r.sourceUrl;
           case _Provider.f95zone:    meta['f95_url']  = r.sourceUrl;
@@ -747,7 +832,21 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
                           fieldSource: _fieldSource,
                           downloadImages: _downloadImages,
                           loginImageBytes: _loginImageBytes,
+                          tagsRow: _TagsRow(
+                            sources: [
+                              for (final p in _curatedFirst)
+                                if (_pickedByProvider[p]?.tags.isNotEmpty ?? false)
+                                  (p, _tagTicked(p, _anchor), _matches(p)),
+                            ],
+                            merged: _mergedTags(_anchor),
+                            onToggle: (p, on) => setState(() => _tagChoice[p] = on),
+                          ),
+                          linksRow: _LinksRow(
+                            rows: [for (final r in _linkRows) (r, _linkTicked(r, _anchor))],
+                            onToggle: (row, on) => setState(() => _linkChoice[row.id] = on),
+                          ),
                           onSourceChange: (field, prov) => setState(() {
+                            _manualFields.add(field);
                             _fieldSource[field] = prov;
                             if (field == 'images') {
                               _coverPick = null;
@@ -1139,9 +1238,13 @@ class _FieldMixer extends StatelessWidget {
   final ValueChanged<String> onRemoveImage;
 
   final bool locked;
+  final Widget tagsRow;
+  final Widget linksRow;
 
   const _FieldMixer({
     required this.locked,
+    required this.tagsRow,
+    required this.linksRow,
     required this.coverPick,
     required this.removedImages,
     required this.onPickCover,
@@ -1206,7 +1309,7 @@ class _FieldMixer extends StatelessWidget {
               Icon(Icons.info_outline, size: 12, color: AppColors.textMuted),
               const SizedBox(width: 6),
               Text(
-                'Click a provider pill to change the source for that field.',
+                'Click a source to use it for a field. Tags and creator links can come from several.',
                 style: AppText.ui(fontSize: 11, color: AppColors.textMuted),
               ),
             ]),
@@ -1271,23 +1374,11 @@ class _FieldMixer extends StatelessWidget {
 
           const _MixerDivider(),
 
-          _MixerRow(
-            field: 'tags',
-            label: 'Tags',
-            pickedByProvider: pickedByProvider,
-            enrichingByProvider: enrichingByProvider,
-            fieldSource: fieldSource,
-            hasData: _hasData,
-            onSourceChange: onSourceChange,
-            valueWidget: (r) => Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: r.tags
-                  .take(20)
-                  .map((t) => _TagChip(label: t))
-                  .toList(),
-            ),
-          ),
+          tagsRow,
+
+          const _MixerDivider(),
+
+          linksRow,
 
           const _MixerDivider(),
 
@@ -1399,6 +1490,142 @@ class _MixerRow extends StatelessWidget {
           else
             Text('—',
                 style: AppText.ui(fontSize: 12, color: AppColors.textMuted)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Tags (combined) ───────────────────────────────────────────────────────────
+
+/// Tags from every ticked source, combined (#43). A source that isn't this
+/// game starts unticked.
+class _TagsRow extends StatelessWidget {
+  /// Each source with tags: whether it's ticked, and whether it passed the
+  /// same-game check.
+  final List<(_Provider, bool, bool)> sources;
+  final List<MergedTag> merged;
+  final void Function(_Provider, bool) onToggle;
+  const _TagsRow({required this.sources, required this.merged, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            SizedBox(
+              width: 76,
+              child: Text('Tags',
+                  style: AppText.ui(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.8)),
+            ),
+            for (final (p, on, same) in sources)
+              Tooltip(
+                message: same ? '${p.label}: same game' : '${p.label} picked a result that may be another game',
+                child: GestureDetector(
+                  onTap: () => onToggle(p, !on),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: on ? AppColors.accent : AppColors.bgCard,
+                      borderRadius: AppRadius.borderSm,
+                      border: Border.all(color: on ? AppColors.accent : AppColors.border),
+                    ),
+                    child: Text(
+                      same ? p.shortLabel : '${p.shortLabel} ?',
+                      style: AppText.ui(
+                          fontSize: 11,
+                          fontWeight: on ? FontWeight.w700 : FontWeight.w400,
+                          color: on ? Colors.white : AppColors.textSecondary),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 7),
+          if (merged.isEmpty)
+            Text('—', style: AppText.ui(fontSize: 12, color: AppColors.textMuted))
+          else
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (final t in merged.take(40))
+                  Tooltip(message: t.sources.join(', '), child: _TagChip(label: t.tag)),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Creator links (chosen one by one) ─────────────────────────────────────────
+
+/// One row per creator link, ticked by default only when it was found where
+/// the developer is named, by a source that is this game (#43).
+class _LinksRow extends StatelessWidget {
+  final List<(LinkRow, bool)> rows;
+  final void Function(LinkRow, bool) onToggle;
+  const _LinksRow({required this.rows, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Creator links',
+              style: AppText.ui(
+                  fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.8)),
+          const SizedBox(height: 4),
+          if (rows.isEmpty)
+            Text('—', style: AppText.ui(fontSize: 12, color: AppColors.textMuted))
+          else ...[
+            Text('One per platform is saved; the first ticked one wins.',
+                style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
+            const SizedBox(height: 4),
+            for (final (row, on) in rows)
+              InkWell(
+                onTap: () => onToggle(row, !on),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Row(children: [
+                    SizedBox(
+                      width: 28,
+                      height: 24,
+                      child: Checkbox(
+                        value: on,
+                        visualDensity: VisualDensity.compact,
+                        activeColor: AppColors.accent,
+                        onChanged: (v) => onToggle(row, v ?? false),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 104,
+                      child: Text(row.platform,
+                          style: AppText.ui(fontSize: 12, color: AppColors.textPrimary),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Expanded(
+                      child: Text(row.url,
+                          style: AppText.mono(fontSize: 11, color: AppColors.textSecondary),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('${row.source} · ${row.where.label}',
+                        style: AppText.ui(
+                            fontSize: 11, color: row.where.trusted ? AppColors.textMuted : AppColors.warning)),
+                  ]),
+                ),
+              ),
+          ],
         ],
       ),
     );

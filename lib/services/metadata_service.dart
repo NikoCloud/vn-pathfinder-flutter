@@ -37,8 +37,13 @@ class MetadataResult {
   /// Out of 5; 0 means none.
   final double rating;
 
-  /// Creator-support URLs (Patreon, SubscribeStar, Buy Me a Coffee, etc.).
+  /// Creator-support URLs (Patreon, SubscribeStar, Buy Me a Coffee, etc.)
+  /// found where the developer is named; the ones [foundLinks] trusts.
   final List<String> supportLinks;
+
+  /// Every creator link the source found, with where (#43). Links from
+  /// elsewhere on a page are shown in Fetch Metadata but not ticked.
+  final List<FoundLink> foundLinks;
 
   /// Other games by the same developer linked in the thread.
   final List<OtherGameLink> otherGames;
@@ -61,6 +66,7 @@ class MetadataResult {
     this.imagesLocked = false,
     this.rating = 0,
     this.supportLinks = const [],
+    this.foundLinks = const [],
     this.otherGames = const [],
     this.version = '',
   });
@@ -80,6 +86,7 @@ class MetadataResult {
         imagesLocked: imagesLocked,
         rating: rating ?? this.rating,
         supportLinks: supportLinks,
+        foundLinks: foundLinks,
         otherGames: otherGames,
         version: version,
       );
@@ -208,6 +215,7 @@ class MetadataService {
     final supportLinks = supportLinksFromUrls(extUrls).map((l) => l.url).toList();
 
     return MetadataResult(
+      foundLinks: [for (final u in supportLinks) (url: u, where: LinkWhere.creatorRecord)],
       provider: 'vndb',
       id: id,
       title: title,
@@ -962,12 +970,18 @@ class MetadataService {
     final synopsis = _extractItchSynopsis(descEl, doc, fallback: seed.synopsis);
 
     final sub = _itchSubdomain(seed.sourceUrl);
-    final support = supportLinksFromUrls([
+    // The info table and the creator's own page are the creator's; links in
+    // the description may be anyone's (a collaborator, a translator).
+    final creatorUrls = [
       ...infoLinks,
-      ...descLinks,
       if (sub.isNotEmpty) 'https://$sub.itch.io/',
       ...seed.supportLinks,
-    ]).map((l) => l.url).toList();
+    ];
+    final support = supportLinksFromUrls(creatorUrls).map((l) => l.url).toList();
+    final found = foundLinksFrom([
+      for (final u in creatorUrls) (url: u, where: LinkWhere.creatorRecord),
+      for (final u in descLinks) (url: u, where: LinkWhere.elsewhere),
+    ]);
 
     return MetadataResult(
       provider: seed.provider,
@@ -983,6 +997,7 @@ class MetadataService {
       rating: rating,
       previewUrls: previews,
       supportLinks: support,
+      foundLinks: found,
     );
   }
 
@@ -1437,7 +1452,11 @@ class MetadataService {
     // "Developer:" line come first, skipping "Other Games" / "Extras" /
     // "Patches" so another game's or modder's link isn't mistaken for the
     // developer's. "Other Games" fields and lines are collected separately.
-    final supportLinks = _extractSupportUrls(opArticle, opEl);
+    final foundLinks = _extractSupportUrls(opArticle, opEl);
+    final supportLinks = supportLinksFromUrls([
+      for (final l in foundLinks)
+        if (l.where.trusted) l.url,
+    ]).map((l) => l.url).toList();
     final otherGames = _extractOtherGames(
       opArticle,
       opEl,
@@ -1462,6 +1481,7 @@ class MetadataService {
       previewUrls: previews,
       imagesLocked: (opArticle ?? opEl).querySelector('.messageHide--attach') != null,
       supportLinks: supportLinks.isNotEmpty ? supportLinks : result.supportLinks,
+      foundLinks: foundLinks.isNotEmpty ? foundLinks : result.foundLinks,
       otherGames: otherGames.isNotEmpty ? otherGames : result.otherGames,
       version: version.isNotEmpty ? version : result.version,
     );
@@ -1583,9 +1603,12 @@ class MetadataService {
     return otherGameLinksFrom(raw, excludeTitle: excludeTitle);
   }
 
-  static List<String> _extractSupportUrls(Element? opArticle, Element opEl) {
-    final primary = <String>[];
-    final secondary = <String>[];
+  /// Every creator link in a thread's opening post, with where it was found:
+  /// a developer custom field, the "Developer:" line, or anywhere else (where
+  /// a modder's, an uploader's or a translator's links also sit). Lines about
+  /// other games, extras or patches are skipped.
+  static List<FoundLink> _extractSupportUrls(Element? opArticle, Element opEl) {
+    final found = <FoundLink>[];
 
     if (opArticle != null) {
       for (final pair in opArticle.querySelectorAll('dl.pairs--customField')) {
@@ -1599,7 +1622,9 @@ class MetadataService {
             label.contains('support') ||
             label.contains('link') ||
             label.contains('creator');
-        (isDevField ? primary : secondary).addAll(urls);
+        for (final u in urls) {
+          found.add((url: u, where: isDevField ? LinkWhere.developerLinks : LinkWhere.elsewhere));
+        }
       }
     }
 
@@ -1609,7 +1634,10 @@ class MetadataService {
     void flushLine() {
       final trimmed = lineText.replaceAll(RegExp(r'\s+'), ' ').trim();
       if (lineUrls.isNotEmpty && !_ignoredLinkLine.hasMatch(trimmed)) {
-        (_developerLinkLine.hasMatch(trimmed) ? primary : secondary).addAll(lineUrls);
+        final where = _developerLinkLine.hasMatch(trimmed) ? LinkWhere.developerLine : LinkWhere.elsewhere;
+        for (final u in lineUrls) {
+          found.add((url: u, where: where));
+        }
       }
       lineText = '';
       lineUrls = <String>[];
@@ -1642,7 +1670,7 @@ class MetadataService {
     walk(opEl);
     flushLine();
 
-    return supportLinksFromUrls([...primary, ...secondary]).map((l) => l.url).toList();
+    return foundLinksFrom(found);
   }
 
   // ── Image Download ─────────────────────────────────────────────────────────

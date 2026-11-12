@@ -44,7 +44,7 @@ void main() {
       'Quonix Patreon itch.io': 'Quonix',
       'Quonix (Patreon)': 'Quonix',
       // Separated links
-      'Leonave - Patreon - Discord': 'Leonave',
+      'Marrowind - Patreon - Discord': 'Marrowind',
       'Quonix Patreon - Itch.io - Discord': 'Quonix',
       'Quonix | Patreon': 'Quonix',
       'Patreon - Quonix': 'Quonix',
@@ -166,14 +166,14 @@ void main() {
     test('supports UniFans and root creator subdomains (Itch.io, Fanbox, Gumroad)', () {
       final links = supportLinksFromUrls([
         'https://app.unifans.io/c/ruykiru',
-        'https://alorth.itch.io/',
+        'https://brasswick.itch.io/',
         'https://creator.fanbox.cc/',
         'https://sinfulsummer.com/',
         'https://t.me/ruykiru',
       ]);
       expect(links, [
         (label: 'UniFans', url: 'https://app.unifans.io/c/ruykiru'),
-        (label: 'Itch.io', url: 'https://alorth.itch.io/'),
+        (label: 'Itch.io', url: 'https://brasswick.itch.io/'),
         (label: 'Fanbox', url: 'https://creator.fanbox.cc/'),
       ]);
     });
@@ -182,14 +182,14 @@ void main() {
   group('otherGameLinksFrom', () {
     test('keeps direct forum thread links, skips search/creator pages, and excludes current game', () {
       final games = otherGameLinksFrom([
-        (title: 'Tale of Eros', url: 'https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/'),
-        (title: 'Radiant', url: 'https://f95zone.to/threads/radiant-v0-1-2-rk-studios.49572/'),
+        (title: 'Ember Accord', url: 'https://f95zone.to/threads/ember-accord-ch-4-brasswick.25093/'),
+        (title: 'Glass Harbor', url: 'https://f95zone.to/threads/glass-harbor-v0-1-2-pale-studio.49572/'),
         (title: 'Link', url: 'https://f95zone.to/sam/latest_alpha/#/cat=games/page=1/creator=Moonbox'),
-        (title: 'Neko Paradise', url: 'https://f95zone.to/threads/neko-paradise-v1-0.39572/'),
-      ], excludeTitle: 'Neko Paradise');
+        (title: 'Velvet Burrow', url: 'https://f95zone.to/threads/velvet-burrow-v1-0.39572/'),
+      ], excludeTitle: 'Velvet Burrow');
       expect(games, [
-        (title: 'Tale of Eros', url: 'https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/'),
-        (title: 'Radiant', url: 'https://f95zone.to/threads/radiant-v0-1-2-rk-studios.49572/'),
+        (title: 'Ember Accord', url: 'https://f95zone.to/threads/ember-accord-ch-4-brasswick.25093/'),
+        (title: 'Glass Harbor', url: 'https://f95zone.to/threads/glass-harbor-v0-1-2-pale-studio.49572/'),
       ]);
     });
   });
