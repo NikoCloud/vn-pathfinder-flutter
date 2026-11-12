@@ -37,6 +37,9 @@ class MetadataResult {
   /// Out of 5; 0 means none.
   final double rating;
 
+  /// Creator-support URLs (Patreon, SubscribeStar, Buy Me a Coffee, etc.).
+  final List<String> supportLinks;
+
   const MetadataResult({
     required this.provider,
     required this.id,
@@ -51,6 +54,7 @@ class MetadataResult {
     this.previewUrls = const {},
     this.imagesLocked = false,
     this.rating = 0,
+    this.supportLinks = const [],
   });
 
   MetadataResult _copy({String? coverUrl, List<String>? screenshotUrls, double? rating}) => MetadataResult(
@@ -67,6 +71,7 @@ class MetadataResult {
         previewUrls: previewUrls,
         imagesLocked: imagesLocked,
         rating: rating ?? this.rating,
+        supportLinks: supportLinks,
       );
 
   /// This result's images as the user arranged them: [cover] in the cover
@@ -88,6 +93,13 @@ class MetadataResult {
     if (synopsis.isNotEmpty) base['synopsis'] = synopsis;
     if (releaseDate.isNotEmpty) base['release_date'] = releaseDate;
     if (tags.isNotEmpty) base['tags_fetched'] = tags;
+    if (supportLinks.isNotEmpty) {
+      base['support_links'] = supportLinks;
+      final discord = supportLinksFromUrls(supportLinks)
+          .where((l) => l.label == 'Discord')
+          .firstOrNull;
+      if (discord != null) base['discord_url'] = discord.url;
+    }
     base['source_url'] = sourceUrl;
     if (provider == 'vndb') base['vndb_url'] = sourceUrl;
     if (provider == 'f95zone') base['f95_url'] = sourceUrl;
@@ -114,8 +126,9 @@ class MetadataService {
     final body = jsonEncode({
       'filters': ['search', '=', query],
       'fields':
-          'title, alttitle, developers.name, description, image.url, '
-          'screenshots.url, released, tags.name, rating',
+          'title, alttitle, developers.name, developers.extlinks.url, '
+          'extlinks.url, description, image.url, screenshots.url, released, '
+          'tags.name, rating',
       'results': 15,
       'sort': 'searchrank',
     });
@@ -169,6 +182,16 @@ class MetadataService {
         .take(20)
         .toList();
 
+    final extUrls = <String>[
+      for (final d in (r['developers'] as List?) ?? const [])
+        if (d is Map)
+          for (final l in (d['extlinks'] as List?) ?? const [])
+            if (l is Map && l['url'] is String) l['url'] as String,
+      for (final l in (r['extlinks'] as List?) ?? const [])
+        if (l is Map && l['url'] is String) l['url'] as String,
+    ];
+    final supportLinks = supportLinksFromUrls(extUrls).map((l) => l.url).toList();
+
     return MetadataResult(
       provider: 'vndb',
       id: id,
@@ -181,6 +204,7 @@ class MetadataService {
       sourceUrl: 'https://vndb.org/$id',
       tags: tags,
       releaseDate: (r['released'] as String?) ?? '',
+      supportLinks: supportLinks,
     );
   }
 
@@ -799,6 +823,13 @@ class MetadataService {
         .take(25)
         .toList();
 
+    // ── Extract creator-support links ─────────────────────────────────────
+    // Custom thread fields ("Developer Links" on LewdCorner / AzC) and the
+    // "Developer:" line come first, skipping "Other Games" / "Extras" /
+    // "Patches" so another game's or modder's link isn't mistaken for the
+    // developer's.
+    final supportLinks = _extractSupportUrls(opArticle, opEl);
+
     return MetadataResult(
       provider: result.provider,
       id: result.id,
@@ -814,6 +845,7 @@ class MetadataService {
           : (fields['release date'] ?? ''),
       previewUrls: previews,
       imagesLocked: (opArticle ?? opEl).querySelector('.messageHide--attach') != null,
+      supportLinks: supportLinks.isNotEmpty ? supportLinks : result.supportLinks,
     );
   }
 
@@ -833,6 +865,78 @@ class MetadataService {
       if (label.isNotEmpty && value.isNotEmpty) fields[label] = value;
     }
     return fields;
+  }
+
+  static final _ignoredLinkLine = RegExp(
+    r'^(?:other\s+games?|extras?|patch(?:es)?|mods?|walkthroughs?|translations?)\s*:',
+    caseSensitive: false,
+  );
+  static final _developerLinkLine = RegExp(
+    r'^(?:developer|creator|author|studio|publisher|support|links?|patreon|subscribestar|website)\b',
+    caseSensitive: false,
+  );
+  static final _plainUrlRe = RegExp(r'https?://[^\s"<>]+', caseSensitive: false);
+
+  static List<String> _extractSupportUrls(Element? opArticle, Element opEl) {
+    final primary = <String>[];
+    final secondary = <String>[];
+
+    if (opArticle != null) {
+      for (final pair in opArticle.querySelectorAll('dl.pairs--customField')) {
+        final label = (pair.querySelector('dt')?.text ?? '').toLowerCase();
+        if (label.contains('other game')) continue;
+        final urls = <String>[
+          for (final a in pair.querySelectorAll('a[href]')) a.attributes['href'] ?? '',
+          for (final m in _plainUrlRe.allMatches(pair.text)) m.group(0) ?? '',
+        ];
+        final isDevField = label.contains('developer') ||
+            label.contains('support') ||
+            label.contains('link') ||
+            label.contains('creator');
+        (isDevField ? primary : secondary).addAll(urls);
+      }
+    }
+
+    var lineText = '';
+    var lineUrls = <String>[];
+
+    void flushLine() {
+      final trimmed = lineText.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (lineUrls.isNotEmpty && !_ignoredLinkLine.hasMatch(trimmed)) {
+        (_developerLinkLine.hasMatch(trimmed) ? primary : secondary).addAll(lineUrls);
+      }
+      lineText = '';
+      lineUrls = <String>[];
+    }
+
+    void walk(Node node) {
+      if (node is Text) {
+        lineText = '$lineText${node.text}';
+        for (final m in _plainUrlRe.allMatches(node.text)) {
+          lineUrls.add(m.group(0) ?? '');
+        }
+        return;
+      }
+      if (node is Element) {
+        final tag = node.localName;
+        if (tag == 'br' || tag == 'div' || tag == 'p' || tag == 'li' || tag == 'tr') {
+          flushLine();
+        }
+        if (tag == 'a') {
+          final href = (node.attributes['href'] ?? '').trim();
+          if (href.isNotEmpty) lineUrls.add(href);
+        }
+        node.nodes.forEach(walk);
+        if (tag == 'div' || tag == 'p' || tag == 'li' || tag == 'tr') {
+          flushLine();
+        }
+      }
+    }
+
+    walk(opEl);
+    flushLine();
+
+    return supportLinksFromUrls([...primary, ...secondary]).map((l) => l.url).toList();
   }
 
   // ── Image Download ─────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import '../../providers/settings_provider.dart';
 import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart' show ScrapingException, ScrapingService, scrapingServiceProvider, scrapingSessionProvider;
 import '../../services/scanner_service.dart';
+import '../../utils/formatters.dart';
 import 'local_fetch_panel.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -356,6 +357,20 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         ..._pickedByProvider.values,
       ].whereType<MetadataResult>().where((r) => r.rating > 0);
       if (rated.isNotEmpty) meta['rating'] = rated.first.rating;
+
+      // Creator-support links — prefer the developer field's provider first,
+      // then merge any other picked providers, deduplicated by platform.
+      final devSrc = _fieldSource['developer'];
+      final support = supportLinksFromUrls([
+        if (devSrc != null) ...?_pickedByProvider[devSrc]?.supportLinks,
+        for (final r in _pickedByProvider.values.whereType<MetadataResult>())
+          ...r.supportLinks,
+      ]);
+      if (support.isNotEmpty) {
+        meta['support_links'] = support.map((l) => l.url).toList();
+        final discord = support.where((l) => l.label == 'Discord').firstOrNull;
+        if (discord != null) meta['discord_url'] = discord.url;
+      }
 
       // Store source URLs for every picked provider
       for (final entry in _pickedByProvider.entries) {

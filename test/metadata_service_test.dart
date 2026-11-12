@@ -64,7 +64,7 @@ void main() {
 <b>Overview</b>:<br />
 Frozen Past is set in the near future.<br />
 But is it worth it?​<br /><b>Thread Updated</b>: 2021-09-21<br />
-<b>Developer</b>: Leonave - <a href="#">Patreon</a> - <a href="#">Discord</a><br />
+<b>Developer</b>: Leonave - <a href="https://www.patreon.com/leonave">Patreon</a> - <a href="https://discord.gg/xyz">Discord</a><br />
 <a href="https://attachments.f95zone.to/shot1.jpg?h=2"><img src="https://attachments.f95zone.to/thumb/shot1.jpg"></a>
 </div></article></div></article>''',
       );
@@ -74,6 +74,7 @@ But is it worth it?​<br /><b>Thread Updated</b>: 2021-09-21<br />
       expect(r.synopsis, 'Frozen Past is set in the near future.\nBut is it worth it?');
       expect(r.coverUrl, 'https://attachments.f95zone.to/banner.png?h=1');
       expect(r.screenshotUrls, ['https://attachments.f95zone.to/shot1.jpg?h=2']);
+      expect(r.supportLinks, ['https://www.patreon.com/leonave', 'https://discord.gg/abc']);
     });
 
     test('LewdCorner-style post: reads the body, not the custom fields above it', () async {
@@ -85,7 +86,7 @@ But is it worth it?​<br /><b>Thread Updated</b>: 2021-09-21<br />
 <div class="message-fields message-fields--before">
   <dl class="pairs pairs--customField"><dt>Developer Name</dt><dd><div class="bbWrapper">ElfieEven</div></dd></dl>
   <dl class="pairs pairs--customField"><dt>Release Date</dt><dd>Aug 29, 2025</dd></dl>
-  <dl class="pairs pairs--customField"><dt>Developer Links</dt><dd><div class="bbWrapper">Discord</div></dd></dl>
+  <dl class="pairs pairs--customField"><dt>Developer Links</dt><dd><div class="bbWrapper"><a href="https://subscribestar.adult/elfieeven">SubscribeStar</a> - <a href="https://discord.gg/abc">Discord</a></div></dd></dl>
 </div>
 <article class="message-body"><div class="bbWrapper">
 Overview:<br />
@@ -104,6 +105,7 @@ View attachment Trailer.mp4<br />
       expect(r.synopsis, 'It seemed like such an easy decision.');
       expect(r.coverUrl, 'https://lewdcorner.com/attachments/title3-png.864396/');
       expect(r.screenshotUrls, ['https://lewdcorner.com/attachments/shot1-png.855056/']);
+      expect(r.supportLinks, ['https://subscribestar.adult/elfieeven', 'https://discord.gg/abc']);
       // Attachment pages need a login, so previews use the public thumbnails.
       expect(r.previewUrls, {
         'https://lewdcorner.com/attachments/title3-png.864396/':

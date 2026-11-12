@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -214,7 +215,18 @@ class _GameViewState extends ConsumerState<GameView> {
 
     final rail = <Widget>[
       if (g != null) ...[_YourCopy(group: g), const SizedBox(height: 16)],
-      _Facts(group: g, item: item, latest: latest, sources: sources, rating: details?.rating ?? 0),
+      _Facts(
+        group: g,
+        item: item,
+        latest: latest,
+        sources: sources,
+        rating: details?.rating ?? 0,
+        developer: developer,
+        supportLinks: supportLinksFromUrls([
+          ...?details?.supportLinks,
+          if (g != null) ...g.newestMetaSupportLinks,
+        ]),
+      ),
     ];
 
     return LayoutBuilder(builder: (context, constraints) {
@@ -824,6 +836,8 @@ class _Facts extends ConsumerStatefulWidget {
   final String latest;
   final List<ThreadSource> sources;
   final double rating;
+  final String developer;
+  final List<SupportLink> supportLinks;
 
   const _Facts({
     required this.group,
@@ -831,6 +845,8 @@ class _Facts extends ConsumerStatefulWidget {
     required this.latest,
     required this.sources,
     required this.rating,
+    this.developer = '',
+    this.supportLinks = const [],
   });
 
   @override
@@ -855,6 +871,7 @@ class _FactsState extends ConsumerState<_Facts> {
     final engine = version?.engineName ?? '';
     final at = widget.item?.publishedAt;
     final links = ref.watch(settingsProvider.select((s) => s.allowDownloadLinks));
+    final hasSupport = links && widget.supportLinks.isNotEmpty;
 
     return VpCard(
       child: Column(
@@ -878,7 +895,11 @@ class _FactsState extends ConsumerState<_Facts> {
             ),
           if (shownRating > 0) VpFact(label: 'Rating', value: '★ ${shownRating.toStringAsFixed(1)}'),
           if (widget.sources.isNotEmpty)
-            VpFact(label: 'Available on', value: widget.sources.map((s) => siteName(s.source)).join(', '), last: !links),
+            VpFact(
+              label: 'Available on',
+              value: widget.sources.map((s) => siteName(s.source)).join(', '),
+              last: !links && !hasSupport,
+            ),
           if (links && widget.sources.isNotEmpty) ...[
             const SizedBox(height: 6),
             Wrap(
@@ -895,10 +916,167 @@ class _FactsState extends ConsumerState<_Facts> {
               ],
             ),
           ],
+          if (hasSupport) ...[
+            if (links && widget.sources.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Divider(height: 1, color: AppColors.border),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              'Support the developer',
+              style: AppText.meta(color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final link in widget.supportLinks)
+                  _SupportPill(
+                    link: link,
+                    developer: widget.developer,
+                    onTap: () => launchUrl(Uri.parse(link.url)),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
+}
+
+class _SupportPill extends StatelessWidget {
+  final SupportLink link;
+  final String developer;
+  final VoidCallback onTap;
+
+  const _SupportPill({required this.link, required this.developer, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final target = developer.isEmpty ? 'the developer' : developer;
+    final tip = link.label == 'Discord'
+        ? 'Join $target on Discord'
+        : 'Support $target on ${link.label}';
+    return Pressable(
+      onTap: onTap,
+      label: tip,
+      tooltip: tip,
+      builder: (context, states) {
+        final hot = states.contains(WidgetState.hovered);
+        final down = states.contains(WidgetState.pressed);
+        return AnimatedContainer(
+          duration: AppMotion.of(context, AppMotion.hover),
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: down
+                ? AppColors.bgActive
+                : hot
+                    ? AppColors.bgHover
+                    : AppColors.bgHover.withValues(alpha: 0.6),
+            borderRadius: AppRadius.borderMd,
+            border: Border.all(color: hot ? AppColors.borderLight : AppColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SupportBrandIcon(label: link.label),
+              const SizedBox(width: 6),
+              Text(
+                link.label,
+                style: AppText.ui(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: hot ? AppColors.textBright : AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SupportBrandIcon extends StatelessWidget {
+  final String label;
+  const _SupportBrandIcon({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    switch (label) {
+      case 'Patreon':
+        return const SizedBox(width: 14, height: 14, child: CustomPaint(painter: _PatreonPainter()));
+      case 'SubscribeStar':
+        return const SizedBox(width: 14, height: 14, child: CustomPaint(painter: _SubscribeStarPainter()));
+      case 'Buy Me a Coffee' || 'Ko-fi':
+        return const Icon(Icons.local_cafe_rounded, size: 14, color: Color(0xFFFFDD00));
+      case 'Itch.io':
+        return const Icon(Icons.videogame_asset_rounded, size: 14, color: Color(0xFFFA5C5C));
+      case 'Discord':
+        return const Icon(Icons.discord, size: 14, color: Color(0xFF5865F2));
+      case 'UniFans':
+        return const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFFA855F7));
+      case 'Boosty':
+        return const Icon(Icons.bolt_rounded, size: 14, color: Color(0xFFF15F2C));
+      default:
+        return Icon(Icons.favorite_rounded, size: 13, color: AppColors.accent);
+    }
+  }
+}
+
+class _PatreonPainter extends CustomPainter {
+  const _PatreonPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = const Color(0xFFFF424D);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(size.width * 0.1, size.height * 0.12, size.width * 0.17, size.height * 0.76),
+        const Radius.circular(1),
+      ),
+      paint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.62, size.height * 0.40),
+      size.width * 0.28,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _SubscribeStarPainter extends CustomPainter {
+  const _SubscribeStarPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(c, size.width * 0.45, Paint()..color = const Color(0xFF29B6F6));
+    final star = Path();
+    final outer = size.width * 0.30;
+    final inner = size.width * 0.13;
+    for (var i = 0; i < 10; i++) {
+      final r = i.isEven ? outer : inner;
+      final a = -math.pi / 2 + i * math.pi / 5;
+      final pt = Offset(c.dx + r * math.cos(a), c.dy + r * math.sin(a));
+      if (i == 0) {
+        star.moveTo(pt.dx, pt.dy);
+      } else {
+        star.lineTo(pt.dx, pt.dy);
+      }
+    }
+    star.close();
+    canvas.drawPath(star, Paint()..color = const Color(0xFFFF4081));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 int _folderSize(String path) {

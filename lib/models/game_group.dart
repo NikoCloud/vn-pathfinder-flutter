@@ -50,6 +50,14 @@ class GameGroup {
     return const [];
   }
 
+  /// Creator-support links from the newest version that has any.
+  List<String> get newestMetaSupportLinks {
+    for (final v in versions.reversed) {
+      if (v.metaSupportLinks.isNotEmpty) return v.metaSupportLinks;
+    }
+    return const [];
+  }
+
   /// Rating saved by Fetch Metadata, out of 5, from the newest version with one.
   double get storedRating {
     for (final v in versions.reversed) {

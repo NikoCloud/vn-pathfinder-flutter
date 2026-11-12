@@ -40,7 +40,8 @@ String fmtVersion(String version) {
 // Link labels forum posts run into a developer's name ("Quonix Patreon").
 const _developerLinks = r'patreon|subscribe ?star|itch(?:\.io)?|steam|discord|twitter|'
     r'website|homepage|blog|boosty|ko-?fi|gumroad|linktree|fanbox|pixiv|facebook|'
-    r'instagram|youtube|reddit|tumblr|deviantart|bluesky|nutaku|dlsite|fantia|tipeee|paypal';
+    r'instagram|youtube|reddit|tumblr|deviantart|bluesky|nutaku|dlsite|fantia|tipeee|paypal|'
+    r'unifans|buy ?me ?a ?coffee|bmc|telegram|ci-?en|afdian|liberapay|official ?(?:website|site)';
 final _linkSeparator = RegExp(r'\s[-–—|/]\s');
 final _onlyLink = RegExp('^(?:$_developerLinks)\$', caseSensitive: false);
 final _trailingLink =
@@ -64,6 +65,106 @@ String cleanDeveloperName(String raw) {
   name = name.replaceAll(RegExp(r'[\s\-|–—:,]+$'), '').trim();
   // "website: https://…" is a link with its label, not a name.
   return _webAddress.hasMatch(firstLine) && _onlyLink.hasMatch(name) ? '' : name;
+}
+
+/// A creator-support link recognized from its web address.
+typedef SupportLink = ({String label, String url});
+
+/// Known creator-support platforms, matched by host. Each platform appears at
+/// most once, keeping a creator page over a single post when both are linked.
+List<SupportLink> supportLinksFromUrls(Iterable<String> urls) {
+  final byLabel = <String, String>{};
+  for (final raw in urls) {
+    final cleaned = raw.trim().replaceAll(RegExp(r'[),.;\]>]+$'), '');
+    final normalized = cleaned.startsWith('//') ? 'https:$cleaned' : cleaned;
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) continue;
+    final path = uri.path.replaceAll(RegExp(r'^/+|/+$'), '');
+    final label = _supportPlatformLabel(uri.host.toLowerCase(), path.toLowerCase());
+    if (label == null) continue;
+    final existing = byLabel[label];
+    if (existing == null || (_isSinglePostUrl(existing) && !_isSinglePostUrl(normalized))) {
+      byLabel[label] = normalized;
+    }
+  }
+  return [
+    for (final e in byLabel.entries) (label: e.key, url: e.value),
+  ];
+}
+
+bool _isSinglePostUrl(String url) =>
+    RegExp(r'/(?:posts?|updates?|status|notes?|devlog)(?:/|$)', caseSensitive: false).hasMatch(url);
+
+String? _supportPlatformLabel(String host, String path) {
+  final firstSeg = path.isEmpty ? '' : path.split('/').first;
+  if (host == 'patreon.com' || host.endsWith('.patreon.com')) {
+    if (path.isEmpty) return null;
+    if (const {'login', 'home', 'search', 'about', 'apps', 'policy', 'terms'}.contains(firstSeg)) {
+      return null;
+    }
+    return 'Patreon';
+  }
+  if (host == 'subscribestar.adult' ||
+      host.endsWith('.subscribestar.adult') ||
+      host == 'subscribestar.com' ||
+      host.endsWith('.subscribestar.com')) {
+    return path.isEmpty ? null : 'SubscribeStar';
+  }
+  if (host == 'unifans.io' || host.endsWith('.unifans.io')) {
+    return path.isEmpty ? null : 'UniFans';
+  }
+  if (host == 'itch.io' || host.endsWith('.itch.io')) {
+    final isCreatorSubdomain = host.endsWith('.itch.io') && host != 'www.itch.io';
+    if (isCreatorSubdomain) return 'Itch.io';
+    if (path.isEmpty) return null;
+    if (const {'search', 'login', 'register', 'games', 'jams', 'board', 'docs', 'developers', 'press'}
+        .contains(firstSeg)) {
+      return null;
+    }
+    return 'Itch.io';
+  }
+  if (host == 'discord.gg' || host.endsWith('.discord.gg')) {
+    return path.isEmpty ? null : 'Discord';
+  }
+  if (host == 'discord.com' ||
+      host.endsWith('.discord.com') ||
+      host == 'discordapp.com' ||
+      host.endsWith('.discordapp.com')) {
+    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.length >= 2 && (segments.first == 'invite' || segments.first == 'servers')) {
+      return 'Discord';
+    }
+    return null;
+  }
+  if (host == 'buymeacoffee.com' || host.endsWith('.buymeacoffee.com')) {
+    return path.isEmpty ? null : 'Buy Me a Coffee';
+  }
+  if (host == 'ko-fi.com' || host.endsWith('.ko-fi.com')) return path.isEmpty ? null : 'Ko-fi';
+  if (host == 'boosty.to' || host.endsWith('.boosty.to')) return path.isEmpty ? null : 'Boosty';
+  if (host == 'fanbox.cc' || host.endsWith('.fanbox.cc')) {
+    final isCreatorSubdomain = host.endsWith('.fanbox.cc') && host != 'www.fanbox.cc';
+    return (isCreatorSubdomain || path.isNotEmpty) ? 'Fanbox' : null;
+  }
+  if (host == 'gumroad.com' || host.endsWith('.gumroad.com')) {
+    final isCreatorSubdomain = host.endsWith('.gumroad.com') && host != 'www.gumroad.com';
+    return (isCreatorSubdomain || path.isNotEmpty) ? 'Gumroad' : null;
+  }
+  if (host == 'fantia.jp' || host.endsWith('.fantia.jp')) return path.isEmpty ? null : 'Fantia';
+  if (host == 'tipeee.com' || host.endsWith('.tipeee.com')) return path.isEmpty ? null : 'Tipeee';
+  if (host == 'paypal.me' || host.endsWith('.paypal.me')) return path.isEmpty ? null : 'PayPal';
+  if (host == 'ci-en.dlsite.com' || host == 'ci-en.jp' || host.endsWith('.ci-en.jp')) {
+    return path.isEmpty ? null : 'Ci-en';
+  }
+  if (host == 'afdian.net' ||
+      host.endsWith('.afdian.net') ||
+      host == 'afdian.com' ||
+      host.endsWith('.afdian.com')) {
+    return path.isEmpty ? null : 'Afdian';
+  }
+  if (host == 'liberapay.com' || host.endsWith('.liberapay.com')) {
+    return path.isEmpty ? null : 'Liberapay';
+  }
+  return null;
 }
 
 String fmtBytes(int bytes) {

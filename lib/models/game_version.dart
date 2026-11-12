@@ -98,10 +98,17 @@ class GameVersion {
   String get metaItchUrl     => metadata['itch_url'] as String? ?? '';
   String get metaLcUrl       => metadata['lc_url'] as String? ?? '';
   String get metaAzcUrl      => metadata['azc_url'] as String? ?? '';
+  String get metaDiscordUrl  => metadata['discord_url'] as String? ?? '';
   String get metaEngine      => metadata['engine'] as String? ?? '';
   String get metaLaunchArgs  => metadata['launch_arguments'] as String? ?? '';
   String get metaReleaseDate => metadata['release_date'] as String? ?? '';
   double get metaRating      => (metadata['rating'] as num?)?.toDouble() ?? 0;
+  List<String> get metaSupportLinks => [
+        ...?(metadata['support_links'] as List?)
+            ?.map((e) => e.toString())
+            .where((u) => u.isNotEmpty),
+        if (metaDiscordUrl.isNotEmpty) metaDiscordUrl,
+      ];
 
   /// Tags fetched from metadata providers (stored in .vnpf/metadata.json).
   /// Reads both 'tags_fetched' (2.0 format) and 'tags' (1.0 legacy format).

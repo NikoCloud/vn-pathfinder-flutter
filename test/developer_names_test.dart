@@ -135,4 +135,47 @@ void main() {
       );
     });
   });
+
+  group('supportLinksFromUrls', () {
+    test('recognises creator-support domains and ignores non-support URLs', () {
+      final links = supportLinksFromUrls([
+        'https://www.patreon.com/SomeStudio',
+        'https://subscribestar.adult/somestudio',
+        'https://www.buymeacoffee.com/somestudio',
+        'https://discord.gg/abc123',
+        'https://discord.com/invite/xyz789',
+        'https://mega.nz/file/xyz',
+        'https://www.patreon.com/login',
+      ]);
+      expect(links, [
+        (label: 'Patreon', url: 'https://www.patreon.com/SomeStudio'),
+        (label: 'SubscribeStar', url: 'https://subscribestar.adult/somestudio'),
+        (label: 'Buy Me a Coffee', url: 'https://www.buymeacoffee.com/somestudio'),
+        (label: 'Discord', url: 'https://discord.gg/abc123'),
+      ]);
+    });
+
+    test('keeps one link per platform, preferring a creator page over a single post', () {
+      final links = supportLinksFromUrls([
+        'https://www.patreon.com/posts/update-12345',
+        'https://www.patreon.com/SomeStudio',
+      ]);
+      expect(links, [(label: 'Patreon', url: 'https://www.patreon.com/SomeStudio')]);
+    });
+
+    test('supports UniFans and root creator subdomains (Itch.io, Fanbox, Gumroad)', () {
+      final links = supportLinksFromUrls([
+        'https://app.unifans.io/c/ruykiru',
+        'https://alorth.itch.io/',
+        'https://creator.fanbox.cc/',
+        'https://sinfulsummer.com/',
+        'https://t.me/ruykiru',
+      ]);
+      expect(links, [
+        (label: 'UniFans', url: 'https://app.unifans.io/c/ruykiru'),
+        (label: 'Itch.io', url: 'https://alorth.itch.io/'),
+        (label: 'Fanbox', url: 'https://creator.fanbox.cc/'),
+      ]);
+    });
+  });
 }

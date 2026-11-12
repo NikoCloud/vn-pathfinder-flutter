@@ -9,6 +9,7 @@ import '../../providers/feed_view_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/thread_provider.dart';
+import '../../providers/update_provider.dart';
 import '../../services/archive_cards.dart';
 import '../../services/thread_parser.dart';
 import '../../theme.dart';
@@ -87,6 +88,8 @@ List<ThreadSource> threadSources(RawFeedItem? item, GameGroup? group, WidgetRef 
   if (item != null) add(item.source, item.url);
   if (group != null) {
     add('f95zone', group.newestMeta((v) => v.metaF95Url));
+    final f95Id = ref.read(updateCheckProvider).titleLinks[group.baseKey];
+    if (f95Id != null) add('f95zone', 'https://f95zone.to/threads/$f95Id/');
     add('lewdcorner', group.newestMeta((v) => v.metaLcUrl));
     add('azc', group.newestMeta((v) => v.metaAzcUrl));
   }

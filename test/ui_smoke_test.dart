@@ -73,6 +73,11 @@ GameGroup _game(String title, String version, String developer) {
           'synopsis': 'A longer description of the game, so the page has something to lay out.',
           'tags_fetched': ['romance', 'comedy'],
           'f95_url': 'https://f95zone.to/threads/${key.replaceAll(' ', '-')}.1001/',
+          'support_links': [
+            'https://www.patreon.com/lanternworks',
+            'https://subscribestar.adult/lanternworks',
+            'https://www.buymeacoffee.com/lanternworks',
+          ],
         },
       ),
     ],
