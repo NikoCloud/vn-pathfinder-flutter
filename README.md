@@ -103,7 +103,8 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 
 ### Metadata
 
-- Fetch details and images from **VNDB**, **F95Zone**, **LewdCorner**, **itch.io** and **Azkosel's Corner**
+- Fetch details and images from **VNDB**, **F95Zone**, **LewdCorner**, **itch.io** and **Azkosel's Corner**. Tags combine across sources without duplicates, and creator links are picked one by one, starting from the developer's own; a source that picked a different game adds nothing unless you tick it
+- A game's page shows the developer's support links (Patreon, SubscribeStar, Ko-fi, Discord and more) and their other games, which open in the app
 - **Local**, Fetch Metadata's first tab, reads a Ren'Py game's own files on your PC: its name, version and main-menu art as a cover. Nothing goes online, so it works in Lockdown. You see what it found and tick what to use. A folder named without a version takes the one it read
 - Take each field from a different source in one step
 - Click any image to make it the cover, or remove the ones you don't want

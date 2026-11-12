@@ -4,6 +4,25 @@ What's in each version of VN Pathfinder 2.0, newest first.
 
 Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutter/releases) page. `0.9.0` is a source snapshot with no download.
 
+## Unreleased
+
+### Added
+
+- **Support the developer.** A game's page lists the developer's Patreon, SubscribeStar, Ko-fi, Discord, itch.io and similar pages, found by Fetch Metadata. They show whatever the Download links setting says; Lockdown hides them.
+- **Other games by the developer.** When a game's thread links the developer's other games, the game page lists them, and clicking one opens its page in the app: your copy if you have it, otherwise what the Feed or the thread says about it.
+- **itch.io finds more games.** Adult games that itch.io's search hides are found through the developer's creator page, when Fetch Metadata knows their itch.io link. Results that match the game and its developer come first, and only those are picked automatically; game pages are read for the full description, screenshots, tags and rating.
+
+### Changed
+
+- **Fetch Metadata combines sources for tags and creator links.** Tags come from every ticked source, without duplicates that differ only in case, spaces or symbols (in any script), spelled as the first source spells them. Creator links are listed one by one with where each was found; only links from where the developer is named (a database's creator record, a forum's developer links field or the post's Developer line) start ticked, and one link per platform is saved. A link elsewhere in a post, often a modder's, uploader's or translator's, is shown unticked.
+- **Fetch Metadata starts from safe choices.** A source starts ticked only if the result it picked is the same game, on title and developer; one that picked a different game adds nothing unless you tick it. Name, developer and description prefer VNDB, then the forums; the release date prefers the forums, which are updated the day a build is out. A different game's page address is never saved as this one's.
+
+### Bug fixes
+
+- **A wrong forum thread could fill in a game's page.** When a game had no saved F95Zone link, its page and the Get sheet used the thread the update checker found by title. They now use it only when the thread's creator is the game's developer; otherwise it only drives the update badge.
+- **itch.io could credit a stranger's games to the developer.** A creator page guessed from the developer's name is no longer trusted: its games are listed, never picked automatically, and no guess is made when the developer's itch.io link is known.
+- **The game page could show a newer version that wasn't.** When a forum spelled the installed version differently ("Chapter 3.6.5 Patched" for "3.6.5"), the version path showed it as a newer stop and as the latest.
+
 ## 2.0.0-beta.3 - 2026-11-10
 
 ### Added
