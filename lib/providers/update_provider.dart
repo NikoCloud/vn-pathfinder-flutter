@@ -19,6 +19,10 @@ class UpdateCheckState {
   /// (baseKey → thread ID).
   final Map<String, int> titleLinks;
 
+  /// The creator F95Zone lists for each thread found by title (baseKey →
+  /// creator), for checking it's the same game before its page is used.
+  final Map<String, String> titleCreators;
+
   /// Games whose title search found no unique thread, and when — retried
   /// after [UpdateCheckNotifier._retryMisses].
   final Map<String, DateTime> titleMisses;
@@ -36,6 +40,7 @@ class UpdateCheckState {
   const UpdateCheckState({
     this.f95Versions = const {},
     this.titleLinks = const {},
+    this.titleCreators = const {},
     this.titleMisses = const {},
     this.f95Ratings = const {},
     this.ratingLookups = const {},
@@ -47,6 +52,7 @@ class UpdateCheckState {
   UpdateCheckState copyWith({
     Map<int, String>? f95Versions,
     Map<String, int>? titleLinks,
+    Map<String, String>? titleCreators,
     Map<String, DateTime>? titleMisses,
     Map<int, double>? f95Ratings,
     Map<int, DateTime>? ratingLookups,
@@ -57,6 +63,7 @@ class UpdateCheckState {
       UpdateCheckState(
         f95Versions: f95Versions ?? this.f95Versions,
         titleLinks: titleLinks ?? this.titleLinks,
+        titleCreators: titleCreators ?? this.titleCreators,
         titleMisses: titleMisses ?? this.titleMisses,
         f95Ratings: f95Ratings ?? this.f95Ratings,
         ratingLookups: ratingLookups ?? this.ratingLookups,
@@ -113,6 +120,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
       return UpdateCheckState(
         f95Versions: (json['f95'] as Map? ?? {}).map((k, v) => MapEntry(int.parse('$k'), '$v')),
         titleLinks: (json['title_links'] as Map? ?? {}).map((k, v) => MapEntry('$k', v as int)),
+        titleCreators: (json['title_creators'] as Map? ?? {}).map((k, v) => MapEntry('$k', '$v')),
         titleMisses: (json['title_misses'] as Map? ?? {})
             .map((k, v) => MapEntry('$k', DateTime.tryParse('$v') ?? DateTime(0))),
         checkedAt: DateTime.tryParse(json['checked_at'] as String? ?? ''),
@@ -136,6 +144,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
         'f95_ratings': state.f95Ratings.map((k, v) => MapEntry('$k', v)),
         'f95': state.f95Versions.map((k, v) => MapEntry('$k', v)),
         'title_links': state.titleLinks,
+        'title_creators': state.titleCreators,
         'title_misses': state.titleMisses.map((k, v) => MapEntry(k, v.toIso8601String())),
       }));
     } catch (e) {
@@ -224,7 +233,9 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
     final now = DateTime.now();
     final pending = groups.where((g) {
       if (UpdateCheckService.threadId(g.newestMeta((v) => v.metaF95Url)) != null) return false;
-      if (state.titleLinks.containsKey(g.baseKey)) return false;
+      // Threads found before creators were kept are looked up once more,
+      // to learn the creator (see matchedTitleLink).
+      if (state.titleLinks.containsKey(g.baseKey) && state.titleCreators.containsKey(g.baseKey)) return false;
       final missed = state.titleMisses[g.baseKey];
       return missed == null || now.difference(missed) > _retryMisses;
     }).toList();
@@ -243,6 +254,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
       if (thread != null) {
         state = state.copyWith(
           titleLinks: {...state.titleLinks, g.baseKey: thread.id},
+          titleCreators: {...state.titleCreators, g.baseKey: thread.creator},
           f95Versions: {...state.f95Versions, thread.id: thread.version},
           checking: true,
         );
@@ -258,6 +270,22 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
     }
     if (pending.isNotEmpty) _saveCache();
   }
+}
+
+/// The F95Zone thread found by [group]'s title, when it can stand in for a
+/// saved link on the game page and the Get sheet: the thread's creator has to
+/// match the game's known developer ("Some Studio" and "Some Studio
+/// Productions" count). The title already matched exactly. Otherwise the
+/// guess only drives the update badge: a wrong one would supply another
+/// game's description, links and downloads.
+int? matchedTitleLink(UpdateCheckState check, GameGroup group) {
+  final id = check.titleLinks[group.baseKey];
+  if (id == null) return null;
+  String loose(String s) => s.toLowerCase().replaceAll(RegExp(r'[^\p{L}\p{N}]', unicode: true), '');
+  final creator = loose(check.titleCreators[group.baseKey] ?? '');
+  final developer = loose(group.effectiveDeveloper);
+  if (creator.isEmpty || developer.isEmpty) return null;
+  return creator.startsWith(developer) || developer.startsWith(creator) ? id : null;
 }
 
 final updateCheckProvider = StateNotifierProvider<UpdateCheckNotifier, UpdateCheckState>(

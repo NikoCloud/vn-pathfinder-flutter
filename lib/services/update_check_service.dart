@@ -6,7 +6,7 @@ import '../models/game_status.dart';
 import '../models/game_version.dart';
 
 /// One game from F95Zone's title search. [rating] is out of 5; 0 means none.
-typedef F95Row = ({int id, String title, String version, double rating});
+typedef F95Row = ({int id, String title, String version, double rating, String creator});
 
 /// A newer version of a library game spotted on a forum.
 class AvailableUpdate {
@@ -139,6 +139,7 @@ class UpdateCheckService {
             title: '${r['title'] ?? ''}',
             version: '${r['version'] ?? ''}',
             rating: (r['rating'] as num?)?.toDouble() ?? 0,
+            creator: '${r['creator'] ?? ''}',
           ),
     ];
   }

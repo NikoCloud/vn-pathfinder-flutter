@@ -51,6 +51,11 @@ class MetadataResult {
   /// Version string read from the thread page, when present.
   final String version;
 
+  /// An itch.io game found on a creator page whose address was only guessed
+  /// from the developer's name (#46). Whoever owns that name on itch.io may
+  /// not be the developer, so it's listed but never picked automatically.
+  final bool unverifiedCreator;
+
   const MetadataResult({
     required this.provider,
     required this.id,
@@ -69,9 +74,11 @@ class MetadataResult {
     this.foundLinks = const [],
     this.otherGames = const [],
     this.version = '',
+    this.unverifiedCreator = false,
   });
 
-  MetadataResult _copy({String? coverUrl, List<String>? screenshotUrls, double? rating}) => MetadataResult(
+  MetadataResult _copy({String? coverUrl, List<String>? screenshotUrls, double? rating, bool? unverifiedCreator}) =>
+      MetadataResult(
         provider: provider,
         id: id,
         title: title,
@@ -89,7 +96,11 @@ class MetadataResult {
         foundLinks: foundLinks,
         otherGames: otherGames,
         version: version,
+        unverifiedCreator: unverifiedCreator ?? this.unverifiedCreator,
       );
+
+  /// This result marked as found on a guessed creator page.
+  MetadataResult asUnverifiedCreator() => _copy(unverifiedCreator: true);
 
   /// This result's images as the user arranged them: [cover] in the cover
   /// spot and [removed] left out.
@@ -507,6 +518,8 @@ class MetadataService {
     };
     final normUrl = r.sourceUrl.trim().toLowerCase().replaceAll(RegExp(r'/+$'), '');
     if (knownGameUrls.contains(normUrl)) return true;
+    // Found on a creator page guessed from the developer's name: unverified.
+    if (r.unverifiedCreator && !knownSubs.contains(sub)) return false;
 
     final fromKnownCreator = sub.isNotEmpty && knownSubs.contains(sub);
     final hasKnownDev = _looseDev(developer).isNotEmpty;
@@ -531,7 +544,8 @@ class MetadataService {
 
   /// Candidate `https://<creator>.itch.io` root URLs and direct game URLs
   /// derived from [hintUrls] and [developer].
-  static ({List<String> directGameUrls, List<String> creatorUrls}) _itchDiscoveryTargets({
+  static ({List<String> directGameUrls, List<String> creatorUrls, Set<String> guessedCreatorUrls})
+      _itchDiscoveryTargets({
     String developer = '',
     Iterable<String> hintUrls = const [],
   }) {
@@ -560,7 +574,16 @@ class MetadataService {
       }
     }
 
-    final cleanDev = cleanDeveloperName(developer);
+    // Guess addresses from the developer's name only when no creator link is
+    // known; a known link is the developer's, a guess may be anyone's.
+    final guessed = <String>{};
+    final cleanDev = creators.isEmpty ? cleanDeveloperName(developer) : '';
+    void guess(String slug) {
+      final before = creators.length;
+      addCreator(slug);
+      if (creators.length > before) guessed.add(creators.last);
+    }
+
     if (cleanDev.isNotEmpty) {
       final fullSlug = _loose(cleanDev);
       final coreSlug = _looseDev(cleanDev);
@@ -568,12 +591,12 @@ class MetadataService {
           .toLowerCase()
           .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
           .replaceAll(RegExp(r'^-+|-+$'), '');
-      if (fullSlug.length >= 3) addCreator(fullSlug);
-      if (coreSlug.length >= 3 && coreSlug != fullSlug) addCreator(coreSlug);
-      if (hyphenSlug.length >= 3 && hyphenSlug.contains('-')) addCreator(hyphenSlug);
+      if (fullSlug.length >= 3) guess(fullSlug);
+      if (coreSlug.length >= 3 && coreSlug != fullSlug) guess(coreSlug);
+      if (hyphenSlug.length >= 3 && hyphenSlug.contains('-')) guess(hyphenSlug);
     }
 
-    return (directGameUrls: direct, creatorUrls: creators.take(4).toList());
+    return (directGameUrls: direct, creatorUrls: creators.take(4).toList(), guessedCreatorUrls: guessed);
   }
 
   static Future<String> _fetchItchHtmlFast(
@@ -645,12 +668,15 @@ class MetadataService {
       }
       final html = await _fetchItchHtmlFast(creatorUrl, scrapingService);
       if (html.isEmpty || !html.contains('game_cell')) continue;
+      final guessed = targets.guessedCreatorUrls.contains(creatorUrl);
       final cells = _parseItchSearchHtml(
         html,
         query,
-        defaultDeveloper: cleanDeveloperName(developer),
+        // A guessed page's owner isn't known to be the developer, so its
+        // games aren't credited to them.
+        defaultDeveloper: guessed ? '' : cleanDeveloperName(developer),
       );
-      discovered.addAll(cells);
+      discovered.addAll(guessed ? cells.map((c) => c.asUnverifiedCreator()) : cells);
     }
 
     return rankItchResults(
@@ -998,6 +1024,7 @@ class MetadataService {
       previewUrls: previews,
       supportLinks: support,
       foundLinks: found,
+      unverifiedCreator: seed.unverifiedCreator,
     );
   }
 

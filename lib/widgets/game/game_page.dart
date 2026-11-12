@@ -143,11 +143,16 @@ class _GameViewState extends ConsumerState<GameView> {
 
     final changes = thread?.downloads.changes ?? const <ThreadChange>[];
     final installed = g?.versions.map((v) => v.versionStr).where((v) => v.isNotEmpty).toList() ?? const <String>[];
-    final latest = update?.version ??
-        (item != null ? extractFeedVersion(item) : null) ??
+    final fromSite = (item != null ? extractFeedVersion(item) : null) ??
         (details != null && details.version.isNotEmpty ? details.version : null) ??
-        changes.firstOrNull?.version ??
-        (installed.isEmpty ? '' : installed.last);
+        changes.firstOrNull?.version;
+    // For a game you have, a site's version is the latest only when it's
+    // clearly newer than the installed one: the forum may spell the same
+    // version differently ("Chapter 3.6.5 Patched" for "3.6.5") (#46).
+    final latest = update?.version ??
+        (installed.isEmpty
+            ? (fromSite ?? '')
+            : (fromSite != null && isClearlyNewer(fromSite, installed.last) ? fromSite : installed.last));
     final newer = g != null && update != null;
     final played = g == null ? '' : ud.lastPlayedVersion[g.baseKey] ?? '';
     final path = buildVersionPath(
@@ -923,7 +928,10 @@ class _FactsState extends ConsumerState<_Facts> {
     final at = widget.item?.publishedAt;
     final links = ref.watch(settingsProvider.select((s) => s.allowDownloadLinks));
     final lockdown = ref.watch(lockdownProvider);
-    final hasSupport = links && widget.supportLinks.isNotEmpty;
+    // Support links aren't downloads, so they show whatever the Download
+    // links setting says; Lockdown still hides them, as it hides anything
+    // that opens a site (#46).
+    final hasSupport = !lockdown && widget.supportLinks.isNotEmpty;
     final hasOther = !lockdown && widget.otherGames.isNotEmpty;
 
     return VpCard(

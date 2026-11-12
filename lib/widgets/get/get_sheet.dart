@@ -88,7 +88,8 @@ List<ThreadSource> threadSources(RawFeedItem? item, GameGroup? group, WidgetRef 
   if (item != null) add(item.source, item.url);
   if (group != null) {
     add('f95zone', group.newestMeta((v) => v.metaF95Url));
-    final f95Id = ref.read(updateCheckProvider).titleLinks[group.baseKey];
+    // A thread found by title only when it's clearly this game (#46).
+    final f95Id = matchedTitleLink(ref.read(updateCheckProvider), group);
     if (f95Id != null) add('f95zone', 'https://f95zone.to/threads/$f95Id/');
     add('lewdcorner', group.newestMeta((v) => v.metaLcUrl));
     add('azc', group.newestMeta((v) => v.metaAzcUrl));
