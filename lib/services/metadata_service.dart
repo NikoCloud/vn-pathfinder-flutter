@@ -463,7 +463,9 @@ class MetadataService {
     final devA = _looseDev(a);
     final devB = _looseDev(b);
     if (devA.isEmpty || devB.isEmpty) return false;
-    return devA == devB || devA.startsWith(devB) || devB.startsWith(devA);
+    if (devA == devB) return true;
+    final shorter = devA.length < devB.length ? devA.length : devB.length;
+    return shorter >= 4 && (devA.startsWith(devB) || devB.startsWith(devA));
   }
 
   /// Whether an itch.io candidate [r] genuinely matches [query] (and [developer]
@@ -594,30 +596,45 @@ class MetadataService {
   /// Discovers itch.io games directly from a creator's profile page or direct
   /// `*.itch.io` links (which still list NSFW titles that `itch.io/search`
   /// hides with `noindex`).
+  ///
+  /// When [alreadyProbed] is supplied, URLs already in the set are skipped and
+  /// newly fetched URLs are recorded so repeated calls during a single search
+  /// session don't re-hit the same creator pages.
   static Future<List<MetadataResult>> discoverItchFromCreator(
     String query,
     ScrapingService? scrapingService, {
     String developer = '',
     Iterable<String> hintUrls = const [],
+    Set<String>? alreadyProbed,
   }) async {
     final targets = _itchDiscoveryTargets(developer: developer, hintUrls: hintUrls);
     final discovered = <MetadataResult>[];
 
-    for (final directUrl in targets.directGameUrls) {
-      final html = await _fetchItchHtmlFast(directUrl, scrapingService);
-      if (html.isEmpty) continue;
-      final seed = MetadataResult(
-        provider: 'itchio',
-        id: directUrl,
-        title: query,
-        developer: cleanDeveloperName(developer),
-        sourceUrl: directUrl,
-      );
-      final parsed = parseItchGamePage(seed, html);
-      if (parsed.title.isNotEmpty) discovered.add(parsed);
+    final directToProbe = [
+      for (final u in targets.directGameUrls)
+        if (alreadyProbed == null || alreadyProbed.add(u.toLowerCase())) u,
+    ];
+    if (directToProbe.isNotEmpty) {
+      final directResults = await Future.wait(directToProbe.map((directUrl) async {
+        final html = await _fetchItchHtmlFast(directUrl, scrapingService);
+        if (html.isEmpty) return null;
+        final seed = MetadataResult(
+          provider: 'itchio',
+          id: directUrl,
+          title: query,
+          developer: cleanDeveloperName(developer),
+          sourceUrl: directUrl,
+        );
+        final parsed = parseItchGamePage(seed, html);
+        return parsed.title.isNotEmpty ? parsed : null;
+      }));
+      discovered.addAll(directResults.whereType<MetadataResult>());
     }
 
     for (final creatorUrl in targets.creatorUrls) {
+      if (alreadyProbed != null && !alreadyProbed.add(creatorUrl.toLowerCase())) {
+        continue;
+      }
       final html = await _fetchItchHtmlFast(creatorUrl, scrapingService);
       if (html.isEmpty || !html.contains('game_cell')) continue;
       final cells = _parseItchSearchHtml(
@@ -644,12 +661,14 @@ class MetadataService {
     ScrapingService scrapingService, {
     String developer = '',
     Iterable<String> hintUrls = const [],
+    Set<String>? alreadyProbed,
   }) async {
     final fromCreatorFuture = discoverItchFromCreator(
       query,
       scrapingService,
       developer: developer,
       hintUrls: hintUrls,
+      alreadyProbed: alreadyProbed,
     );
 
     final uri = Uri.https('itch.io', '/search', {
@@ -696,9 +715,9 @@ class MetadataService {
     // every game on the page belongs to that creator.
     var pageAuthor = defaultDeveloper;
     if (pageAuthor.isEmpty) {
-      final headerTitle = doc.querySelector('h1.profile_header, .profile_banner h1, title')?.text ?? '';
+      final headerTitle = doc.querySelector('h1.profile_header, .profile_banner h1')?.text ?? '';
       final cleanHeader = headerTitle.replaceAll(RegExp(r'\s*-\s*itch\.io.*$', caseSensitive: false), '').trim();
-      if (cleanHeader.isNotEmpty && !cleanHeader.toLowerCase().contains('top games')) {
+      if (cleanHeader.isNotEmpty) {
         pageAuthor = cleanHeader;
       }
     }

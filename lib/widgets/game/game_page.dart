@@ -900,11 +900,10 @@ class _FactsState extends ConsumerState<_Facts> {
           author: widget.developer,
         );
     final current = ref.read(gamePageProvider);
-    final origin = current?.origin ?? ref.read(activeTabProvider) ?? AppTab.library;
     ref.read(gamePageProvider.notifier).state = GameTarget(
       baseKey: owned?.baseKey,
       item: synthetic,
-      origin: origin,
+      origin: current?.origin ?? ref.read(activeTabProvider),
       previous: current,
     );
   }

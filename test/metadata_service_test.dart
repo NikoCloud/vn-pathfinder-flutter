@@ -190,6 +190,13 @@ ${titles.map((t) => '<li class="block-row"><h3 class="contentRow-title"><a href=
       expect(MetadataService.cleanItchTitle('Some Game [18+] [v0.2.1]'), 'Some Game');
     });
 
+    test('sameDeveloper requires >=4 chars for prefix match while matching studio suffixes', () {
+      expect(MetadataService.sameDeveloper('Kai', 'Kaiser'), isFalse);
+      expect(MetadataService.sameDeveloper('Kai', 'Kai'), isTrue);
+      expect(MetadataService.sameDeveloper('MoonBox', 'Moon Box Games'), isTrue);
+      expect(MetadataService.sameDeveloper('Some Studio', 'Some Studio Productions'), isTrue);
+    });
+
     test('rankItchResults and isRelevantItchMatch prefer matching creator/title and reject unrelated jam games', () {
       const jamWrongTitle = MetadataResult(
         provider: 'itchio',

@@ -189,6 +189,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       return;
     }
 
+    final gen = ++_searchGen;
+    _probedItchTargets.clear();
     setState(() {
       for (final p in _Provider.values) {
         _loadingByProvider[p] = true;
@@ -205,8 +207,16 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
 
     final scraping = ref.read(scrapingServiceProvider);
     // All four fire in parallel; ScrapingService queues WebView requests internally.
-    await Future.wait(_Provider.values.map((p) => _searchOne(p, query, scraping)));
+    await Future.wait(_Provider.values.map((p) => _searchOne(p, query, scraping, gen: gen)));
   }
+
+  /// Incremented on every new search so in-flight enrichments or creator
+  /// reconciliations from a previous search never write into the new one.
+  int _searchGen = 0;
+
+  /// Creator/direct itch.io URLs already probed during the current [_searchGen]
+  /// so multiple providers reporting the same developer don't re-hit itch.io.
+  final Set<String> _probedItchTargets = {};
 
   String _knownDeveloper() {
     for (final p in const [
@@ -233,7 +243,8 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       ];
 
   Future<void> _searchOne(
-      _Provider prov, String query, ScrapingService scraping) async {
+      _Provider prov, String query, ScrapingService scraping,
+      {required int gen}) async {
     try {
       // The forums need the login cookies, so they're skipped with logins off.
       final needsLogin = prov == _Provider.f95zone || prov == _Provider.lewdcorner || prov == _Provider.azc;
@@ -251,10 +262,11 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
             scraping,
             developer: _knownDeveloper(),
             hintUrls: _knownItchHintUrls(),
+            alreadyProbed: _probedItchTargets,
           ),
       });
 
-      if (!mounted) return;
+      if (!mounted || gen != _searchGen) return;
       setState(() {
         _resultsByProvider[prov] = results;
         _loadingByProvider[prov] = false;
@@ -273,11 +285,11 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
               hintUrls: _knownItchHintUrls(),
             );
         if (shouldPick) {
-          await _pickResult(prov, results.first, autoAssign: true);
+          await _pickResult(prov, results.first, autoAssign: true, gen: gen);
         }
       }
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || gen != _searchGen) return;
       setState(() {
         _loadingByProvider[prov] = false;
         _errorByProvider[prov] = e is ScrapingException ? e.message : 'Search failed: $e';
@@ -288,15 +300,16 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   // ── Pick & enrich ─────────────────────────────────────────────────────────
 
   Future<void> _pickResult(_Provider prov, MetadataResult r,
-      {bool autoAssign = false}) async {
-    if (!mounted) return;
+      {bool autoAssign = false, int? gen}) async {
+    final activeGen = gen ?? _searchGen;
+    if (!mounted || activeGen != _searchGen) return;
     setState(() {
       _pickedByProvider[prov] = r;
       if (autoAssign) _autoAssignFields(prov, r);
     });
 
     if (prov != _Provider.itchio && (r.developer.isNotEmpty || r.supportLinks.isNotEmpty)) {
-      unawaited(_reconcileItchWithKnownCreator(_queryCtrl.text.trim(), _scraping));
+      unawaited(_reconcileItchWithKnownCreator(_queryCtrl.text.trim(), _scraping, gen: activeGen));
     }
 
     // Enrich XenForo results (F95/LC/AzC) or itch.io game pages for full images/synopsis/tags
@@ -304,14 +317,14 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         r.provider == 'lewdcorner' ||
         r.provider == 'azc' ||
         r.provider == 'itchio') {
-      if (!mounted) return;
+      if (!mounted || activeGen != _searchGen) return;
       setState(() => _enrichingByProvider[prov] = true);
       final scraping = ref.read(scrapingServiceProvider);
       try {
         final enriched = r.provider == 'itchio'
             ? await MetadataService.fetchItchDetails(r, scraping)
             : await MetadataService.fetchThreadDetails(r, scraping);
-        if (!mounted) return;
+        if (!mounted || activeGen != _searchGen) return;
         if (_pickedByProvider[prov] == r) {
           setState(() {
             _pickedByProvider[prov] = enriched;
@@ -325,11 +338,13 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
           }
           if (prov != _Provider.itchio &&
               (enriched.developer.isNotEmpty || enriched.supportLinks.isNotEmpty)) {
-            unawaited(_reconcileItchWithKnownCreator(_queryCtrl.text.trim(), scraping));
+            unawaited(_reconcileItchWithKnownCreator(_queryCtrl.text.trim(), scraping, gen: activeGen));
           }
         }
       } catch (_) {
-        if (mounted) setState(() => _enrichingByProvider[prov] = false);
+        if (mounted && activeGen == _searchGen) {
+          setState(() => _enrichingByProvider[prov] = false);
+        }
       }
     }
   }
@@ -342,9 +357,10 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
   ///    at the top of the itch.io tab and get auto-picked.
   Future<void> _reconcileItchWithKnownCreator(
     String query,
-    ScrapingService scraping,
-  ) async {
-    if (!mounted || query.isEmpty) return;
+    ScrapingService scraping, {
+    required int gen,
+  }) async {
+    if (!mounted || gen != _searchGen || query.isEmpty) return;
     final dev = _knownDeveloper();
     final hints = _knownItchHintUrls();
     if (dev.isEmpty && hints.isEmpty) return;
@@ -397,8 +413,9 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         scraping,
         developer: dev,
         hintUrls: hints,
+        alreadyProbed: _probedItchTargets,
       );
-      if (!mounted) return;
+      if (!mounted || gen != _searchGen) return;
       if (fromCreator.isNotEmpty) {
         combined = MetadataService.rankItchResults(
           [...fromCreator, ...combined],
@@ -409,7 +426,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       }
     }
 
-    if (!mounted) return;
+    if (!mounted || gen != _searchGen) return;
     setState(() {
       _resultsByProvider[_Provider.itchio] = combined;
       if (combined.isNotEmpty) _errorByProvider[_Provider.itchio] = null;
@@ -423,7 +440,7 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
           developer: dev,
           hintUrls: hints,
         )) {
-      await _pickResult(_Provider.itchio, combined.first, autoAssign: true);
+      await _pickResult(_Provider.itchio, combined.first, autoAssign: true, gen: gen);
     }
   }
 

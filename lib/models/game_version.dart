@@ -103,12 +103,15 @@ class GameVersion {
   String get metaLaunchArgs  => metadata['launch_arguments'] as String? ?? '';
   String get metaReleaseDate => metadata['release_date'] as String? ?? '';
   double get metaRating      => (metadata['rating'] as num?)?.toDouble() ?? 0;
-  List<String> get metaSupportLinks => [
-        ...?(metadata['support_links'] as List?)
-            ?.map((e) => e.toString())
-            .where((u) => u.isNotEmpty),
-        if (metaDiscordUrl.isNotEmpty) metaDiscordUrl,
-      ];
+  List<String> get metaSupportLinks {
+    final list = metadata['support_links'];
+    return [
+      if (list is List)
+        for (final e in list)
+          if ('$e'.trim().isNotEmpty) '$e'.trim(),
+      if (metaDiscordUrl.isNotEmpty) metaDiscordUrl,
+    ];
+  }
   List<OtherGameLink> get metaOtherGames {
     final list = metadata['other_games'];
     if (list is! List) return const [];
