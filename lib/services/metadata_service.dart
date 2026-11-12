@@ -40,6 +40,12 @@ class MetadataResult {
   /// Creator-support URLs (Patreon, SubscribeStar, Buy Me a Coffee, etc.).
   final List<String> supportLinks;
 
+  /// Other games by the same developer linked in the thread.
+  final List<OtherGameLink> otherGames;
+
+  /// Version string read from the thread page, when present.
+  final String version;
+
   const MetadataResult({
     required this.provider,
     required this.id,
@@ -55,6 +61,8 @@ class MetadataResult {
     this.imagesLocked = false,
     this.rating = 0,
     this.supportLinks = const [],
+    this.otherGames = const [],
+    this.version = '',
   });
 
   MetadataResult _copy({String? coverUrl, List<String>? screenshotUrls, double? rating}) => MetadataResult(
@@ -72,6 +80,8 @@ class MetadataResult {
         imagesLocked: imagesLocked,
         rating: rating ?? this.rating,
         supportLinks: supportLinks,
+        otherGames: otherGames,
+        version: version,
       );
 
   /// This result's images as the user arranged them: [cover] in the cover
@@ -99,6 +109,11 @@ class MetadataResult {
           .where((l) => l.label == 'Discord')
           .firstOrNull;
       if (discord != null) base['discord_url'] = discord.url;
+    }
+    if (otherGames.isNotEmpty) {
+      base['other_games'] = [
+        for (final g in otherGames) {'title': g.title, 'url': g.url},
+      ];
     }
     base['source_url'] = sourceUrl;
     if (provider == 'vndb') base['vndb_url'] = sourceUrl;
@@ -823,12 +838,19 @@ class MetadataService {
         .take(25)
         .toList();
 
-    // ── Extract creator-support links ─────────────────────────────────────
+    // ── Extract creator-support & other-game links ───────────────────────
     // Custom thread fields ("Developer Links" on LewdCorner / AzC) and the
     // "Developer:" line come first, skipping "Other Games" / "Extras" /
     // "Patches" so another game's or modder's link isn't mistaken for the
-    // developer's.
+    // developer's. "Other Games" fields and lines are collected separately.
     final supportLinks = _extractSupportUrls(opArticle, opEl);
+    final otherGames = _extractOtherGames(
+      opArticle,
+      opEl,
+      absUrl: absUrl,
+      excludeTitle: title,
+    );
+    final version = _extractThreadVersion(fields, opText, rawTitle);
 
     return MetadataResult(
       provider: result.provider,
@@ -846,6 +868,8 @@ class MetadataService {
       previewUrls: previews,
       imagesLocked: (opArticle ?? opEl).querySelector('.messageHide--attach') != null,
       supportLinks: supportLinks.isNotEmpty ? supportLinks : result.supportLinks,
+      otherGames: otherGames.isNotEmpty ? otherGames : result.otherGames,
+      version: version.isNotEmpty ? version : result.version,
     );
   }
 
@@ -876,6 +900,94 @@ class MetadataService {
     caseSensitive: false,
   );
   static final _plainUrlRe = RegExp(r'https?://[^\s"<>]+', caseSensitive: false);
+
+  static final _otherGamesLine = RegExp(
+    r'^other\s+(?:games?|projects?|titles?|works?)\s*:',
+    caseSensitive: false,
+  );
+
+  static String _extractThreadVersion(
+    Map<String, String> fields,
+    String opText,
+    String rawTitle,
+  ) {
+    final fromField = (fields['version'] ?? '').trim();
+    if (fromField.isNotEmpty) return fromField;
+    final opMatch = RegExp(
+      r'^Version[ \t]*:[ \t]*(.+)$',
+      multiLine: true,
+      caseSensitive: false,
+    ).firstMatch(opText);
+    if (opMatch != null) {
+      final v = (opMatch.group(1) ?? '').trim();
+      if (v.isNotEmpty) return v;
+    }
+    final titleMatch = RegExp(
+      r'\[(v[\d.]+[^\]]*|\d+(?:\.\d+)+[^\]]*|(?:ch(?:apter)?|ep(?:isode)?|part|season)\.?\s*\d+[^\]]*)\]',
+      caseSensitive: false,
+    ).firstMatch(rawTitle);
+    return titleMatch?.group(1)?.trim() ?? '';
+  }
+
+  static List<OtherGameLink> _extractOtherGames(
+    Element? opArticle,
+    Element opEl, {
+    required String Function(String) absUrl,
+    required String excludeTitle,
+  }) {
+    final raw = <OtherGameLink>[];
+
+    if (opArticle != null) {
+      for (final pair in opArticle.querySelectorAll('dl.pairs--customField')) {
+        final label = (pair.querySelector('dt')?.text ?? '').toLowerCase();
+        if (!label.contains('other game') && !label.contains('other project')) continue;
+        for (final a in pair.querySelectorAll('a[href]')) {
+          final href = (a.attributes['href'] ?? '').trim();
+          if (href.isNotEmpty) raw.add((title: a.text.trim(), url: absUrl(href)));
+        }
+      }
+    }
+
+    var lineText = '';
+    var lineLinks = <OtherGameLink>[];
+
+    void flushLine() {
+      final trimmed = lineText.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (lineLinks.isNotEmpty && _otherGamesLine.hasMatch(trimmed)) {
+        raw.addAll(lineLinks);
+      }
+      lineText = '';
+      lineLinks = <OtherGameLink>[];
+    }
+
+    void walk(Node node) {
+      if (node is Text) {
+        lineText = '$lineText${node.text}';
+        return;
+      }
+      if (node is Element) {
+        final tag = node.localName;
+        if (tag == 'br' || tag == 'div' || tag == 'p' || tag == 'li' || tag == 'tr') {
+          flushLine();
+        }
+        if (tag == 'a') {
+          final href = (node.attributes['href'] ?? '').trim();
+          if (href.isNotEmpty) {
+            lineLinks.add((title: node.text.trim(), url: absUrl(href)));
+          }
+        }
+        node.nodes.forEach(walk);
+        if (tag == 'div' || tag == 'p' || tag == 'li' || tag == 'tr') {
+          flushLine();
+        }
+      }
+    }
+
+    walk(opEl);
+    flushLine();
+
+    return otherGameLinksFrom(raw, excludeTitle: excludeTitle);
+  }
 
   static List<String> _extractSupportUrls(Element? opArticle, Element opEl) {
     final primary = <String>[];

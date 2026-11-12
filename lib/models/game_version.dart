@@ -109,6 +109,19 @@ class GameVersion {
             .where((u) => u.isNotEmpty),
         if (metaDiscordUrl.isNotEmpty) metaDiscordUrl,
       ];
+  List<OtherGameLink> get metaOtherGames {
+    final list = metadata['other_games'];
+    if (list is! List) return const [];
+    final out = <OtherGameLink>[];
+    for (final item in list) {
+      if (item is Map) {
+        final title = '${item['title'] ?? ''}'.trim();
+        final url = '${item['url'] ?? ''}'.trim();
+        if (title.isNotEmpty && url.isNotEmpty) out.add((title: title, url: url));
+      }
+    }
+    return out;
+  }
 
   /// Tags fetched from metadata providers (stored in .vnpf/metadata.json).
   /// Reads both 'tags_fetched' (2.0 format) and 'tags' (1.0 legacy format).

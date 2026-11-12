@@ -24,7 +24,10 @@ class GameTarget {
   /// Where Back goes.
   final AppTab origin;
 
-  const GameTarget({this.baseKey, this.item, required this.origin});
+  /// The game page that opened this one, when following an "Other games" link.
+  final GameTarget? previous;
+
+  const GameTarget({this.baseKey, this.item, required this.origin, this.previous});
 }
 
 final gamePageProvider = StateProvider<GameTarget?>((ref) => null);

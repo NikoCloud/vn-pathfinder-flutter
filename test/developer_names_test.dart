@@ -178,4 +178,19 @@ void main() {
       ]);
     });
   });
+
+  group('otherGameLinksFrom', () {
+    test('keeps direct forum thread links, skips search/creator pages, and excludes current game', () {
+      final games = otherGameLinksFrom([
+        (title: 'Tale of Eros', url: 'https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/'),
+        (title: 'Radiant', url: 'https://f95zone.to/threads/radiant-v0-1-2-rk-studios.49572/'),
+        (title: 'Link', url: 'https://f95zone.to/sam/latest_alpha/#/cat=games/page=1/creator=Moonbox'),
+        (title: 'Neko Paradise', url: 'https://f95zone.to/threads/neko-paradise-v1-0.39572/'),
+      ], excludeTitle: 'Neko Paradise');
+      expect(games, [
+        (title: 'Tale of Eros', url: 'https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/'),
+        (title: 'Radiant', url: 'https://f95zone.to/threads/radiant-v0-1-2-rk-studios.49572/'),
+      ]);
+    });
+  });
 }

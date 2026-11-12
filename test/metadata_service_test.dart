@@ -64,17 +64,22 @@ void main() {
 <b>Overview</b>:<br />
 Frozen Past is set in the near future.<br />
 But is it worth it?​<br /><b>Thread Updated</b>: 2021-09-21<br />
-<b>Developer</b>: Leonave - <a href="https://www.patreon.com/leonave">Patreon</a> - <a href="https://discord.gg/xyz">Discord</a><br />
+<b>Developer</b>: Leonave - <a href="https://www.patreon.com/leonave">Patreon</a> - <a href="https://discord.gg/abc">Discord</a><br />
+<b>Other Games</b>: <a href="https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/">Tale of Eros</a> - <a href="https://f95zone.to/sam/latest_alpha/#/cat=games/page=1/creator=Leonave">Link</a><br />
 <a href="https://attachments.f95zone.to/shot1.jpg?h=2"><img src="https://attachments.f95zone.to/thumb/shot1.jpg"></a>
 </div></article></div></article>''',
       );
       final r = await MetadataService.fetchThreadDetails(_seed('f95zone'), FakeScraping(html));
       expect(r.title, 'Frozen Past');
       expect(r.developer, 'Leonave');
+      expect(r.version, 'v0.43');
       expect(r.synopsis, 'Frozen Past is set in the near future.\nBut is it worth it?');
       expect(r.coverUrl, 'https://attachments.f95zone.to/banner.png?h=1');
       expect(r.screenshotUrls, ['https://attachments.f95zone.to/shot1.jpg?h=2']);
       expect(r.supportLinks, ['https://www.patreon.com/leonave', 'https://discord.gg/abc']);
+      expect(r.otherGames, [
+        (title: 'Tale of Eros', url: 'https://f95zone.to/threads/tale-of-eros-ch-4-alorth.25093/'),
+      ]);
     });
 
     test('LewdCorner-style post: reads the body, not the custom fields above it', () async {

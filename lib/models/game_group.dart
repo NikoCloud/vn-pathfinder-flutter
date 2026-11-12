@@ -1,3 +1,4 @@
+import '../utils/formatters.dart';
 import 'game_version.dart';
 import 'archive_item.dart';
 
@@ -54,6 +55,14 @@ class GameGroup {
   List<String> get newestMetaSupportLinks {
     for (final v in versions.reversed) {
       if (v.metaSupportLinks.isNotEmpty) return v.metaSupportLinks;
+    }
+    return const [];
+  }
+
+  /// Other games by the developer from the newest version that has any.
+  List<OtherGameLink> get newestMetaOtherGames {
+    for (final v in versions.reversed) {
+      if (v.metaOtherGames.isNotEmpty) return v.metaOtherGames;
     }
     return const [];
   }

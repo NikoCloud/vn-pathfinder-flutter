@@ -167,6 +167,80 @@ String? _supportPlatformLabel(String host, String path) {
   return null;
 }
 
+/// Another game by the same developer linked in a forum thread.
+typedef OtherGameLink = ({String title, String url});
+
+/// Valid forum-thread links from an "Other Games" field or line, deduplicated
+/// by title and excluding [excludeTitle]. Generic non-thread URLs (like search
+/// pages) are ignored.
+List<OtherGameLink> otherGameLinksFrom(
+  Iterable<OtherGameLink> candidates, {
+  String excludeTitle = '',
+}) {
+  final excludedKey = _otherGameKey(excludeTitle);
+  final byKey = <String, OtherGameLink>{};
+
+  for (final item in candidates) {
+    final cleanedUrl = item.url.trim().replaceAll(RegExp(r'[),.;\]>]+$'), '');
+    final normalizedUrl = cleanedUrl.startsWith('//') ? 'https:$cleanedUrl' : cleanedUrl;
+    final uri = Uri.tryParse(normalizedUrl);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) {
+      continue;
+    }
+    final host = uri.host.toLowerCase();
+    final isSupportedForum = host == 'f95zone.to' ||
+        host.endsWith('.f95zone.to') ||
+        host == 'lewdcorner.com' ||
+        host.endsWith('.lewdcorner.com') ||
+        host == 'azkoselscorner.com' ||
+        host.endsWith('.azkoselscorner.com');
+    if (!isSupportedForum) continue;
+
+    final fullPath = '${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}'.toLowerCase();
+    if (!fullPath.contains('threads/')) continue;
+
+    var title = item.title
+        .replaceAll(RegExp(r'\s*\[[^\]]*\]'), '')
+        .replaceAll(RegExp(r'^[\s\-–—:|•]+|[\s\-–—:|•]+$'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (title.isEmpty ||
+        title.toLowerCase().startsWith('http') ||
+        const {'link', 'here', 'thread', 'game', 'other games'}.contains(title.toLowerCase())) {
+      title = _titleFromThreadUrl(normalizedUrl);
+    }
+    final key = _otherGameKey(title);
+    if (key.isEmpty || (excludedKey.isNotEmpty && key == excludedKey)) continue;
+    byKey.putIfAbsent(key, () => (title: title, url: _canonicalThreadUrl(uri)));
+  }
+
+  return byKey.values.toList();
+}
+
+String _otherGameKey(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+String _canonicalThreadUrl(Uri uri) {
+  final m = RegExp(r'^(.*?/threads/[^/?#]+/?)', caseSensitive: false).firstMatch(uri.path);
+  if (m != null) {
+    final cleanPath = m.group(1)!.endsWith('/') ? m.group(1)! : '${m.group(1)!}/';
+    return Uri(scheme: uri.scheme, host: uri.host, path: cleanPath).toString();
+  }
+  return uri.toString();
+}
+
+String _titleFromThreadUrl(String url) {
+  final m = RegExp(r'threads/([a-z0-9-]+?)(?:-(?:v|ch|ep|part|season|final)-?[0-9a-z.-]+)?\.\d+',
+          caseSensitive: false)
+      .firstMatch(url);
+  final slug = m?.group(1) ?? '';
+  if (slug.isEmpty) return '';
+  return slug
+      .split('-')
+      .where((w) => w.isNotEmpty)
+      .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
+}
+
 String fmtBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';

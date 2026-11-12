@@ -372,6 +372,20 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
         if (discord != null) meta['discord_url'] = discord.url;
       }
 
+      final otherGames = otherGameLinksFrom(
+        [
+          if (devSrc != null) ...?_pickedByProvider[devSrc]?.otherGames,
+          for (final r in _pickedByProvider.values.whereType<MetadataResult>())
+            ...r.otherGames,
+        ],
+        excludeTitle: (meta['title'] as String?) ?? widget.group.effectiveTitle,
+      );
+      if (otherGames.isNotEmpty) {
+        meta['other_games'] = [
+          for (final g in otherGames) {'title': g.title, 'url': g.url},
+        ];
+      }
+
       // Store source URLs for every picked provider
       for (final entry in _pickedByProvider.entries) {
         final r = entry.value;

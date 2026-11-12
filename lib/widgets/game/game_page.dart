@@ -50,12 +50,17 @@ class GamePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final groups = ref.watch(libraryProvider).groups;
     final group = target.baseKey == null ? null : groups.where((g) => g.baseKey == target.baseKey).firstOrNull;
+    final prev = target.previous;
+    final prevGroup = prev?.baseKey == null ? null : groups.where((g) => g.baseKey == prev!.baseKey).firstOrNull;
+    final backLabel = prev != null
+        ? (prevGroup?.effectiveTitle ?? prev.item?.title ?? target.origin.label)
+        : target.origin.label;
     return GameView(
       key: ValueKey(target.baseKey ?? target.item?.id),
       group: group,
       item: target.item,
-      onBack: () => ref.read(gamePageProvider.notifier).state = null,
-      backLabel: target.origin.label,
+      onBack: () => ref.read(gamePageProvider.notifier).state = prev,
+      backLabel: backLabel,
     );
   }
 }
@@ -138,7 +143,11 @@ class _GameViewState extends ConsumerState<GameView> {
 
     final changes = thread?.downloads.changes ?? const <ThreadChange>[];
     final installed = g?.versions.map((v) => v.versionStr).where((v) => v.isNotEmpty).toList() ?? const <String>[];
-    final latest = update?.version ?? (item != null ? extractFeedVersion(item) : null) ?? (installed.isEmpty ? '' : installed.last);
+    final latest = update?.version ??
+        (item != null ? extractFeedVersion(item) : null) ??
+        (details != null && details.version.isNotEmpty ? details.version : null) ??
+        changes.firstOrNull?.version ??
+        (installed.isEmpty ? '' : installed.last);
     final newer = g != null && update != null;
     final played = g == null ? '' : ud.lastPlayedVersion[g.baseKey] ?? '';
     final path = buildVersionPath(
@@ -226,6 +235,13 @@ class _GameViewState extends ConsumerState<GameView> {
           ...?details?.supportLinks,
           if (g != null) ...g.newestMetaSupportLinks,
         ]),
+        otherGames: otherGameLinksFrom(
+          [
+            ...?details?.otherGames,
+            if (g != null) ...g.newestMetaOtherGames,
+          ],
+          excludeTitle: title,
+        ),
       ),
     ];
 
@@ -838,6 +854,7 @@ class _Facts extends ConsumerStatefulWidget {
   final double rating;
   final String developer;
   final List<SupportLink> supportLinks;
+  final List<OtherGameLink> otherGames;
 
   const _Facts({
     required this.group,
@@ -847,6 +864,7 @@ class _Facts extends ConsumerStatefulWidget {
     required this.rating,
     this.developer = '',
     this.supportLinks = const [],
+    this.otherGames = const [],
   });
 
   @override
@@ -856,6 +874,40 @@ class _Facts extends ConsumerStatefulWidget {
 class _FactsState extends ConsumerState<_Facts> {
   Future<int>? _size;
   String? _sizeFor;
+
+  void _openOtherGame(OtherGameLink other) {
+    final key = feedTitleKey(other.title);
+    final owned = key.isEmpty
+        ? null
+        : ref
+            .read(libraryGroupsProvider)
+            .where((g) => feedTitleKey(g.effectiveTitle) == key)
+            .firstOrNull;
+    final feedItem = key.isEmpty ? null : ref.read(feedForGameProvider(key)).firstOrNull;
+    final provider = other.url.contains('f95zone')
+        ? 'f95zone'
+        : other.url.contains('azkosel')
+            ? 'azc'
+            : 'lewdcorner';
+    final synthetic = feedItem ??
+        RawFeedItem(
+          id: '$provider::${other.url}',
+          source: provider,
+          sourceLabel: siteName(provider),
+          title: other.title,
+          rawBody: widget.developer.isNotEmpty ? 'Developer: ${widget.developer}' : '',
+          url: other.url,
+          author: widget.developer,
+        );
+    final current = ref.read(gamePageProvider);
+    final origin = current?.origin ?? ref.read(activeTabProvider) ?? AppTab.library;
+    ref.read(gamePageProvider.notifier).state = GameTarget(
+      baseKey: owned?.baseKey,
+      item: synthetic,
+      origin: origin,
+      previous: current,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -871,7 +923,9 @@ class _FactsState extends ConsumerState<_Facts> {
     final engine = version?.engineName ?? '';
     final at = widget.item?.publishedAt;
     final links = ref.watch(settingsProvider.select((s) => s.allowDownloadLinks));
+    final lockdown = ref.watch(lockdownProvider);
     final hasSupport = links && widget.supportLinks.isNotEmpty;
+    final hasOther = !lockdown && widget.otherGames.isNotEmpty;
 
     return VpCard(
       child: Column(
@@ -898,7 +952,7 @@ class _FactsState extends ConsumerState<_Facts> {
             VpFact(
               label: 'Available on',
               value: widget.sources.map((s) => siteName(s.source)).join(', '),
-              last: !links && !hasSupport,
+              last: !links && !hasSupport && !hasOther,
             ),
           if (links && widget.sources.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -940,8 +994,84 @@ class _FactsState extends ConsumerState<_Facts> {
               ],
             ),
           ],
+          if (hasOther) ...[
+            if ((links && widget.sources.isNotEmpty) || hasSupport) ...[
+              const SizedBox(height: 8),
+              Divider(height: 1, color: AppColors.border),
+            ],
+            const SizedBox(height: 8),
+            Text(
+              widget.developer.isEmpty ? 'Other games' : 'Other games by ${widget.developer}',
+              style: AppText.meta(color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final other in widget.otherGames)
+                  _OtherGamePill(
+                    other: other,
+                    onTap: () => _openOtherGame(other),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _OtherGamePill extends StatelessWidget {
+  final OtherGameLink other;
+  final VoidCallback onTap;
+
+  const _OtherGamePill({required this.other, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      label: 'Open ${other.title}',
+      tooltip: 'Open ${other.title} in VN Pathfinder',
+      builder: (context, states) {
+        final hot = states.contains(WidgetState.hovered);
+        final down = states.contains(WidgetState.pressed);
+        return AnimatedContainer(
+          duration: AppMotion.of(context, AppMotion.hover),
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: down
+                ? AppColors.bgActive
+                : hot
+                    ? AppColors.bgHover
+                    : AppColors.bgHover.withValues(alpha: 0.6),
+            borderRadius: AppRadius.borderMd,
+            border: Border.all(color: hot ? AppColors.borderLight : AppColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.videogame_asset_outlined,
+                size: 13,
+                color: hot ? AppColors.accent : AppColors.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                other.title,
+                style: AppText.ui(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: hot ? AppColors.textBright : AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
