@@ -7,10 +7,12 @@ import '../../models/archive_item.dart';
 import '../../models/game_group.dart';
 import '../../models/game_status.dart';
 import '../../models/game_version.dart';
+import '../../models/user_data.dart';
 import '../../providers/downloads_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/play_tracker_provider.dart';
+import '../../providers/settings_provider.dart';
 import '../../utils/formatters.dart';
 import '../common/kit.dart';
 import '../common/status_menu.dart';
@@ -18,6 +20,25 @@ import '../modals/merge_game_dialog.dart';
 import '../modals/metadata_fetch_modal.dart';
 import '../modals/properties_modal.dart';
 import '../../theme.dart';
+
+/// What Favorites or a view is called on screen.
+String listLabel(String list) => list == kFavoritesList ? 'Favorites' : list;
+
+/// A menu of Favorites and [views]; returns the one picked. Lists for which
+/// [checked] is true are ticked (the ones a game is already in).
+Future<String?> showListMenu(BuildContext context, Offset at,
+    {required List<String> views, bool Function(String list)? checked}) {
+  bool has(String list) => checked?.call(list) ?? false;
+  return showVpMenu<String>(
+    context: context,
+    position: at,
+    items: [
+      VpMenuItem(kFavoritesList, 'Favorites', icon: Icons.favorite_border, checked: has(kFavoritesList)),
+      if (views.isNotEmpty) const VpMenuItem.divider(),
+      for (final v in views) VpMenuItem(v, v, icon: Icons.bookmark_border, checked: has(v)),
+    ],
+  );
+}
 
 void showGameContextMenu({
   required BuildContext context,
@@ -68,6 +89,18 @@ void showGameContextMenu({
         value: 'status',
         height: 36,
         child: _MenuRow(icon: Icons.star_outline, label: 'Change Status', trailing: Icons.chevron_right),
+      ),
+      PopupMenuItem(
+        value: 'favorite',
+        height: 36,
+        child: ref.read(userDataProvider).favorites.contains(group.baseKey)
+            ? _MenuRow(icon: Icons.favorite, label: 'Remove from Favorites', color: AppColors.accent)
+            : _MenuRow(icon: Icons.favorite_border, label: 'Add to Favorites'),
+      ),
+      PopupMenuItem(
+        value: 'lists',
+        height: 36,
+        child: _MenuRow(icon: Icons.playlist_add, label: 'Add to View', trailing: Icons.chevron_right),
       ),
       const PopupMenuDivider(height: 1),
       PopupMenuItem(
@@ -123,6 +156,31 @@ void showGameContextMenu({
   );
 
   if (result == null) return;
+
+  if (result == 'favorite') {
+    final ud = container.read(userDataProvider.notifier);
+    ud.setFavorite(group.baseKey, !container.read(userDataProvider).favorites.contains(group.baseKey));
+    return;
+  }
+
+  if (result == 'lists') {
+    if (!host.mounted) return;
+    // Picking a list the game is in takes it out again.
+    final ud = container.read(userDataProvider.notifier);
+    final list = await showListMenu(
+      host,
+      globalPosition,
+      views: container.read(settingsProvider).savedViews.keys.toList(),
+      checked: (l) => ud.inList(l, group.baseKey),
+    );
+    if (list == null) return;
+    if (ud.inList(list, group.baseKey)) {
+      ud.removeFromList(list, group.baseKey);
+    } else {
+      ud.addToList(list, [group.baseKey]);
+    }
+    return;
+  }
 
   if (result == 'status') {
     if (!host.mounted) return;

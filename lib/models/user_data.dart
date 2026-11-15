@@ -18,6 +18,10 @@ class PlaySession {
   Map<String, dynamic> toJson() => {'game': baseKey, 'at': at.toIso8601String(), 'seconds': seconds};
 }
 
+/// The list name for Favorites in [UserData] and the Library's filters. A
+/// view can't be called this: names are typed, and this has a null in it.
+const kFavoritesList = '\u0000favorites';
+
 class UserData {
   // v1
   final Map<String, String> notes;               // base_key → note text
@@ -58,6 +62,11 @@ class UserData {
   final Set<String> watching;
   final Set<String> muted;
 
+  // 2.0 addition: games marked as favourites (base_keys), and games added by
+  // hand to a Library view (view name → base_keys, in the order added).
+  final Set<String> favorites;
+  final Map<String, List<String>> viewGames;
+
   // 2.0 addition: one entry per play session, newest last. 1.0 only kept
   // totals, so the weekly chart starts when this does.
   final List<PlaySession> sessions;
@@ -85,6 +94,8 @@ class UserData {
     this.notDuplicates = const {},
     this.watching = const {},
     this.muted = const {},
+    this.favorites = const {},
+    this.viewGames = const {},
     this.sessions = const [],
   });
 
@@ -125,6 +136,16 @@ class UserData {
       notDuplicates: Set<String>.from(json['not_duplicates'] as List? ?? []),
       watching: Set<String>.from(json['watching'] as List? ?? []),
       muted: Set<String>.from(json['muted'] as List? ?? []),
+      // Before favourites existed, people tagged games "Favorite"; those
+      // become favourites the first time this version reads the file.
+      favorites: json.containsKey('favorites')
+          ? Set<String>.from(json['favorites'] as List? ?? [])
+          : {
+              for (final e in (json['tags'] as Map? ?? {}).entries)
+                if ((e.value as List? ?? []).any((t) => '$t'.trim().toLowerCase() == 'favorite')) '${e.key}',
+            },
+      viewGames: (json['view_games'] as Map? ?? {})
+          .map((k, v) => MapEntry('$k', List<String>.from(v as List? ?? []))),
       sessions: (json['sessions'] as List? ?? [])
           .map((e) => PlaySession.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -152,6 +173,8 @@ class UserData {
     'not_duplicates': notDuplicates.toList()..sort(),
     'watching': watching.toList()..sort(),
     'muted': muted.toList()..sort(),
+    'favorites': favorites.toList()..sort(),
+    'view_games': viewGames,
     'sessions': sessions.map((s) => s.toJson()).toList(),
   };
 
@@ -175,6 +198,8 @@ class UserData {
     Set<String>? notDuplicates,
     Set<String>? watching,
     Set<String>? muted,
+    Set<String>? favorites,
+    Map<String, List<String>>? viewGames,
     List<PlaySession>? sessions,
   }) => UserData(
     notes: notes ?? this.notes,
@@ -196,6 +221,8 @@ class UserData {
     notDuplicates: notDuplicates ?? this.notDuplicates,
     watching: watching ?? this.watching,
     muted: muted ?? this.muted,
+    favorites: favorites ?? this.favorites,
+    viewGames: viewGames ?? this.viewGames,
     sessions: sessions ?? this.sessions,
   );
 

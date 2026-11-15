@@ -139,6 +139,44 @@ class UserDataNotifier extends StateNotifier<UserData> {
         muted: muted ? {...ud.muted, titleKey} : ud.muted.difference({titleKey}),
       ));
 
+  void setFavorite(String baseKey, bool on) => update((ud) => ud.copyWith(
+        favorites: on ? {...ud.favorites, baseKey} : ud.favorites.difference({baseKey}),
+      ));
+
+  /// Whether [baseKey] is in [list]: Favorites ([kFavoritesList]) or a view.
+  bool inList(String list, String baseKey) => list == kFavoritesList
+      ? state.favorites.contains(baseKey)
+      : (state.viewGames[list] ?? const []).contains(baseKey);
+
+  /// Adds games to Favorites or a view; games already in it stay where they are.
+  void addToList(String list, Iterable<String> baseKeys) {
+    if (list == kFavoritesList) {
+      update((ud) => ud.copyWith(favorites: {...ud.favorites, ...baseKeys}));
+      return;
+    }
+    update((ud) {
+      final games = [...?ud.viewGames[list]];
+      for (final k in baseKeys) {
+        if (!games.contains(k)) games.add(k);
+      }
+      return ud.copyWith(viewGames: {...ud.viewGames, list: games});
+    });
+  }
+
+  void removeFromList(String list, String baseKey) {
+    if (list == kFavoritesList) {
+      setFavorite(baseKey, false);
+      return;
+    }
+    update((ud) => ud.copyWith(viewGames: {
+          ...ud.viewGames,
+          list: [...?ud.viewGames[list]]..remove(baseKey),
+        }));
+  }
+
+  /// Forgets a deleted view's games.
+  void forgetView(String name) => update((ud) => ud.copyWith(viewGames: {...ud.viewGames}..remove(name)));
+
   void setPatchState(String metaKey, String patchName, bool active) {
     update((ud) {
       final patches = Map<String, Map<String, bool>>.from(ud.appliedPatches);

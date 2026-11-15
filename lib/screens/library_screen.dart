@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/game_group.dart';
@@ -44,6 +46,7 @@ enum LibraryView {
 }
 
 LibraryView? activeView(FilterState f) {
+  if (f.list != null) return null;
   if (f.updatesOnly) return f.statuses.containsAll(allStatusIds) ? LibraryView.newVersion : null;
   if (f.statuses.containsAll(allStatusIds)) return LibraryView.all;
   if (f.statuses.length == 1) {
@@ -77,8 +80,47 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   void _togglePick(String baseKey) => setState(() => _picked.contains(baseKey) ? _picked.remove(baseKey) : _picked.add(baseKey));
 
+  /// Set while bulk adding: the list the selected games go into.
+  String? _addTo;
+
+  /// Right-click a view → Add games: the wall shows every game with a tick
+  /// box, and the bar's Add puts the ticked ones in [list].
+  void _startBulkAdd(String list) {
+    ref.read(filterProvider.notifier).setView();
+    setState(() {
+      _selecting = true;
+      _picked.clear();
+      _addTo = list;
+    });
+  }
+
+  void _finishBulkAdd() {
+    final list = _addTo;
+    if (list == null) return;
+    final n = _picked.length;
+    ref.read(userDataProvider.notifier).addToList(list, _picked);
+    ref.read(notificationProvider.notifier).success('Added $n game${n == 1 ? '' : 's'} to ${listLabel(list)}');
+    _stopSelecting();
+    ref.read(filterProvider.notifier).showList(list);
+  }
+
+  /// Puts the selected games in a list chosen from a menu.
+  Future<void> _bulkAddTo(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox;
+    final list = await showListMenu(
+      context,
+      box.localToGlobal(const Offset(0, -8)),
+      views: ref.read(settingsProvider).savedViews.keys.toList(),
+    );
+    if (list == null || !mounted) return;
+    final n = _picked.length;
+    ref.read(userDataProvider.notifier).addToList(list, _picked);
+    ref.read(notificationProvider.notifier).success('Added $n game${n == 1 ? '' : 's'} to ${listLabel(list)}');
+  }
+
   void _stopSelecting() => setState(() {
         _selecting = false;
+        _addTo = null;
         _picked.clear();
       });
 
@@ -133,6 +175,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               selecting: _selecting,
               onPanel: () => setState(() => _panelOpen = !_panelOpen),
               onSelect: () => _selecting ? _stopSelecting() : setState(() => _selecting = true),
+              onBulkAdd: _startBulkAdd,
             ),
             const DuplicatesBanner(),
             Expanded(
@@ -165,13 +208,21 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             right: 0,
             bottom: 18,
             child: Center(
-              child: _BulkBar(
-                count: _picked.length,
-                onFetch: _bulkFetch,
-                onStatus: _bulkStatus,
-                onHide: _bulkHide,
-                onDone: _stopSelecting,
-              ),
+              child: _addTo != null
+                  ? _AddBar(
+                      count: _picked.length,
+                      list: _addTo!,
+                      onAdd: _finishBulkAdd,
+                      onCancel: _stopSelecting,
+                    )
+                  : _BulkBar(
+                      count: _picked.length,
+                      onFetch: _bulkFetch,
+                      onStatus: _bulkStatus,
+                      onAddTo: _bulkAddTo,
+                      onHide: _bulkHide,
+                      onDone: _stopSelecting,
+                    ),
             ),
           ),
       ],
@@ -196,8 +247,54 @@ class _Toolbar extends ConsumerWidget {
   final bool selecting;
   final VoidCallback onPanel;
   final VoidCallback onSelect;
+  final ValueChanged<String> onBulkAdd;
 
-  const _Toolbar({required this.panelOpen, required this.selecting, required this.onPanel, required this.onSelect});
+  const _Toolbar({
+    required this.panelOpen,
+    required this.selecting,
+    required this.onPanel,
+    required this.onSelect,
+    required this.onBulkAdd,
+  });
+
+  /// Right-click on Favorites or a saved view: add games to it, and for a
+  /// saved view, delete it (after asking).
+  Future<void> _viewMenu(BuildContext context, WidgetRef ref, Offset at, String list) async {
+    final saved = list != kFavoritesList;
+    final choice = await showVpMenu<String>(
+      context: context,
+      position: at,
+      items: [
+        const VpMenuItem('add', 'Add games…', icon: Icons.playlist_add),
+        if (saved) const VpMenuItem('delete', 'Delete view…', icon: Icons.delete_outline, danger: true),
+      ],
+    );
+    if (!context.mounted) return;
+    if (choice == 'add') onBulkAdd(list);
+    if (choice == 'delete') {
+      final n = (ref.read(userDataProvider).viewGames[list] ?? const []).length;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Delete "$list"?', style: AppText.heading()),
+          content: Text(
+            n == 0
+                ? 'The view is removed. Your games are not touched.'
+                : 'The view and its list of $n game${n == 1 ? '' : 's'} are removed. The games themselves are not touched.',
+            style: AppText.body(color: AppColors.textSecondary),
+          ),
+          actions: [
+            VpButton(label: 'Cancel', tone: VpTone.quiet, small: true, onTap: () => Navigator.of(ctx).pop(false)),
+            VpButton(label: 'Delete', tone: VpTone.primary, small: true, onTap: () => Navigator.of(ctx).pop(true)),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      if (ref.read(filterProvider).list == list) ref.read(filterProvider.notifier).setView();
+      ref.read(settingsProvider.notifier).deleteView(list);
+      ref.read(userDataProvider.notifier).forgetView(list);
+    }
+  }
 
   int _count(LibraryView view, List<GameGroup> games, UserData ud, Map updates) => switch (view) {
         LibraryView.all => games.length,
@@ -249,6 +346,12 @@ class _Toolbar extends ConsumerWidget {
         .toList();
     final saved = ref.watch(settingsProvider.select((s) => s.savedViews));
     final current = activeView(filter);
+    int present(Iterable<String> keys) {
+      final wanted = keys.toSet();
+      return games.where((g) => wanted.contains(g.baseKey)).length;
+    }
+
+    final filterJson = jsonEncode(filter.toJson());
     final details = ref.watch(libraryDetailsProvider);
 
     return Container(
@@ -276,18 +379,40 @@ class _Toolbar extends ConsumerWidget {
                     ),
                     const SizedBox(width: 2),
                   ],
-                  for (final name in saved.keys) ...[
-                    Tooltip(
-                      message: 'Right-click to delete',
-                      child: GestureDetector(
-                        onSecondaryTap: () => ref.read(settingsProvider.notifier).deleteView(name),
-                        child: VpShelf(
-                          label: name,
-                          selected: false,
-                          onTap: () => notifier.load(FilterState.fromJson(saved[name]!)),
-                        ),
-                      ),
+                  GestureDetector(
+                    onSecondaryTapDown: (d) => _viewMenu(context, ref, d.globalPosition, kFavoritesList),
+                    child: VpShelf(
+                      label: 'Favorites',
+                      count: present(ud.favorites),
+                      selected: filter.list == kFavoritesList,
+                      onTap: () => notifier.showList(kFavoritesList),
                     ),
+                  ),
+                  const SizedBox(width: 2),
+                  for (final name in saved.keys) ...[
+                    Builder(builder: (context) {
+                      final picked = ud.viewGames[name] ?? const <String>[];
+                      final preset = FilterState.fromJson(saved[name]!);
+                      return Tooltip(
+                        message: picked.isEmpty
+                            ? 'Saved filters. Right-click to add games or delete it'
+                            : 'Right-click to add games or delete it',
+                        child: GestureDetector(
+                          onSecondaryTapDown: (d) => _viewMenu(context, ref, d.globalPosition, name),
+                          child: VpShelf(
+                            label: name,
+                            count: picked.isEmpty ? null : present(picked),
+                            selected: filter.list == name ||
+                                (filter.list == null && picked.isEmpty && jsonEncode(preset.toJson()) == filterJson),
+                            // A view with games added shows exactly those
+                            // games; one without keeps working as filters.
+                            onTap: () => picked.isEmpty
+                                ? notifier.load(preset)
+                                : notifier.showList(name, sort: preset.sort),
+                          ),
+                        ),
+                      );
+                    }),
                     const SizedBox(width: 2),
                   ],
                   VpButton(label: '+ Save view', tone: VpTone.quiet, small: true, onTap: () => _saveView(context, ref)),
@@ -478,6 +603,7 @@ class _BulkBar extends StatelessWidget {
   final int count;
   final VoidCallback onFetch;
   final ValueChanged<BuildContext> onStatus;
+  final ValueChanged<BuildContext> onAddTo;
   final VoidCallback onHide;
   final VoidCallback onDone;
 
@@ -485,6 +611,7 @@ class _BulkBar extends StatelessWidget {
     required this.count,
     required this.onFetch,
     required this.onStatus,
+    required this.onAddTo,
     required this.onHide,
     required this.onDone,
   });
@@ -511,9 +638,54 @@ class _BulkBar extends StatelessWidget {
             builder: (context) => VpButton(label: 'Set status', small: true, onTap: none ? null : () => onStatus(context)),
           ),
           const SizedBox(width: 8),
+          Builder(
+            builder: (context) => VpButton(label: 'Add to view', small: true, onTap: none ? null : () => onAddTo(context)),
+          ),
+          const SizedBox(width: 8),
           VpButton(label: 'Hide', small: true, onTap: none ? null : onHide),
           const SizedBox(width: 8),
           VpButton(label: 'Done', small: true, tone: VpTone.quiet, onTap: onDone),
+        ],
+      ),
+    );
+  }
+}
+
+/// The bar while bulk adding to a list: how many are ticked, Add, Cancel.
+class _AddBar extends StatelessWidget {
+  final int count;
+  final String list;
+  final VoidCallback onAdd;
+  final VoidCallback onCancel;
+
+  const _AddBar({required this.count, required this.list, required this.onAdd, required this.onCancel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(15, 8, 9, 8),
+      decoration: BoxDecoration(
+        color: AppColors.bgCard.withValues(alpha: 0.96),
+        border: Border.all(color: AppColors.border),
+        borderRadius: const BorderRadius.all(Radius.circular(11)),
+        boxShadow: const [BoxShadow(color: Color(0x80000000), blurRadius: 36, offset: Offset(0, 14))],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            count == 0 ? 'Tick the games to add to ${listLabel(list)}' : '$count selected',
+            style: AppText.body(fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(width: 12),
+          VpButton(
+            label: 'Add to ${listLabel(list)}',
+            small: true,
+            tone: VpTone.primary,
+            onTap: count == 0 ? null : onAdd,
+          ),
+          const SizedBox(width: 8),
+          VpButton(label: 'Cancel', small: true, tone: VpTone.quiet, onTap: onCancel),
         ],
       ),
     );

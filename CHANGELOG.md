@@ -8,6 +8,10 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ### Added
 
+- **Favorites.** Mark a game with **Add to Favorites** in its right-click menu or its **…** button, and the Library's **Favorites** view lists them. Games you had tagged "Favorite" start out as favourites.
+- **Add games to a view.** A game's right-click menu and **…** button have **Add to View**, with a tick by the views it's already in; pick a ticked one to take it out. Once a view has games added, it shows exactly those games; a view without any keeps working as saved filters. To add many at once, right-click a view and choose **Add games…**: tick the games and press **Add**. Selecting games in the Library also offers **Add to view**.
+- **Views can be deleted safely.** Right-clicking a saved view opens a menu instead of deleting it at once, and **Delete view…** asks first. Saved views show as selected when they're the one in use, with a count once games are added.
+
 - **Support the developer.** A game's page lists the developer's Patreon, SubscribeStar, Ko-fi, Discord, itch.io and similar pages, found by Fetch Metadata. They show whatever the Download links setting says; Lockdown hides them.
 - **Other games by the developer.** When a game's thread links the developer's other games, the game page lists them, and clicking one opens its page in the app: your copy if you have it, otherwise what the Feed or the thread says about it.
 - **itch.io finds more games.** Adult games that itch.io's search hides are found through the developer's creator page, when Fetch Metadata knows their itch.io link. Results that match the game and its developer come first, and only those are picked automatically; game pages are read for the full description, screenshots, tags and rating.

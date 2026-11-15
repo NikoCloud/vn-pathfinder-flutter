@@ -31,6 +31,10 @@ class FilterState {
   final int releasedWithinDays;   // 0 = any
   final bool showHidden;          // include games hidden from the library
 
+  /// Only the games in this list: Favorites ([kFavoritesList]) or a view
+  /// that has games added to it. Not part of what a view saves.
+  final String? list;
+
   const FilterState({
     this.query = '',
     this.searchMode = SearchMode.title,
@@ -45,6 +49,7 @@ class FilterState {
     this.minRating = 0,
     this.releasedWithinDays = 0,
     this.showHidden = false,
+    this.list,
   });
 
   FilterState copyWith({
@@ -61,6 +66,8 @@ class FilterState {
     double? minRating,
     int? releasedWithinDays,
     bool? showHidden,
+    String? list,
+    bool clearList = false,
   }) => FilterState(
     query: query ?? this.query,
     searchMode: searchMode ?? this.searchMode,
@@ -75,6 +82,7 @@ class FilterState {
     minRating: minRating ?? this.minRating,
     releasedWithinDays: releasedWithinDays ?? this.releasedWithinDays,
     showHidden: showHidden ?? this.showHidden,
+    list: clearList ? null : list ?? this.list,
   );
 
   bool get isActive =>
@@ -170,16 +178,22 @@ class FilterNotifier extends StateNotifier<FilterState> {
 
   /// One quick view: a status, or every status with [updatesOnly].
   void setView({Set<String> statuses = allStatusIds, bool updatesOnly = false}) =>
-      state = state.copyWith(statuses: statuses, updatesOnly: updatesOnly);
+      state = state.copyWith(statuses: statuses, updatesOnly: updatesOnly, clearList: true);
 
   /// A saved view. The search box is left as it is.
-  void load(FilterState saved) => state = saved.copyWith(query: state.query);
+  void load(FilterState saved) => state = saved.copyWith(query: state.query, clearList: true);
+
+  /// Only the games in [list] (Favorites or a view with games added), every
+  /// status, sorted by [sort]. The search box is left as it is.
+  void showList(String list, {SortMode? sort}) =>
+      state = FilterState(query: state.query, sort: sort ?? state.sort, list: list);
 
   void clearFilters() => state = const FilterState().copyWith(
         query: state.query,
         sort: state.sort,
         statuses: state.statuses,
         updatesOnly: state.updatesOnly,
+        list: state.list,
       );
 }
 
@@ -199,6 +213,13 @@ final filteredGroupsProvider = Provider<List<GameGroup>>((ref) {
   var result = groups
       .where((g) => g.versions.isNotEmpty && (filter.showHidden || !ud.hidden.contains(g.baseKey)))
       .toList();
+
+  // Favorites, or a view's hand-picked games.
+  final list = filter.list;
+  if (list != null) {
+    final members = list == kFavoritesList ? ud.favorites : (ud.viewGames[list] ?? const []).toSet();
+    result = result.where((g) => members.contains(g.baseKey)).toList();
+  }
 
   // Text search
   if (filter.query.isNotEmpty) {

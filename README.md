@@ -44,7 +44,7 @@
 - Merge two entries that are really one game: right-click a game and choose **Merge into Another Game**. Likely matches are listed first, and your files aren't moved. When Pathfinder spots a likely duplicate, the game's page offers the merge
 - Wide cover cards in a framed wall, or a list beside the game's page. One slider in the top bar sets the card size, and dragging it to the left end switches to the list
 - Hovering a card lifts it and shows its tags, Play or Update, and more actions
-- Quick views for Playing, New version, Updated, Unplayed, On Hold and Completed, plus views you save yourself
+- Quick views for Playing, New version, Updated, Unplayed, On Hold, Completed and Favorites, plus views you save yourself. Add games to a view from a game's menu, or many at once by right-clicking the view
 - Search by title or creator
 - Filter by tags, engine, status, rating, recent release, available updates or Unfetched, and show hidden games
 - Select several games to fetch metadata, set a status or hide them
