@@ -31,6 +31,7 @@ Never built.
 - **Clearing saved game data nothing uses.** A card whose file was deleted in Explorer stays in `.vnpf-archives` so it can be assigned again.
 - **Snap Layouts on the maximize button.** The custom title bar loses the Windows 11 flyout. It needs a native hit-test change in the runner. Edge snapping and Win+Z work.
 - **Discord in the Feed.** Settings shows it as Coming soon. It needs an easier setup than a personal bot token, typed channel lines and a bot invited to every server. The first version is in git at `a23b0b8`.
+  - **Phase 1: follow into your own server.** Each user follows the announcement channels they care about into a server of their own, adds a bot they create there, and the app reads that server: a setup wizard, channels picked from a list, reposted embeds read with their original server, posts tied to games through the Discord links Fetch Metadata finds, polling every few minutes, off in Lockdown. Only announcement channels can be followed. Bots in the game servers themselves stay the later phase. Milestone 2.0.0-beta.4. [#51](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/51).
 - **Backend API.** Supabase plus a VNDB mirror, as a fallback when sources are down.
 - **Mod manager integration.** ModDB and Nexus.
 - **Community mod sharing.**
