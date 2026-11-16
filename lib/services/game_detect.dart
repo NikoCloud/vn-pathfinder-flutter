@@ -175,8 +175,12 @@ GameEngine? _detect(String path, _Listing l, {required bool allowOther}) {
     return GameEngine.html;
   }
 
-  if (anyFile((n) => n.endsWith('.swf'))) return GameEngine.flash;
-  if (files.containsKey('index.html')) return GameEngine.html;
+  // Weak signs from here on: a loose page, a Flash file or a program says
+  // little on its own. A category folder ("Finished") can hold a stray
+  // installer or readme beside the games in it, so a folder with a
+  // recognisable game inside it is a category, never a game.
+  if (anyFile((n) => n.endsWith('.swf'))) return _gameInside(path, dirs) ? null : GameEngine.flash;
+  if (files.containsKey('index.html')) return _gameInside(path, dirs) ? null : GameEngine.html;
 
   // Godot with the .pck built into the exe (the exe ends in "GDPC"). Reading
   // an exe is the costliest check here: on a network share Windows Defender
@@ -191,7 +195,7 @@ GameEngine? _detect(String path, _Listing l, {required bool allowOther}) {
   }
 
   if (allowOther) {
-    if (exes.any((n) => !_notAGameExe.hasMatch(n))) return GameEngine.other;
+    if (exes.any((n) => !_notAGameExe.hasMatch(n))) return _gameInside(path, dirs) ? null : GameEngine.other;
     // A game of unknown engine one folder down (Game/Game/Game.exe), as the
     // scanner always found. Not when the inner folder is a recognisable game:
     // that one is found on the next level, and this is just its category.
@@ -274,6 +278,21 @@ bool _isLink(String path) {
   } catch (_) {
     return true;
   }
+}
+
+/// Whether any folder directly inside [path] is a game with a known engine:
+/// then [path] is a folder of games, whatever loose files sit beside them.
+/// Only asked when a folder has nothing but weak signs of being a game.
+bool _gameInside(String path, Map<String, String> dirs) {
+  var looked = 0;
+  for (final name in dirs.values) {
+    if (name.startsWith('.') || _isEngineInternal(name.toLowerCase())) continue;
+    if (++looked > 64) break; // a folder this full is a category anyway
+    final sub = p.join(path, name);
+    final engine = _detect(sub, _list(sub), allowOther: false);
+    if (engine != null && engine != GameEngine.other && engine != GameEngine.html && engine != GameEngine.flash) return true;
+  }
+  return false;
 }
 
 /// True for folder names that are only a version ("v0.5", "0.6.1",
