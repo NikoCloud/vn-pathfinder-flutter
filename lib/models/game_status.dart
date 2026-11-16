@@ -91,12 +91,20 @@ String? _newestSaveVersion(GameGroup g) {
 }
 
 /// [candidate] is clearly a higher version than [current]: both numbered
-/// ("0.12", "v1.0") and higher, or [candidate] is "Final" and [current] isn't.
-/// A labelled version compares by its "v…" part ("Part 8 v0.114" → "v0.114").
-/// Chapter, episode, part, act, book and season versions compare by their
-/// numbers, but only against the same kind of label: "Ch.3.6.5" is newer than
-/// "Chapter-3.6", while "Chapter-3" and "0.2" never compare. Words after the
-/// numbers ("Public", "pc") don't count, so equal numbers are never newer.
+/// ("0.12", "v1.0") and higher. A labelled version compares by its "v…" part
+/// ("Part 8 v0.114" → "v0.114"). Chapter, episode, part, act, book and season
+/// versions compare by their numbers, but only against the same kind of
+/// label: "Ch.3.6.5" is newer than "Chapter-3.6", while "Chapter-3" and "0.2"
+/// never compare.
+///
+/// With the same numbers, it's newer when the site's version adds a word
+/// yours doesn't have ("1.0" → "1.0 Final", "0.5 Patreon" → "0.5 VIP",
+/// "2.0 Final" → "2.0 Final Bugfix"), when yours is a pre-release ("Alpha",
+/// "Beta", "Pre", "RC") and the site's isn't, or when a single letter after
+/// the numbers is later ("1.6c" → "1.6d"). "Public" and platform words ("PC",
+/// "Win", "Linux", "Mac", "Android") don't count: "0.9.5 Public" is the 0.9.5
+/// you have. A site's version that's only more of a pre-release ("0.5" →
+/// "0.5 Beta") isn't newer.
 bool isClearlyNewer(String candidate, String current) {
   final lc = _labelled(candidate), lcur = _labelled(current);
   if (lc != null || lcur != null) {
@@ -109,10 +117,47 @@ bool isClearlyNewer(String candidate, String current) {
   }
   final c = _numberedPart(candidate), cur = _numberedPart(current);
   if (cur.isEmpty) return false;
-  if (c.toLowerCase() == 'final') return cur.toLowerCase() != 'final';
   final numbered = RegExp(r'^v?\.?\d', caseSensitive: false);
+  // "Final" against "Final": only a fix makes it newer ("Final Fix").
+  if (c.toLowerCase().startsWith('final') && cur.toLowerCase().startsWith('final')) {
+    return _newerBuild(_wordsIn(c), _wordsIn(cur));
+  }
+  if (c.toLowerCase() == 'final') return numbered.hasMatch(cur) && !_wordsIn(cur).contains('final');
   if (!numbered.hasMatch(c) || !numbered.hasMatch(cur)) return false;
-  return compareVersionStrings(c, cur) > 0;
+  final a = _numbersIn(c), b = _numbersIn(cur);
+  if (a.length != b.length || Iterable.generate(a.length).any((i) => a[i] != b[i])) {
+    return compareVersionStrings(c, cur) > 0;
+  }
+  final ta = _afterNumbers(c), tb = _afterNumbers(cur);
+  final letter = RegExp(r'^[a-z]?$');
+  if (letter.hasMatch(ta) && letter.hasMatch(tb)) return ta.compareTo(tb) > 0;
+  return _newerBuild(_wordsIn(c), _wordsIn(cur));
+}
+
+const _preWords = {'alpha', 'beta', 'pre', 'prealpha', 'preview', 'rc', 'test', 'demo'};
+
+/// Words that say where a build is for, not what's in it.
+const _noiseWords = {'public', 'pc', 'win', 'windows', 'linux', 'mac', 'macos', 'osx', 'android', 'x', 'bit'};
+
+/// Same numbers, different words: newer when [site] adds a word [have]
+/// lacks (other than a pre-release or a noise word), or when [have] is a
+/// pre-release and [site] isn't.
+bool _newerBuild(Set<String> site, Set<String> have) {
+  final meaningful = site.difference(_noiseWords).difference(_preWords);
+  if (meaningful.difference(have).isNotEmpty) return true;
+  return have.intersection(_preWords).isNotEmpty && site.intersection(_preWords).isEmpty;
+}
+
+/// The words in a version, lowercase, without the "v" of "v0.5".
+Set<String> _wordsIn(String v) =>
+    {for (final m in RegExp('[a-z]+').allMatches(v.toLowerCase())) if (m.group(0) != 'v') m.group(0)!};
+
+List<int> _numbersIn(String v) => [for (final m in RegExp(r'\d+').allMatches(v)) int.parse(m.group(0)!)];
+
+/// What follows a version's last number, without separators, lowercase.
+String _afterNumbers(String v) {
+  final last = RegExp(r'\d+').allMatches(v).lastOrNull;
+  return (last == null ? v : v.substring(last.end)).replaceAll(RegExp(r'[-_.\s]+'), '').toLowerCase();
 }
 
 /// (kind, numbers) for a version led by a word label with no "v…" part:
