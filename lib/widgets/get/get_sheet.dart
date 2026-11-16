@@ -12,6 +12,7 @@ import '../../providers/thread_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../services/archive_cards.dart';
 import '../../services/thread_parser.dart';
+import '../../services/redirect_guard.dart' show siteOf;
 import '../../theme.dart';
 import '../../utils/formatters.dart';
 import '../common/art.dart';
@@ -507,6 +508,34 @@ class _SitePanel extends ConsumerWidget {
             ],
           ),
         ),
+        if (browser.blocked != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+              decoration: BoxDecoration(
+                color: AppColors.bgSecondary,
+                border: Border.all(color: AppColors.border),
+                borderRadius: AppRadius.borderMd,
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.block, size: 14, color: AppColors.textMuted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Stopped the page from sending you to ${siteOf(browser.blocked!)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.ui(fontSize: 12.5, color: AppColors.textSecondary),
+                    ),
+                  ),
+                  VpButton(label: 'Go there anyway', small: true, tone: VpTone.quiet, onTap: browser.goAnyway),
+                  VpIconButton(icon: Icons.close, tooltip: 'Dismiss', onTap: browser.dismissBlocked),
+                ],
+              ),
+            ),
+          ),
         const SizedBox(height: 10),
         Expanded(
           child: Padding(
