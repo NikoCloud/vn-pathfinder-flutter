@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
+
+import '../models/version_stats.dart';
 
 /// Local fetch for Ren'Py (#25): a game's name, version and menu art read
 /// from its own files, with nothing sent anywhere. Scripts are read the way
@@ -1299,4 +1302,200 @@ class _CappedSink implements Sink<List<int>> {
 
   @override
   void close() {}
+}
+
+// ── Version stats (#44) ──────────────────────────────────────────────────────
+
+const _videoExts = {'.webm', '.mp4', '.ogv', '.avi', '.mkv', '.mov', '.m4v'};
+const _audioExts = {'.ogg', '.mp3', '.wav', '.opus', '.flac', '.m4a'};
+
+/// Folders whose pictures are interface art, not scenes.
+final _uiFolder = RegExp(r'(^|/)(gui|ui|interface|menus?|icons?|buttons?|thumbs?|thumbnails?|cursors?|fonts?|frames?)(/|$)');
+
+/// Folders and names of character art: sprites, side images, portraits.
+final _spriteFolder = RegExp(r'(^|/)(sprites?|characters?|chars?|sides?|side ?images?|portraits?|avatars?|faces?|expressions?|poses?)(/|$)');
+final _spriteName = RegExp(r'^(side[ _])');
+final _musicFolder = RegExp(r'(^|/)(music|bgm|songs?)(/|$)');
+
+/// A cheap fingerprint of a version folder: the game folder's top-level files
+/// with their sizes and times. An update or a patch dropped in changes it.
+String versionSignature(Directory gameFolder) {
+  final game = Directory(p.join(gameFolder.path, 'game'));
+  final parts = <String>[];
+  try {
+    for (final f in game.listSync().whereType<File>()) {
+      final st = f.statSync();
+      parts.add('${p.basename(f.path).toLowerCase()}:${st.size}:${st.modified.millisecondsSinceEpoch}');
+    }
+  } catch (_) {}
+  parts.sort();
+  return '${parts.length}|${sha1.convert(utf8.encode(parts.join(','))).toString().substring(0, 16)}';
+}
+
+/// Counts what a Ren'Py version holds (#44): renders, video, audio and words,
+/// from its loose files and its .rpa archives. Translations (`tl/`) don't
+/// count. Words come from the compiled scripts, or the sources when a script
+/// has no compiled copy. Null when the folder isn't a Ren'Py game.
+VersionStats? countRenpyVersion(Directory gameFolder) {
+  final game = Directory(p.join(gameFolder.path, 'game'));
+  if (!game.existsSync()) return null;
+  final signature = versionSignature(gameFolder);
+
+  final archives = <RpaArchive>[];
+  var unreadable = 0;
+  DateTime? builtAt;
+  try {
+    for (final f in game.listSync().whereType<File>()) {
+      final lower = f.path.toLowerCase();
+      if (lower.endsWith('.rpa') || lower.endsWith('.rpyc')) {
+        final t = f.lastModifiedSync();
+        if (builtAt == null || t.isAfter(builtAt)) builtAt = t;
+      }
+      if (!lower.endsWith('.rpa')) continue;
+      final a = RpaArchive.open(f);
+      if (a != null) {
+        archives.add(a);
+      } else {
+        unreadable++;
+      }
+    }
+  } catch (_) {}
+  final files = _Files(game, archives);
+
+  var renders = 0, animations = 0, audio = 0, music = 0;
+  final scripts = <String, String>{};
+  for (final key in files.paths) {
+    final ext = p.extension(key);
+    final folder = p.dirname(key);
+    if (ext == '.rpy' || ext == '.rpyc') {
+      final stem = p.withoutExtension(key);
+      if (ext == '.rpyc' || !scripts.containsKey(stem)) scripts[stem] = key;
+    } else if (_videoExts.contains(ext)) {
+      if (!_uiFolder.hasMatch(folder)) animations++;
+    } else if (_audioExts.contains(ext)) {
+      audio++;
+      if (_musicFolder.hasMatch(folder)) music++;
+    } else if (_imageExts.contains(ext)) {
+      // Judged by where it is and what it's called, not by opening it: a
+      // big game has thousands of pictures, and reading each one's size
+      // takes minutes on a hard drive.
+      if (_uiFolder.hasMatch(folder) || _spriteFolder.hasMatch(folder) || _spriteName.hasMatch(p.basename(key))) continue;
+      renders++;
+    }
+  }
+
+  int? words;
+  for (final key in scripts.values) {
+    final bytes = files.read(key);
+    if (bytes == null) continue;
+    final n = key.endsWith('.rpy') ? _sourceWords(_decodeText(bytes)) : _compiledWords(bytes);
+    if (n != null) words = (words ?? 0) + n;
+  }
+
+  var folderBytes = 0;
+  try {
+    for (final e in gameFolder.listSync(recursive: true, followLinks: false)) {
+      if (e is File) folderBytes += e.lengthSync();
+    }
+  } catch (_) {}
+
+  return VersionStats(
+    renders: renders,
+    animations: animations,
+    words: words,
+    audio: audio,
+    music: music,
+    bytes: folderBytes,
+    unreadableArchives: unreadable,
+    signature: signature,
+    countedAt: DateTime.now(),
+    builtAt: builtAt,
+  );
+}
+
+/// Words in a line of dialogue: text tags (`{b}`) and substitutions
+/// (`[name]`) left out.
+int _wordsIn(String text) {
+  final plain = text.replaceAll(RegExp(r'\{[^}]*\}'), ' ').replaceAll(RegExp(r'\[[^\]]*\]'), ' ');
+  return RegExp(r"[\p{L}\p{N}][\p{L}\p{N}'’-]*", unicode: true).allMatches(plain).length;
+}
+
+/// Words said in a compiled script: every `say` statement's text.
+int? _compiledWords(Uint8List bytes) {
+  final raw = _rpycData(bytes);
+  if (raw == null) return null;
+  Object? tree;
+  try {
+    tree = Unpickler(raw).load();
+  } catch (_) {
+    return null;
+  }
+  var total = 0;
+  final seen = HashSet<Object>.identity();
+  final stack = <Object?>[tree];
+  var steps = 0;
+  while (stack.isNotEmpty && steps++ < 5000000) {
+    final o = stack.removeLast();
+    if (o == null || o is String || o is num || o is bool || o is Uint8List) continue;
+    if (!seen.add(o)) continue;
+    if (o is List) {
+      stack.addAll(o);
+    } else if (o is Map) {
+      stack.addAll(o.values);
+    } else if (o is PickledObject) {
+      if (o.cls == 'renpy.ast.Say') {
+        final what = _str(o.attrs['what']);
+        if (what != null) total += _wordsIn(what);
+        continue; // nothing else is said inside a say
+      }
+      stack
+        ..addAll(o.args)
+        ..add(o.state)
+        ..addAll(o.items)
+        ..addAll(o.entries.values);
+    }
+  }
+  return total;
+}
+
+/// Statements that start with a word and a string but aren't dialogue.
+const _notSay = {
+  'define', 'default', 'image', 'show', 'scene', 'hide', 'play', 'queue', 'stop', 'voice', 'jump', 'call',
+  'return', 'with', 'window', 'python', 'init', 'label', 'screen', 'style', 'transform', 'text', 'textbutton',
+  'imagebutton', 'add', 'key', 'action', 'tooltip', 'translate', 'old', 'new', 'menu', 'if', 'elif', 'while',
+  'renpy', 'config', 'gui', 'build', 'use', 'frame', 'vbox', 'hbox', 'font', 'size', 'color', 'background',
+  'hover', 'idle', 'insensitive', 'selected', 'ground', 'xalign', 'yalign', 'at', 'as', 'behind', 'onlayer',
+  'pause', 'camera',
+};
+
+final _sayLine = RegExp(r'^([A-Za-z_][\w.]*(?:\s+[\w-]+)*\s+)?"((?:[^"\\]|\\.)*)"(.*)$');
+final _blockStart = RegExp(r'^(init\b.*\bpython|python|screen|style|transform)\b.*:$');
+
+/// Words said in a script's source: lines of the form `e "Hello."` or
+/// `"Narration."`. Menu choices (ending in `:`), python blocks and screen
+/// code are left out.
+int _sourceWords(String text) {
+  var total = 0;
+  int? skipDeeperThan;
+  for (final rawLine in text.split(RegExp(r'\r?\n'))) {
+    final line = rawLine.trimRight();
+    final s = line.trimLeft();
+    if (s.isEmpty || s.startsWith('#')) continue;
+    final depth = line.length - s.length;
+    if (skipDeeperThan != null) {
+      if (depth > skipDeeperThan) continue;
+      skipDeeperThan = null;
+    }
+    if (_blockStart.hasMatch(s)) {
+      skipDeeperThan = depth;
+      continue;
+    }
+    final m = _sayLine.firstMatch(s);
+    if (m == null) continue;
+    if (m[3]!.trim().endsWith(':')) continue; // a menu choice
+    final who = m[1]?.trim();
+    if (who != null && _notSay.contains(who.split(RegExp(r'\s+')).first)) continue;
+    total += _wordsIn(_unescape(m[2]!));
+  }
+  return total;
 }

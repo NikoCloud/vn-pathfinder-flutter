@@ -1,6 +1,8 @@
 // UserData — schema v4 (mirrors 1.0 exactly)
 // Persisted to %APPDATA%/VN Pathfinder/userdata.json
 
+import 'version_stats.dart';
+
 /// One sitting with a game.
 class PlaySession {
   final String baseKey;
@@ -67,6 +69,11 @@ class UserData {
   final Set<String> favorites;
   final Map<String, List<String>> viewGames;
 
+  // 2.0 addition (#44): what each version holds, counted from its files, by
+  // base_key then version. Kept after a version is removed, so the history
+  // of how a game grew survives.
+  final Map<String, Map<String, VersionStats>> versionStats;
+
   // 2.0 addition: one entry per play session, newest last. 1.0 only kept
   // totals, so the weekly chart starts when this does.
   final List<PlaySession> sessions;
@@ -96,6 +103,7 @@ class UserData {
     this.muted = const {},
     this.favorites = const {},
     this.viewGames = const {},
+    this.versionStats = const {},
     this.sessions = const [],
   });
 
@@ -144,6 +152,14 @@ class UserData {
               for (final e in (json['tags'] as Map? ?? {}).entries)
                 if ((e.value as List? ?? []).any((t) => '$t'.trim().toLowerCase() == 'favorite')) '${e.key}',
             },
+      versionStats: {
+        for (final e in (json['version_stats'] as Map? ?? {}).entries)
+          if (e.value is Map)
+            '${e.key}': {
+              for (final v in (e.value as Map).entries)
+                if (v.value is Map) '${v.key}': VersionStats.fromJson(v.value as Map),
+            },
+      },
       viewGames: (json['view_games'] as Map? ?? {})
           .map((k, v) => MapEntry('$k', List<String>.from(v as List? ?? []))),
       sessions: (json['sessions'] as List? ?? [])
@@ -175,6 +191,9 @@ class UserData {
     'muted': muted.toList()..sort(),
     'favorites': favorites.toList()..sort(),
     'view_games': viewGames,
+    'version_stats': {
+      for (final e in versionStats.entries) e.key: {for (final v in e.value.entries) v.key: v.value.toJson()},
+    },
     'sessions': sessions.map((s) => s.toJson()).toList(),
   };
 
@@ -200,6 +219,7 @@ class UserData {
     Set<String>? muted,
     Set<String>? favorites,
     Map<String, List<String>>? viewGames,
+    Map<String, Map<String, VersionStats>>? versionStats,
     List<PlaySession>? sessions,
   }) => UserData(
     notes: notes ?? this.notes,
@@ -223,6 +243,7 @@ class UserData {
     muted: muted ?? this.muted,
     favorites: favorites ?? this.favorites,
     viewGames: viewGames ?? this.viewGames,
+    versionStats: versionStats ?? this.versionStats,
     sessions: sessions ?? this.sessions,
   );
 

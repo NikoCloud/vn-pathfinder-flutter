@@ -40,6 +40,7 @@ import '../../services/old_versions.dart';
 import '../../services/disk_space.dart' show formatBytes;
 import '../../providers/downloads_provider.dart' show extractRequestsProvider;
 import '../../providers/notification_provider.dart';
+import 'version_stats_view.dart';
 
 /// The full-window game page, over whichever tab opened it.
 class GamePage extends ConsumerWidget {
@@ -200,6 +201,8 @@ class _GameViewState extends ConsumerState<GameView> {
       if (shots.isNotEmpty) _Section(title: 'Screenshots', child: _Shots(shots: shots)),
       if (fetchedTags.isNotEmpty || g != null)
         _Section(title: 'Tags', child: _Tags(group: g, fetched: fetchedTags)),
+      if (g != null && showsVersionStats(g, ref.watch(userDataProvider.select((u) => u.versionStats[g.baseKey]))))
+        _Section(title: "What's in it", child: VersionStatsView(group: g)),
       if (g != null && keptDownloads(g.baseKey, ref.watch(libraryDirsProvider)).isNotEmpty)
         _Section(title: 'Kept downloads', child: _KeptDownloads(group: g)),
       if (g != null)

@@ -14,6 +14,7 @@ import '../services/scanner_service.dart';
 import 'notification_provider.dart';
 import 'settings_provider.dart';
 import '../utils/app_paths.dart';
+import '../models/version_stats.dart';
 
 // ── Image Epoch ───────────────────────────────────────────────────────────────
 
@@ -130,6 +131,16 @@ class UserDataNotifier extends StateNotifier<UserData> {
       );
     });
   }
+
+  /// What [versionStr] of a game holds, as last counted (#44).
+  VersionStats? statsFor(String baseKey, String versionStr) => state.versionStats[baseKey]?[versionStr];
+
+  void recordVersionStats(String baseKey, String versionStr, VersionStats stats) => update((ud) => ud.copyWith(
+        versionStats: {
+          ...ud.versionStats,
+          baseKey: {...?ud.versionStats[baseKey], versionStr: stats},
+        },
+      ));
 
   /// Saves carried from [versionStr]'s folder into a newer one would make the
   /// newer version look played (#52). Unless a version was already launched
