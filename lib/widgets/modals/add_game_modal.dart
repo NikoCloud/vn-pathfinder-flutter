@@ -352,10 +352,12 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
         _extractionProgress = 0.1; // Initial kick
       });
 
+      var extracted = false;
       try {
         await ScannerService.extractArchive(_selectedFile!, targetDir, onProgress: (pr) {
           if (mounted && pr.bytesTotal > 0) setState(() => _extractionProgress = 0.1 + 0.85 * pr.bytesDone / pr.bytesTotal);
         });
+        extracted = true;
         setState(() => _extractionProgress = 1.0);
         
         // Now scan the extracted folder
@@ -373,9 +375,17 @@ class _AddGameModalState extends ConsumerState<AddGameModal> {
           }
         }
       } catch (e) {
+        // The folder didn't exist before, so a half-unpacked one is ours to
+        // remove; otherwise trying again says it already exists (#35).
+        if (!extracted) {
+          try {
+            if (targetDir.existsSync()) await targetDir.delete(recursive: true);
+          } catch (_) {}
+        }
+        if (!mounted) return;
         setState(() {
           _extracting = false;
-          _error = 'Extraction failed: $e';
+          _error = extracted ? 'Reading the game failed: $e' : 'Extraction failed: $e';
         });
         return;
       }

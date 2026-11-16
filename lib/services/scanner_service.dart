@@ -485,9 +485,26 @@ int? _folderTime(Directory? d) {
   }
 }
 
+/// When a saves folder last changed: the folder's own time, or Ren'Py's
+/// `persistent` file's if that's later. On FAT and exFAT drives a folder's
+/// time may not move when a save is written, but Ren'Py rewrites
+/// `persistent` every time the game runs, so it still catches play (#35).
+int? _savesTime(Directory? d) {
+  final folder = _folderTime(d);
+  if (folder == null || d == null) return folder;
+  try {
+    final st = File(p.join(d.path, 'persistent')).statSync();
+    if (st.type == FileSystemEntityType.notFound) return folder;
+    final t = st.modified.millisecondsSinceEpoch;
+    return t > folder ? t : folder;
+  } catch (_) {
+    return folder;
+  }
+}
+
 SaveInfo _savesWithCache(Directory local, Directory? appdata, GameEngine engine, Map? cached,
     void Function(Map<String, dynamic>)? onCache) {
-  final localTime = _folderTime(local), appdataTime = _folderTime(appdata);
+  final localTime = _savesTime(local), appdataTime = _savesTime(appdata);
   SaveInfo? saves;
   // Reused only when everything matches; any doubt means a full read.
   if (cached != null &&
@@ -736,15 +753,17 @@ class ScannerService {
   /// The quick pass for a normal start: only the games the cache knows,
   /// with saves reread where their timestamps changed. No searching, no
   /// archives; the full search follows and catches anything new or moved.
+  /// A library folder in [noSubfolders] only shows games right inside it,
+  /// as the full search would (#35).
   static Future<ScanResult> scanCached(List<Directory> libraryDirs, Map<String, dynamic> cache,
-      {Map<String, String> merges = const {}}) {
+      {Map<String, String> merges = const {}, Set<String> noSubfolders = const {}}) {
     return Isolate.run(() {
       final versions = <GameVersion>[];
       final next = <String, dynamic>{};
       final roots = [for (final d in libraryDirs) d.path];
       for (final entry in cache.entries) {
         final path = entry.key;
-        if (!roots.any((r) => p.isWithin(r, path))) continue;
+        if (!roots.any((r) => noSubfolders.contains(r) ? p.equals(p.dirname(path), r) : p.isWithin(r, path))) continue;
         final dir = Directory(path);
         if (!dir.existsSync()) continue;
         final e = entry.value;
