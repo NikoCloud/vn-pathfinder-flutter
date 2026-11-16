@@ -10,6 +10,9 @@ import '../../providers/notification_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/thread_provider.dart';
 import '../../providers/update_provider.dart';
+import '../../providers/release_history_provider.dart';
+import '../../models/game_status.dart' show isClearlyNewer;
+import '../../services/update_check_service.dart' show UpdateCheckService;
 import '../../services/archive_cards.dart';
 import '../../services/thread_parser.dart';
 import '../../services/redirect_guard.dart' show siteOf;
@@ -104,6 +107,35 @@ List<ThreadSource> threadSources(RawFeedItem? item, GameGroup? group, WidgetRef 
   return out;
 }
 
+/// The version each site has, as far as the app knows without asking: the
+/// newest release the Feed's history saw in that site's thread, and for
+/// F95Zone also its daily version check. A site with nothing known is left
+/// out.
+Map<String, String> siteVersions(List<ThreadSource> sources, WidgetRef ref) {
+  final history = ref.read(releaseHistoryProvider).history;
+  final check = ref.read(updateCheckProvider);
+  final out = <String, String>{};
+  for (final s in sources) {
+    final id = UpdateCheckService.threadId(s.url);
+    if (id == null) continue;
+    var best = s.source == 'f95zone' ? check.f95Versions[id] : null;
+    for (final e in history.forThread(s.source, id)) {
+      if (e.version.isNotEmpty && (best == null || isClearlyNewer(e.version, best))) best = e.version;
+    }
+    if (best != null) out[s.source] = best;
+  }
+  return out;
+}
+
+/// The newest of [versions], or null when there are none.
+String? newestOf(Iterable<String> versions) {
+  String? best;
+  for (final v in versions) {
+    if (best == null || isClearlyNewer(v, best)) best = v;
+  }
+  return best;
+}
+
 class _GetSheet extends ConsumerStatefulWidget {
   final String title;
   final RawFeedItem? item;
@@ -124,7 +156,18 @@ class _GetSheet extends ConsumerStatefulWidget {
 }
 
 class _GetSheetState extends ConsumerState<_GetSheet> {
-  late ThreadSource _source = widget.sources.first;
+  late final Map<String, String> _versions = siteVersions(widget.sources, ref);
+
+  /// A site that has the newest version known, so an update isn't got from
+  /// a site that doesn't have it yet.
+  late ThreadSource _source = () {
+    final newest = newestOf(_versions.values);
+    if (newest == null) return widget.sources.first;
+    return widget.sources.firstWhere(
+      (s) => _versions[s.source] != null && !isClearlyNewer(newest, _versions[s.source]!),
+      orElse: () => widget.sources.first,
+    );
+  }();
   String? _platform;
   bool _inSite = false;
   bool _keepOld = true;
@@ -201,6 +244,36 @@ class _GetSheetState extends ConsumerState<_GetSheet> {
     );
   }
 
+  /// Says when the chosen site doesn't have the newest version another site
+  /// has, or which sites are still behind it.
+  Widget? _behindNote() {
+    final newest = newestOf(_versions.values);
+    if (newest == null) return null;
+    final mine = _versions[_source.source];
+    final ahead = [for (final s in widget.sources) if (_versions[s.source] case final v? when !isClearlyNewer(newest, v)) siteName(s.source)];
+    final String text;
+    if (mine != null && isClearlyNewer(newest, mine)) {
+      text = '${siteName(_source.source)} still has ${fmtVersion(mine)}. ${fmtVersion(newest)} is on ${ahead.join(' and ')}.';
+    } else if (ahead.length < _versions.length) {
+      final behind = [for (final s in widget.sources) if (_versions[s.source] case final v? when isClearlyNewer(newest, v)) '${siteName(s.source)} (${fmtVersion(v)})'];
+      text = 'Only ${ahead.join(' and ')} ${ahead.length == 1 ? 'has' : 'have'} ${fmtVersion(newest)} so far. Behind: ${behind.join(', ')}.';
+    } else {
+      return null;
+    }
+    final warn = mine != null && isClearlyNewer(newest, mine);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(warn ? Icons.info_outline : Icons.check_circle_outline, size: 15, color: warn ? AppColors.warning : AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(child: Text(text, style: AppText.meta(color: warn ? AppColors.textPrimary : AppColors.textMuted))),
+        ],
+      ),
+    );
+  }
+
   Widget _choices() {
     final thread = ref.watch(threadProvider(_source.url));
     final installed = widget.group?.latestVersion;
@@ -215,12 +288,16 @@ class _GetSheetState extends ConsumerState<_GetSheet> {
         heading('Site'),
         _Picker<ThreadSource>(
           value: _source,
-          options: [for (final s in widget.sources) (s, siteName(s.source))],
+          options: [
+            for (final s in widget.sources)
+              (s, _versions[s.source] == null ? siteName(s.source) : '${siteName(s.source)}  ${fmtVersion(_versions[s.source]!)}'),
+          ],
           onChanged: (s) => setState(() {
             _source = s;
             _platform = null;
           }),
         ),
+        ?_behindNote(),
         const SizedBox(height: 18),
       ],
       ...thread.when(
