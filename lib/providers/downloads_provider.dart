@@ -337,7 +337,12 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
     }
     try {
       checkNotInUse(folder);
+      final hadSaves = savesIn(folder).isNotEmpty;
       carrySaves(folder, newFolder);
+      final baseKey = job.baseKey;
+      if (hadSaves && baseKey != null) {
+        _ref.read(userDataProvider.notifier).savesCarriedFrom(baseKey, job.keepVersion);
+      }
       final archive = job.keepArchive;
       if (archive != null && File(archive).existsSync()) {
         stashArchive(

@@ -13,6 +13,7 @@ import '../services/library_cache.dart';
 import '../services/scanner_service.dart';
 import 'notification_provider.dart';
 import 'settings_provider.dart';
+import '../utils/app_paths.dart';
 
 // ── Image Epoch ───────────────────────────────────────────────────────────────
 
@@ -24,8 +25,7 @@ final imageEpochProvider = StateProvider<int>((ref) => 0);
 // ── UserData Provider ─────────────────────────────────────────────────────────
 
 File _userdataFile() {
-  final appdata = Platform.environment['APPDATA'] ?? '';
-  return File(p.join(appdata, 'VN Pathfinder', 'userdata.json'));
+  return File(appDataPath('userdata.json'));
 }
 
 class UserDataNotifier extends StateNotifier<UserData> {
@@ -129,6 +129,14 @@ class UserDataNotifier extends StateNotifier<UserData> {
         sessions: [...ud.sessions, PlaySession(baseKey, DateTime.now(), seconds)],
       );
     });
+  }
+
+  /// Saves carried from [versionStr]'s folder into a newer one would make the
+  /// newer version look played (#52). Unless a version was already launched
+  /// from the app, the one the saves came from counts as the last played.
+  void savesCarriedFrom(String baseKey, String versionStr) {
+    if (versionStr.isEmpty || state.lastPlayedVersion.containsKey(baseKey)) return;
+    update((ud) => ud.copyWith(lastPlayedVersion: {...ud.lastPlayedVersion, baseKey: versionStr}));
   }
 
   void setWatching(String titleKey, bool watching) => update((ud) => ud.copyWith(
@@ -398,7 +406,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       if (!_quickDone && cache.isNotEmpty) {
         _quickDone = true;
         try {
-          final quick = await ScannerService.scanCached(libraryDirs, cache, merges: ud.gameMerges);
+          final quick = await ScannerService.scanCached(libraryDirs, cache,
+              merges: ud.gameMerges, noSubfolders: _ref.read(settingsProvider).noSubfolderDirs.toSet());
           ScannerService.autoDetectPatches(quick.groups, ud);
           if (quick.groups.isNotEmpty) _update((s) => s.copyWith(groups: quick.groups));
         } catch (e) {
