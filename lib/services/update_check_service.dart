@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/feed_item.dart';
 import '../models/game_group.dart';
 import '../models/game_status.dart';
 import '../models/game_version.dart';
+import 'release_history.dart';
 
 /// One game from F95Zone's title search. [rating] is out of 5; 0 means none.
 typedef F95Row = ({int id, String title, String version, double rating, String creator});
@@ -11,9 +11,25 @@ typedef F95Row = ({int id, String title, String version, double rating, String c
 /// A newer version of a library game spotted on a forum.
 class AvailableUpdate {
   final String version;
-  final String source; // 'f95zone' | 'lewdcorner' | 'azc'
-  final String url; // the game's thread, for downloading
-  const AvailableUpdate({required this.version, required this.source, required this.url});
+  final String source; // 'f95zone' | 'lewdcorner' | 'azc': the site that posted it first
+  final String url; // the game's thread there, for downloading
+  final DateTime? postedAt;
+
+  /// Every site known to have this version, site → thread link.
+  final Map<String, String> sites;
+
+  /// False when the game was matched by title alone, without its developer
+  /// confirming it: shown as a possible update to check, never counted.
+  final bool confirmed;
+
+  const AvailableUpdate({
+    required this.version,
+    required this.source,
+    required this.url,
+    this.postedAt,
+    this.sites = const {},
+    this.confirmed = true,
+  });
 
   String get sourceLabel => switch (source) {
         'f95zone' => 'F95Zone',
@@ -160,52 +176,114 @@ class UpdateCheckService {
     return null;
   }
 
-  /// Library games with a newer version than the newest one installed:
-  /// first from F95Zone's checker ([f95Versions], by thread ID), then from
-  /// feed items whose thread matches a game's saved link for that forum.
-  /// Only clearly newer versions count (see [isClearlyNewer]).
-  static Map<String, AvailableUpdate> availableUpdates(
-    Iterable<GameGroup> groups,
-    Map<int, String> f95Versions,
-    Map<String, int> titleLinks,
-    Iterable<RawFeedItem> feedItems,
-    String? Function(RawFeedItem) feedVersion,
-  ) {
-    // Newest feed version per (source, thread): items arrive newest-first.
-    final fromFeed = <(String, int), (String, String)>{};
-    for (final item in feedItems) {
-      final id = threadId(item.url);
-      final version = feedVersion(item);
-      if (id == null || version == null || version.isEmpty) continue;
-      fromFeed.putIfAbsent((item.source, id), () => (version, item.url));
-    }
-
-    final updates = <String, AvailableUpdate>{};
+  /// Library games with a newer version than the newest one installed, one
+  /// alert per game. Versions come from F95Zone's checker ([f95Versions], by
+  /// thread) and from the release history the Feed keeps for all three
+  /// sites ([history]). The newest version wins; when sites have the same
+  /// version, the alert points to the one that posted it first, the same
+  /// fair race the Feed uses. Only clearly newer versions count (see
+  /// [isClearlyNewer]).
+  ///
+  /// A game counts when it's matched by a saved thread link, or by a title
+  /// search whose thread [confirmedTitleLink] accepts (its creator is the
+  /// game's developer). Matches by title alone go to `possible` instead.
+  static ({Map<String, AvailableUpdate> confirmed, Map<String, AvailableUpdate> possible}) findUpdates({
+    required Iterable<GameGroup> groups,
+    required Map<int, String> f95Versions,
+    required Map<String, int> titleLinks,
+    required int? Function(GameGroup) confirmedTitleLink,
+    required ReleaseHistory history,
+  }) {
+    final confirmed = <String, AvailableUpdate>{};
+    final possible = <String, AvailableUpdate>{};
     for (final g in groups) {
       final installed = g.latestVersion?.versionStr ?? '';
       if (installed.isEmpty) continue;
-      final links = {
-        'f95zone': g.newestMeta((v) => v.metaF95Url),
-        'lewdcorner': g.newestMeta((v) => v.metaLcUrl),
-        'azc': g.newestMeta((v) => v.metaAzcUrl),
-      };
+      final sure = <AvailableUpdate>[], unsure = <AvailableUpdate>[];
 
-      final f95Id = threadId(links['f95zone']!) ?? titleLinks[g.baseKey];
-      final f95 = f95Id == null ? null : f95Versions[f95Id];
-      if (f95 != null && isClearlyNewer(f95, installed)) {
-        final url = links['f95zone']!.isNotEmpty ? links['f95zone']! : 'https://f95zone.to/threads/$f95Id/';
-        updates[g.baseKey] = AvailableUpdate(version: f95, source: 'f95zone', url: url);
-        continue;
+      void fromEntry(ReleaseEntry e, List<AvailableUpdate> into, bool ok) {
+        final first = e.earliest;
+        if (first == null || e.version.isEmpty) return;
+        into.add(AvailableUpdate(
+          version: e.version,
+          source: first.key,
+          url: first.value.url,
+          postedAt: first.value.postedAt,
+          sites: {for (final s in e.sites.entries) s.key: s.value.url},
+          confirmed: ok,
+        ));
       }
-      for (final MapEntry(key: source, value: link) in links.entries) {
+
+      void fromChecker(int id, List<AvailableUpdate> into, bool ok, String link) {
+        final v = f95Versions[id];
+        if (v == null) return;
+        final url = link.isNotEmpty ? link : 'https://f95zone.to/threads/$id/';
+        into.add(AvailableUpdate(version: v, source: 'f95zone', url: url, sites: {'f95zone': url}, confirmed: ok));
+      }
+
+      final seen = <ReleaseEntry>{};
+      for (final (site, link) in [
+        ('f95zone', g.newestMeta((v) => v.metaF95Url)),
+        ('lewdcorner', g.newestMeta((v) => v.metaLcUrl)),
+        ('azc', g.newestMeta((v) => v.metaAzcUrl)),
+      ]) {
         final id = threadId(link);
-        final hit = id == null ? null : fromFeed[(source, id)];
-        if (hit != null && isClearlyNewer(hit.$1, installed)) {
-          updates[g.baseKey] = AvailableUpdate(version: hit.$1, source: source, url: hit.$2);
-          break;
+        if (id == null) continue;
+        if (site == 'f95zone') fromChecker(id, sure, true, link);
+        for (final e in history.forThread(site, id)) {
+          if (seen.add(e)) fromEntry(e, sure, true);
         }
       }
+      final titleId = threadId(g.newestMeta((v) => v.metaF95Url)) == null ? titleLinks[g.baseKey] : null;
+      if (titleId != null) {
+        final ok = confirmedTitleLink(g) == titleId;
+        fromChecker(titleId, ok ? sure : unsure, ok, '');
+        for (final e in history.forThread('f95zone', titleId)) {
+          if (seen.add(e)) fromEntry(e, ok ? sure : unsure, ok);
+        }
+      }
+      for (final e in history.forTitle(g.effectiveTitle)) {
+        if (seen.add(e)) fromEntry(e, unsure, false);
+      }
+
+      final best = _newest(sure, installed, history, g.effectiveTitle);
+      if (best != null) {
+        confirmed[g.baseKey] = best;
+      } else {
+        final maybe = _newest(unsure, installed, history, g.effectiveTitle);
+        if (maybe != null) possible[g.baseKey] = maybe;
+      }
     }
-    return updates;
+    return (confirmed: confirmed, possible: possible);
+  }
+
+  /// The newest of [candidates] that's clearly newer than [installed]; for
+  /// the same version, the earliest post. A version only F95Zone's checker
+  /// reported takes the history's sites and date for it when the Feed saw it.
+  static AvailableUpdate? _newest(List<AvailableUpdate> candidates, String installed, ReleaseHistory history, String title) {
+    AvailableUpdate? best;
+    for (final c in candidates) {
+      if (!isClearlyNewer(c.version, installed)) continue;
+      if (best == null || isClearlyNewer(c.version, best.version)) {
+        best = c;
+        continue;
+      }
+      if (isClearlyNewer(best.version, c.version)) continue;
+      // The same version: the earlier post wins, a dated one over an undated.
+      final a = c.postedAt, b = best.postedAt;
+      if (a != null && (b == null || a.isBefore(b))) best = c;
+    }
+    if (best == null || best.postedAt != null) return best;
+    final known = history.release(title, best.version);
+    final first = known?.earliest;
+    if (known == null || first == null) return best;
+    return AvailableUpdate(
+      version: best.version,
+      source: first.key,
+      url: first.value.url,
+      postedAt: first.value.postedAt,
+      sites: {...best.sites, for (final s in known.sites.entries) s.key: s.value.url},
+      confirmed: best.confirmed,
+    );
   }
 }

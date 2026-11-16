@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/game_group.dart';
 import '../services/update_check_service.dart';
 import 'feed_provider.dart';
+import 'release_history_provider.dart';
 import 'library_provider.dart';
 import 'settings_provider.dart';
 import '../utils/app_paths.dart';
@@ -73,12 +74,16 @@ class UpdateCheckState {
       );
 }
 
-/// Keeps library games' F95Zone versions current — after each library scan,
-/// at most every [_maxAge]:
-///   1. games without a saved F95Zone link get one looked up by title (once;
-///      no unique match is retried after [_retryMisses]), one request a
-///      second in the background;
-///   2. F95Zone's checker is asked for the version of every linked thread.
+/// Keeps fetched games' F95Zone versions current — after a library scan, at
+/// most once a day ([_maxAge]):
+///   1. fetched games without a saved F95Zone link get one looked up by their
+///      fetched title (once; no unique match is retried after
+///      [_retryMisses]), one request a second in the background;
+///   2. F95Zone's checker is asked for the version of every linked thread,
+///      50 to a request.
+/// Games that were never fetched aren't asked about: their folder name makes
+/// a poor title and a likely wrong match. Everything else comes from the Feed
+/// and its release history, which reads all three sites anyway.
 /// Cached at %APPDATA%\VN Pathfinder\update_check.json so badges survive
 /// restarts. Nothing is sent in lockdown or with Game Update Checks off.
 class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
@@ -104,12 +109,9 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
     super.dispose();
   }
 
-  static const _maxAge = Duration(hours: 6);
+  static const _maxAge = Duration(days: 1);
   static const _feedWait = Duration(minutes: 10);
   static const _retryMisses = Duration(days: 7);
-  static const _ratingMaxAge = Duration(days: 7);
-  static const _ratingsPerCheck = 20;
-  static const _ratingGap = Duration(seconds: 3);
 
   static File get _cacheFile => File(appDataPath('update_check.json'));
 
@@ -160,7 +162,8 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
     if (!mounted || state.checking || !_allowed) return;
     final last = state.checkedAt;
     if (!force && last != null && DateTime.now().difference(last) < _maxAge) return;
-    final groups = _ref.read(libraryProvider).groups.where((g) => g.versions.isNotEmpty).toList();
+    // Only games that have been fetched (Local counts): see the class comment.
+    final groups = _ref.read(libraryProvider).groups.where((g) => g.versions.isNotEmpty && !g.isUnfetched).toList();
     if (groups.isEmpty) return;
 
     state = state.copyWith(checking: true);
@@ -180,51 +183,10 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
       _saveCache();
       debugPrint('Game update check: ${versions.length} F95Zone threads '
           '(${state.titleLinks.length} found by title)');
-      await _refreshRatings(groups);
     } catch (e) {
       debugPrint('Game update check failed: $e');
       if (mounted) state = state.copyWith(checking: false, error: '$e');
     }
-  }
-
-  /// Ratings only come from F95Zone's title search, one game at a time, and
-  /// F95Zone refuses that search after a burst. So each check looks up a few
-  /// games, the longest wait first, and stops at the first failure. The rest
-  /// stay due for the next check.
-  Future<void> _refreshRatings(List<GameGroup> groups) async {
-    final byThread = <int, GameGroup>{};
-    for (final g in groups) {
-      final id = UpdateCheckService.threadId(g.newestMeta((v) => v.metaF95Url)) ?? state.titleLinks[g.baseKey];
-      if (id != null) byThread[id] = g;
-    }
-    final now = DateTime.now();
-    final due = UpdateCheckService.ratingsDue(byThread.keys, state.ratingLookups, now, _ratingMaxAge);
-    final ratings = Map<int, double>.from(state.f95Ratings);
-    final lookups = Map<int, DateTime>.from(state.ratingLookups);
-    var searches = 0;
-    for (final id in due) {
-      if (searches >= _ratingsPerCheck) break;
-      if (!mounted || !_allowed) return;
-      // One search returns many games, so an earlier one may have covered this.
-      if (lookups[id] != state.ratingLookups[id]) continue;
-      final queries = UpdateCheckService.searchQueries(byThread[id]!.effectiveTitle);
-      if (queries.isEmpty) continue;
-      try {
-        for (final row in await UpdateCheckService.searchF95(queries.first)) {
-          if (row.rating > 0) ratings[row.id] = row.rating;
-          lookups[row.id] = now;
-        }
-        lookups[id] = now;
-      } catch (e) {
-        debugPrint('Game rating check stopped: $e');
-        break;
-      }
-      searches++;
-      await Future.delayed(_ratingGap);
-    }
-    if (!mounted || searches == 0) return;
-    state = state.copyWith(f95Ratings: ratings, ratingLookups: lookups);
-    _saveCache();
   }
 
   /// Looks up F95Zone threads by title for games without a saved link.
@@ -291,30 +253,57 @@ final updateCheckProvider = StateNotifierProvider<UpdateCheckNotifier, UpdateChe
   (ref) => UpdateCheckNotifier(ref),
 );
 
-/// Each game's rating out of 5, by baseKey: F95Zone's current rating when
-/// known, otherwise the one Fetch Metadata saved. Unrated games aren't listed.
+/// Each game's rating out of 5, by baseKey: from the newest release of it the
+/// Feed has seen with a rating (F95Zone and LewdCorner list one), otherwise
+/// the one Fetch Metadata saved, otherwise the last one looked up before the
+/// app stopped searching for ratings. Unrated games aren't listed.
 final gameRatingsProvider = Provider<Map<String, double>>((ref) {
   final check = ref.watch(updateCheckProvider);
-  return {
-    for (final g in ref.watch(libraryGroupsProvider))
-      if ((check.f95Ratings[UpdateCheckService.threadId(g.newestMeta((v) => v.metaF95Url)) ??
-                  check.titleLinks[g.baseKey]] ??
-              g.storedRating) >
-          0)
-        g.baseKey: check.f95Ratings[UpdateCheckService.threadId(g.newestMeta((v) => v.metaF95Url)) ??
-                check.titleLinks[g.baseKey]] ??
-            g.storedRating,
-  };
+  final history = ref.watch(releaseHistoryProvider).history;
+  final out = <String, double>{};
+  for (final g in ref.watch(libraryGroupsProvider)) {
+    double fromFeed = 0;
+    DateTime? newest;
+    final threads = [
+      ('f95zone', UpdateCheckService.threadId(g.newestMeta((v) => v.metaF95Url)) ?? matchedTitleLink(check, g)),
+      ('lewdcorner', UpdateCheckService.threadId(g.newestMeta((v) => v.metaLcUrl))),
+    ];
+    for (final (site, id) in threads) {
+      if (id == null) continue;
+      for (final e in history.forThread(site, id)) {
+        if (e.rating > 0 && (newest == null || e.releasedAt.isAfter(newest))) {
+          fromFeed = e.rating;
+          newest = e.releasedAt;
+        }
+      }
+    }
+    final f95Id = threads.first.$2;
+    final rating = fromFeed > 0
+        ? fromFeed
+        : g.storedRating > 0
+            ? g.storedRating
+            : (f95Id == null ? 0.0 : check.f95Ratings[f95Id] ?? 0.0);
+    if (rating > 0) out[g.baseKey] = rating;
+  }
+  return out;
 });
 
-/// Library games with a newer version on a forum, by baseKey.
-final availableUpdatesProvider = Provider<Map<String, AvailableUpdate>>((ref) {
+final _updateFindingsProvider = Provider((ref) {
   final check = ref.watch(updateCheckProvider);
-  return UpdateCheckService.availableUpdates(
-    ref.watch(libraryGroupsProvider),
-    check.f95Versions,
-    check.titleLinks,
-    ref.watch(feedProvider).items,
-    extractFeedVersion,
+  return UpdateCheckService.findUpdates(
+    groups: ref.watch(libraryGroupsProvider),
+    f95Versions: check.f95Versions,
+    titleLinks: check.titleLinks,
+    confirmedTitleLink: (g) => matchedTitleLink(check, g),
+    history: ref.watch(releaseHistoryProvider).history,
   );
 });
+
+/// Library games with a newer version out, by baseKey: matched by a saved
+/// thread link or a confirmed title match. One per game, newest version,
+/// pointing to the site that posted it first.
+final availableUpdatesProvider = Provider<Map<String, AvailableUpdate>>((ref) => ref.watch(_updateFindingsProvider).confirmed);
+
+/// Newer versions found for games matched by title alone: shown on the game
+/// page as something to check, never counted as updates.
+final possibleUpdatesProvider = Provider<Map<String, AvailableUpdate>>((ref) => ref.watch(_updateFindingsProvider).possible);

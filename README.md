@@ -95,13 +95,13 @@ Set a status yourself under **Your copy** on a game's page, or from the right-cl
 
 ### Update alerts
 
-- A badge marks games with a newer version on F95Zone
+- A badge marks games with a newer version on F95Zone, LewdCorner or Azkosel's Corner, one per game: the newest version, pointing to the site that posted it first, with the others still on offer when you download
+- The Library tab counts games with an update, the same list as its **Updates** view. The Feed tab counts releases for your games since you last pressed **Mark all seen**
 - Update takes you straight to the download
 - A filter shows only games with an update
-- Checks run when your library loads and while the app stays open, at most once every 6 hours
 - An Update button in the title bar tells you when a new version of VN Pathfinder is out, and installs it (see [Updating](#updating))
 
-Games are matched by forum thread, using the link saved by Fetch Metadata. Games without a link are matched by exact title. LewdCorner and Azkosel's Corner updates are picked up from the Feed for games with a saved link to that forum.
+Updates come from the Feed, which reads all three sites, and from F95Zone's version checker once a day. The Feed keeps a plain-text history of every release it sees and which sites posted it, from the day you install the app, so an update is still known after it drops off the Feed's ten days. Games are matched by the forum thread links Fetch Metadata saved. Only games that have been fetched (Local counts) are checked with F95Zone; one without an F95Zone link is looked up there once by its fetched title, and that match only counts when the thread's creator is the game's developer. A newer version matched by title alone shows on the game page as a **Possible update** to check, and isn't counted.
 
 ### Metadata
 
@@ -198,14 +198,14 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 - **Offline by default.** Nothing goes online until you turn off Lockdown Mode.
 - **No accounts, telemetry or analytics.**
 - **Your data stays on your PC.** App data is in `%APPDATA%\VN Pathfinder\`, including the version records and thumbnails behind What changed, and each game's metadata and images are in a `.vnpf` folder inside the game. All fonts ship with the app, so nothing is fetched just to draw text.
-- **The app only contacts the services you use.** Fetch Metadata, the Feed and game pages contact the sites you've chosen. Update checks send F95Zone the forum thread IDs of your games, plus title searches for games without a saved link and, a few at a time, to refresh ratings. To stop that, turn off Game Update Checks. Update Checks asks GitHub for the list of VN Pathfinder releases when the app starts. To stop that, turn off Update Checks. Updates are only downloaded when you choose Update now.
+- **The app only contacts the services you use.** Fetch Metadata, the Feed and game pages contact the sites you've chosen. Update checks send F95Zone the forum thread IDs of your fetched games once a day, 50 to a request, plus a one-time title search for each fetched game without a saved link. Ratings come from the Feed and Fetch Metadata, with no searches of their own. To stop that, turn off Game Update Checks. Update Checks asks GitHub for the list of VN Pathfinder releases when the app starts. To stop that, turn off Update Checks. Updates are only downloaded when you choose Update now.
 - **Stored without encryption.** Forum sessions are kept on your PC as plain files.
 
 ## Known issues
 
 - LewdCorner Plus and AI+ games need a forum role. Without it, LewdCorner hides their images, and Fetch Metadata tells you so.
 - LewdCorner no longer serves the full-size files of many older attachments. When that happens, Pathfinder uses another source for the same game if it can confirm a match, and otherwise saves small thumbnails and tells you.
-- Update checks ask F95Zone directly. LewdCorner and Azkosel's Corner updates only show up through the Feed.
+- LewdCorner and Azkosel's Corner updates only show up through the Feed, so one released before you installed this version isn't known until the game's next release.
 - With a library on a network share, a server that saves new files without permission to run them stops games from launching, and Windows says access is denied. The fix is on the server: let new files be executable.
 - What changed can only compare versions recorded while they were installed, so versions removed before this release can't be compared.
 - With the MEGA desktop app installed, MEGA links download through that app, so Pathfinder can't follow them. Save the file to your library folder and it shows up in Archive, with its art if you already have the game. A game you don't have yet arrives as a plain row, without its cover or screenshots.

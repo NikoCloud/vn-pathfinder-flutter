@@ -37,7 +37,6 @@ Never built.
 - **Community mod sharing.**
 - **Localization.** Japanese, Russian and others.
 - **Patch toggles on the game page.** Patches stay in Properties for now.
-- **Direct update checks for LewdCorner and Azkosel's Corner.** They only come through the Feed today. LewdCorner's Latest Updates data could look up a whole tier, which would catch games that drop out of the 60-game feed.
 - **A LewdCorner tier filter in the Feed.** The data supports All, Standard, Plus, AI and AI+.
 - **Follow MEGA downloads made through the MEGA desktop app.** The page hands the link straight to that app, so the browser never sees a download. Updates to a game you own already show its art. For a new game, a file landing in the library while a Get is open could be matched to that game and keep its data.
 - **Search subfolders.** Several library folders shipped in 2.0.0-beta.2, with drag to reorder, downloads to the first and free space per drive. Still to do: a Search subfolders checkbox per folder, using engine signatures and a level-by-level scan (designed and tested on a real library in #13); the empty-Library nudge to turn it on; keyboard reordering (undecided); and a warning when a download is bigger than the free space. Design in [#13](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/13).
@@ -55,7 +54,7 @@ Never built.
 - **Fix wrong saved forum links.** Older auto-picks saved some links to a different game, which can affect update alerts. A check of 219 links found about seven suspects. Fetch Metadata could flag a thread whose title or developer doesn't match.
 - **Small follow-ups from the beta.3 code review.** Home can go stale on FAT and exFAT drives (untested); the quick start ignores the Search subfolders switch until the full search ends; a failed Add a game extraction leaves a partial folder. [#35](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/35).
 - **Version stats for Ren'Py games.** Renders, animations, words and audio counted from the game's own files, per version, and compared across versions to show how a game has grown. Words from compiled scripts and what counts as a render still need working out. [#44](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/44).
-- **Feed calendar view and upcoming releases.** A month or week grid of releases, from data the Feed already has. An Upcoming list like GameStoryLog's, once it's known where such dates can come from. No milestone. [#45](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/45).
+- **Feed calendar view and upcoming releases.** A month or week grid of releases, from the release history the Feed keeps since 2.0.0-beta.3.1 (`release_history.json`: every release, every site with its link and date, kept for good). An Upcoming list like GameStoryLog's, once it's known where such dates can come from. No milestone. [#45](https://github.com/NikoCloud/vn-pathfinder-flutter/issues/45).
 
 ## Platforms
 

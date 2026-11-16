@@ -19,6 +19,7 @@ import '../../providers/shell_provider.dart';
 import '../../providers/thread_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../services/scanner_service.dart';
+import '../../services/update_check_service.dart' show AvailableUpdate;
 import '../../services/thread_parser.dart';
 import '../../theme.dart';
 import '../../utils/formatters.dart';
@@ -235,6 +236,7 @@ class _GameViewState extends ConsumerState<GameView> {
       _Facts(
         group: g,
         item: item,
+        possible: g == null || update != null ? null : ref.watch(possibleUpdatesProvider)[g.baseKey],
         latest: latest,
         sources: sources,
         rating: details?.rating ?? 0,
@@ -864,6 +866,9 @@ class _Facts extends ConsumerStatefulWidget {
   final List<SupportLink> supportLinks;
   final List<OtherGameLink> otherGames;
 
+  /// A newer version found for a game matched by title alone.
+  final AvailableUpdate? possible;
+
   const _Facts({
     required this.group,
     required this.item,
@@ -873,6 +878,7 @@ class _Facts extends ConsumerStatefulWidget {
     this.developer = '',
     this.supportLinks = const [],
     this.otherGames = const [],
+    this.possible,
   });
 
   @override
@@ -942,6 +948,12 @@ class _FactsState extends ConsumerState<_Facts> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (widget.latest.isNotEmpty) VpFact(label: 'Latest', value: fmtVersion(widget.latest), mono: true),
+          if (widget.possible case final p?)
+            Tooltip(
+              message: 'A thread with this title on ${p.sourceLabel} has ${fmtVersion(p.version)}, but nothing confirms '
+                  "it's this game, so it isn't counted as an update. Fetch Metadata saves the game's thread and settles it.",
+              child: VpFact(label: 'Possible update', value: '${fmtVersion(p.version)}, title match only', mono: true),
+            ),
           VpFact(
             label: 'You have',
             value: g == null ? 'Not installed' : g.versions.map((v) => fmtVersion(v.versionStr)).join(', '),

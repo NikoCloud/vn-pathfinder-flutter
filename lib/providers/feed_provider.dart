@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/feed_item.dart';
+import '../providers/release_history_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/feed_history.dart';
 import '../services/feed_service.dart';
@@ -250,6 +251,9 @@ class FeedNotifier extends StateNotifier<FeedState> {
         items: cache.items,
         lastRefreshed: cache.lastRefreshed,
       );
+      // The saved list goes into the permanent history too, so it starts
+      // with what the Feed already knows.
+      if (mounted) _ref.read(releaseHistoryProvider).record(cache.items);
     }
 
     // 2. Check once a minute whether a refresh is due, against the clock:
@@ -343,6 +347,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       }
     }
     state = state.copyWith(items: mergeFeedItems(state.items, settled, now));
+    _ref.read(releaseHistoryProvider).record(settled);
   }
 
   /// Opens threads one at a time, so a first run takes minutes rather than
@@ -365,6 +370,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
       final now = DateTime.now();
       final item = _releases.settle(row, now, thread: thread);
       state = state.copyWith(items: mergeFeedItems(state.items, [item], now));
+      _ref.read(releaseHistoryProvider).record([item]);
       if (i % 5 == 4) await _save();
     }
     await _save();

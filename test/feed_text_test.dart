@@ -7,6 +7,7 @@ import 'package:vn_pathfinder/providers/feed_provider.dart' show mergeFeedItems;
 import 'package:vn_pathfinder/services/feed_service.dart';
 import 'package:vn_pathfinder/services/update_check_service.dart';
 import 'dart:io';
+import 'package:vn_pathfinder/services/release_history.dart';
 
 const lewdCornerBody = '''
 <img src="https://lewdcorner.com/attachments/6649368_cover-jpg.875737/" style="max-width:400px;display:block;margin-bottom:10px;" />
@@ -303,8 +304,14 @@ void main() {
   test('a LewdCorner feed item now produces an update alert', () {
     const link = 'https://lewdcorner.com/threads/game.10473/';
     final body = lewdCornerBody.replaceFirst('Chapter 1 &amp; 2 v0.13A', 'v0.5');
-    final updates = UpdateCheckService.availableUpdates(
-        [game(link, '0.4')], const {}, const {}, [item('lewdcorner', body, url: link)], extractFeedVersion);
+    final history = ReleaseHistory()..record([item('lewdcorner', body, url: link)]);
+    final updates = UpdateCheckService.findUpdates(
+      groups: [game(link, '0.4')],
+      f95Versions: const {},
+      titleLinks: const {},
+      confirmedTitleLink: (_) => null,
+      history: history,
+    ).confirmed;
     expect(updates['game']?.version, 'v0.5');
     expect(updates['game']?.source, 'lewdcorner');
   });

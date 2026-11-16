@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import '../providers/app_update_provider.dart';
+import '../providers/feed_view_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/shell_provider.dart';
@@ -22,7 +23,10 @@ class AppTitleBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(activeTabProvider);
     final page = ref.watch(gamePageProvider);
+    // Library: games with a newer version out, the same list as its Updates
+    // view. Feed: releases for your games since the last Mark all seen.
     final updates = ref.watch(availableUpdatesProvider).length;
+    final feedNew = ref.watch(feedAllRowsProvider).where((r) => r.inLibrary && r.fresh).length;
     final scanning = ref.watch(libraryProvider.select((s) => s.loading));
     final locked = ref.watch(lockdownProvider);
     // The Feed needs to go online (#15): in Lockdown its tab can't be chosen,
@@ -57,7 +61,11 @@ class AppTitleBar extends ConsumerWidget {
                     _TabButton(
                       tab: t,
                       selected: page == null && t == tab,
-                      count: t == AppTab.feed ? updates : 0,
+                      count: switch (t) {
+                        AppTab.library => updates,
+                        AppTab.feed => feedNew,
+                        _ => 0,
+                      },
                       disabled: locked && t == AppTab.feed,
                       onTap: () => open(t),
                     ),
@@ -142,7 +150,16 @@ class _TabButton extends StatelessWidget {
     return Pressable(
       onTap: onTap,
       selected: selected,
-      label: count > 0 ? '${tab.label}, $count new versions for your games' : tab.label,
+      tooltip: count == 0
+          ? null
+          : tab == AppTab.library
+              ? '$count of your games have a newer version. Library → Updates lists them'
+              : '$count releases for your games since you last marked the Feed as seen',
+      label: count == 0
+          ? tab.label
+          : tab == AppTab.library
+              ? '${tab.label}, $count of your games have a newer version'
+              : '${tab.label}, $count new releases for your games',
       radius: BorderRadius.zero,
       builder: (context, states) {
         final hot = states.contains(WidgetState.hovered);
