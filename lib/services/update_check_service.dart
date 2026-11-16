@@ -39,6 +39,21 @@ class AvailableUpdate {
       };
 }
 
+/// The site key ('f95zone', 'lewdcorner', 'azc') a forum link belongs to.
+String? forumSite(String url) {
+  final u = url.toLowerCase();
+  if (u.contains('f95zone.')) return 'f95zone';
+  if (u.contains('lewdcorner.')) return 'lewdcorner';
+  if (u.contains('azkoselscorner.')) return 'azc';
+  return null;
+}
+
+/// "site:threadId" for a forum thread link, or null for anything else.
+String? threadVersionKey(String url) {
+  final site = forumSite(url), id = UpdateCheckService.threadId(url);
+  return site == null || id == null ? null : '$site:$id';
+}
+
 /// Finds forum updates for library games, matched by forum thread ID rather
 /// than title — titles collide across games (two "Guilty Pleasure"s) and
 /// differ in punctuation, thread IDs don't.
@@ -193,6 +208,7 @@ class UpdateCheckService {
     required Map<String, int> titleLinks,
     required int? Function(GameGroup) confirmedTitleLink,
     required ReleaseHistory history,
+    Map<String, String> threadVersions = const {},
   }) {
     final confirmed = <String, AvailableUpdate>{};
     final possible = <String, AvailableUpdate>{};
@@ -230,6 +246,9 @@ class UpdateCheckService {
         final id = threadId(link);
         if (id == null) continue;
         if (site == 'f95zone') fromChecker(id, sure, true, link);
+        // What the thread showed when the app last read it.
+        final read = threadVersions['$site:$id'];
+        if (read != null) sure.add(AvailableUpdate(version: read, source: site, url: link, sites: {site: link}));
         for (final e in history.forThread(site, id)) {
           if (seen.add(e)) fromEntry(e, sure, true);
         }

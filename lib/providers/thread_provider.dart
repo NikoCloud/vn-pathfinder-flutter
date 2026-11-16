@@ -4,6 +4,7 @@ import '../services/metadata_service.dart';
 import '../services/scraping_service.dart';
 import '../services/thread_parser.dart';
 import 'settings_provider.dart';
+import 'update_provider.dart';
 
 /// A game's thread, read once per run. Nothing is requested under Lockdown.
 class ThreadInfo {
@@ -19,7 +20,12 @@ final threadProvider = FutureProvider.family<ThreadInfo?, String>((ref, url) asy
   sessions.update((n) => n + 1);
   try {
     final found = await MetadataService.fetchThread(url, ref.read(scrapingServiceProvider));
-    return found == null ? null : ThreadInfo(found.$1, found.$2);
+    if (found == null) return null;
+    final info = ThreadInfo(found.$1, found.$2);
+    // Update alerts use what the thread says too, so a game just opened or
+    // fetched doesn't wait for the daily check.
+    ref.read(updateCheckProvider.notifier).noteThreadVersion(url, info.details.version);
+    return info;
   } catch (e) {
     debugPrint('Thread read failed: $e');
     return null;

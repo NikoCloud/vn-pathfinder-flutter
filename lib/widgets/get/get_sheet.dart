@@ -119,6 +119,8 @@ Map<String, String> siteVersions(List<ThreadSource> sources, WidgetRef ref) {
     final id = UpdateCheckService.threadId(s.url);
     if (id == null) continue;
     var best = s.source == 'f95zone' ? check.f95Versions[id] : null;
+    final read = check.threadVersions['${s.source}:$id'];
+    if (read != null && (best == null || isClearlyNewer(read, best))) best = read;
     for (final e in history.forThread(s.source, id)) {
       if (e.version.isNotEmpty && (best == null || isClearlyNewer(e.version, best))) best = e.version;
     }

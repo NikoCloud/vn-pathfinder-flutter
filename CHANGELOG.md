@@ -20,6 +20,9 @@ Downloads are on the [Releases](https://github.com/NikoCloud/vn-pathfinder-flutt
 
 ### Changed
 
+- **A game you just fetched or opened gets its update badge straight away.** The version Fetch Metadata finds in a game's threads, and the one a game page or the Update sheet reads from its thread, now count for update alerts, without waiting for the daily check.
+- **Fetch Metadata's creator links start folded.** One line shows what's picked; open it to see every link and choose.
+
 - **The Update sheet says which site has the new version.** Each site shows the version it has, the sheet starts on one that has the newest, and a note says when the site you pick is still behind ("LewdCorner still has v0.4. v0.5 is on F95Zone"), so an update isn't downloaded again at the version you already have. The versions come from what the app already knows, without asking the sites again.
 - **Versions compare the way forums write them.** With the same numbers, "Public" and platform words ("PC", "Win", "Linux", "Mac", "Android") are ignored: "0.9.5 Public" is the 0.9.5 you have, where before it showed as an update. Other words still mean another build: "2.0 Final", "0.5 VIP" and "Final Bugfix" are newer than the versions without them, and a release after your Beta is newer, while more of a pre-release isn't.
 

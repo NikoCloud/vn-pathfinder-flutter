@@ -113,6 +113,21 @@ void main() {
     expect(_find(g, h, f95: {444: '0.5'}, titleLinks: {'lanternbay': 444}, titleConfirmed: true).confirmed.keys, ['lanternbay']);
   });
 
+  test('what a thread showed when the app read it counts, on any site', () {
+    final g = _game('0.6', links: {'lc_url': _lc});
+    final r = UpdateCheckService.findUpdates(
+      groups: [g],
+      f95Versions: const {},
+      titleLinks: const {},
+      confirmedTitleLink: (_) => null,
+      history: ReleaseHistory(),
+      threadVersions: const {'lewdcorner:222': 'v0.6.5'},
+    );
+    expect((r.confirmed['lanternbay']?.version, r.confirmed['lanternbay']?.source), ('v0.6.5', 'lewdcorner'));
+    expect(threadVersionKey(_azc), 'azc:333');
+    expect(threadVersionKey('https://example.test/threads/x.1/'), isNull);
+  });
+
   test('nothing newer, nothing shown', () {
     final h = ReleaseHistory()..record([_post('f95zone', _f95, '0.4', _day)]);
     final r = _find(_game('0.4', links: {'f95_url': _f95}), h, f95: {111: '0.4'});

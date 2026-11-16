@@ -14,6 +14,7 @@ import '../../services/scraping_service.dart' show ScrapingException, ScrapingSe
 import '../../services/scanner_service.dart';
 import '../../utils/formatters.dart';
 import 'local_fetch_panel.dart';
+import '../../providers/update_provider.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -655,6 +656,13 @@ class _MetadataFetchModalState extends ConsumerState<MetadataFetchModal> {
       if (primaryUrl != null) meta['source_url'] = primaryUrl;
 
       await saveGameMetadata(v.folderPath, meta);
+      // What each forum thread of this game says now counts for update
+      // alerts straight away, not after the daily check.
+      for (final MapEntry(key: provider, value: r) in _pickedByProvider.entries) {
+        if (r != null && _matches(provider, anchor) && r.version.isNotEmpty) {
+          ref.read(updateCheckProvider.notifier).noteThreadVersion(r.sourceUrl, r.version);
+        }
+      }
 
       // Download images from chosen images source
       final imgResult = imgSrc != null ? _pickedByProvider[imgSrc] : null;
@@ -1568,25 +1576,55 @@ class _TagsRow extends StatelessWidget {
 
 /// One row per creator link, ticked by default only when it was found where
 /// the developer is named, by a source that is this game (#43).
-class _LinksRow extends StatelessWidget {
+/// Creator links, folded by default: the ticked defaults are what most people
+/// want, and the full list is there to open for anyone who wants to choose.
+class _LinksRow extends StatefulWidget {
   final List<(LinkRow, bool)> rows;
   final void Function(LinkRow, bool) onToggle;
   const _LinksRow({required this.rows, required this.onToggle});
 
   @override
+  State<_LinksRow> createState() => _LinksRowState();
+}
+
+class _LinksRowState extends State<_LinksRow> {
+  var _open = false;
+
+  @override
   Widget build(BuildContext context) {
+    final rows = widget.rows;
+    final onToggle = widget.onToggle;
+    final picked = [for (final (r, on) in rows) if (on) r.platform];
+    final summary = rows.isEmpty
+        ? 'none found'
+        : picked.isEmpty
+            ? 'none picked, ${rows.length} found'
+            : '${picked.join(', ')}${rows.length > picked.length ? '  ·  ${rows.length - picked.length} more found' : ''}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Creator links',
-              style: AppText.ui(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.8)),
-          const SizedBox(height: 4),
-          if (rows.isEmpty)
-            Text('—', style: AppText.ui(fontSize: 12, color: AppColors.textMuted))
-          else ...[
+          InkWell(
+            onTap: rows.isEmpty ? null : () => setState(() => _open = !_open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(children: [
+                Text('Creator links',
+                    style: AppText.ui(
+                        fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: 0.8)),
+                if (rows.isNotEmpty)
+                  Icon(_open ? Icons.expand_more : Icons.chevron_right, size: 16, color: AppColors.textMuted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(summary,
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.ui(fontSize: 12, color: AppColors.textSecondary)),
+                ),
+              ]),
+            ),
+          ),
+          if (_open && rows.isNotEmpty) ...[
+            const SizedBox(height: 4),
             Text('One per platform is saved; the first ticked one wins.',
                 style: AppText.ui(fontSize: 11, color: AppColors.textMuted)),
             const SizedBox(height: 4),

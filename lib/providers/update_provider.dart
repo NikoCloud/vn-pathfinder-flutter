@@ -28,6 +28,12 @@ class UpdateCheckState {
   /// after [UpdateCheckNotifier._retryMisses].
   final Map<String, DateTime> titleMisses;
 
+  /// The version each thread showed the last time the app read it, for the
+  /// game page or the Get sheet ("site:threadId" → version). Those reads
+  /// happen anyway; keeping what they found means a game just fetched or
+  /// opened doesn't wait for the daily check.
+  final Map<String, String> threadVersions;
+
   /// F95Zone ratings out of 5 (thread ID → rating).
   final Map<int, double> f95Ratings;
 
@@ -43,6 +49,7 @@ class UpdateCheckState {
     this.titleLinks = const {},
     this.titleCreators = const {},
     this.titleMisses = const {},
+    this.threadVersions = const {},
     this.f95Ratings = const {},
     this.ratingLookups = const {},
     this.checkedAt,
@@ -55,6 +62,7 @@ class UpdateCheckState {
     Map<String, int>? titleLinks,
     Map<String, String>? titleCreators,
     Map<String, DateTime>? titleMisses,
+    Map<String, String>? threadVersions,
     Map<int, double>? f95Ratings,
     Map<int, DateTime>? ratingLookups,
     DateTime? checkedAt,
@@ -66,6 +74,7 @@ class UpdateCheckState {
         titleLinks: titleLinks ?? this.titleLinks,
         titleCreators: titleCreators ?? this.titleCreators,
         titleMisses: titleMisses ?? this.titleMisses,
+        threadVersions: threadVersions ?? this.threadVersions,
         f95Ratings: f95Ratings ?? this.f95Ratings,
         ratingLookups: ratingLookups ?? this.ratingLookups,
         checkedAt: checkedAt ?? this.checkedAt,
@@ -124,6 +133,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
         titleCreators: (json['title_creators'] as Map? ?? {}).map((k, v) => MapEntry('$k', '$v')),
         titleMisses: (json['title_misses'] as Map? ?? {})
             .map((k, v) => MapEntry('$k', DateTime.tryParse('$v') ?? DateTime(0))),
+        threadVersions: (json['thread_versions'] as Map? ?? {}).map((k, v) => MapEntry('$k', '$v')),
         checkedAt: DateTime.tryParse(json['checked_at'] as String? ?? ''),
         f95Ratings: (json['f95_ratings'] as Map? ?? {})
             .map((k, v) => MapEntry(int.parse('$k'), (v as num).toDouble())),
@@ -146,11 +156,21 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
         'f95': state.f95Versions.map((k, v) => MapEntry('$k', v)),
         'title_links': state.titleLinks,
         'title_creators': state.titleCreators,
+        'thread_versions': state.threadVersions,
         'title_misses': state.titleMisses.map((k, v) => MapEntry(k, v.toIso8601String())),
       }));
     } catch (e) {
       debugPrint('Game update check: cache save failed: $e');
     }
+  }
+
+  /// Keeps the version a thread showed when the app read it (see
+  /// [UpdateCheckState.threadVersions]).
+  void noteThreadVersion(String url, String version) {
+    final key = threadVersionKey(url);
+    if (!mounted || key == null || version.isEmpty || state.threadVersions[key] == version) return;
+    state = state.copyWith(threadVersions: {...state.threadVersions, key: version});
+    _saveCache();
   }
 
   bool get _allowed {
@@ -293,6 +313,7 @@ final _updateFindingsProvider = Provider((ref) {
   return UpdateCheckService.findUpdates(
     groups: ref.watch(libraryGroupsProvider),
     f95Versions: check.f95Versions,
+    threadVersions: check.threadVersions,
     titleLinks: check.titleLinks,
     confirmedTitleLink: (g) => matchedTitleLink(check, g),
     history: ref.watch(releaseHistoryProvider).history,
