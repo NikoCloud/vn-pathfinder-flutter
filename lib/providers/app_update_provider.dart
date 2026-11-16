@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/app_update_service.dart';
 import 'settings_provider.dart';
+import '../utils/app_paths.dart';
 
 enum AppUpdatePhase { idle, checking, upToDate, available, downloading, installing, failed }
 
@@ -40,7 +41,7 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
   /// Settings → Update Checks off, and silent if GitHub can't be reached.
   Future<void> checkOnStartup() async {
     final s = ref.read(settingsProvider);
-    if (s.lockdown || !s.checkUpdates) return;
+    if (isDevBuild || s.lockdown || !s.checkUpdates) return;
     await check(quiet: true);
   }
 
@@ -48,6 +49,10 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
   /// but never under Lockdown.
   Future<void> check({bool quiet = false}) async {
     if (_busy) return;
+    if (isDevBuild) {
+      state = state.copyWith(phase: AppUpdatePhase.failed, error: "This is a development build, so it doesn't update itself.");
+      return;
+    }
     if (ref.read(settingsProvider).lockdown) {
       state = state.copyWith(phase: AppUpdatePhase.failed, error: 'Lockdown is on, so nothing can be checked.');
       return;

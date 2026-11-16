@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
+import '../utils/app_paths.dart';
 
 /// Where the last full scan found each game, with its engine and save info
 /// (#13). A normal start reads only these games, then searches for anything
@@ -14,7 +14,7 @@ class LibraryCache {
   static File? fileForTesting;
 
   static File get _file =>
-      fileForTesting ?? File(p.join(Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'library_cache.json'));
+      fileForTesting ?? File(appDataPath('library_cache.json'));
 
   static const _version = 1;
 

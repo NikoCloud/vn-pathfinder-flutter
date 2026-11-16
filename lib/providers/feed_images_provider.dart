@@ -8,13 +8,14 @@ import 'package:path/path.dart' as p;
 import '../services/metadata_service.dart';
 import 'settings_provider.dart';
 import '../services/scraping_service.dart';
+import '../utils/app_paths.dart';
 
 /// Art for games you don't have yet, kept on disk at
 /// %APPDATA%\VN Pathfinder\feed_images so the Feed works offline and Lockdown
 /// can show what was already fetched. Nothing is requested under Lockdown.
 class FeedImageCache {
   static Directory get dir =>
-      Directory(p.join(Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'feed_images'));
+      Directory(appDataPath('feed_images'));
 
   static File fileFor(String url) => File(p.join(dir.path, sha1.convert(utf8.encode(url)).toString()));
 

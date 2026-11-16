@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 import '../models/feed_item.dart';
 import '../providers/settings_provider.dart';
 import '../services/feed_history.dart';
 import '../services/feed_service.dart';
 import '../services/scraping_service.dart';
+import '../utils/app_paths.dart';
 
 export '../models/feed_item.dart' show extractFeedVersion;
 
@@ -95,8 +95,7 @@ class SavedFeed {
 }
 
 File _cacheFile() {
-  final appdata = Platform.environment['APPDATA'] ?? '';
-  return File(p.join(appdata, 'VN Pathfinder', 'feed_cache.json'));
+  return File(appDataPath('feed_cache.json'));
 }
 
 Future<SavedFeed> _loadCache() async {

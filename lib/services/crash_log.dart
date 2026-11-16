@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import 'app_update_service.dart' show appVersion;
+import '../utils/app_paths.dart';
 
 /// The app's log and its crash reports (#22). Kept in
 /// `%APPDATA%\VN Pathfinder\logs`. Nothing leaves this PC: a report is only
@@ -34,7 +35,7 @@ class CrashLog {
   static set directoryForTesting(Directory? dir) => _dirOverride = dir;
 
   static Directory get logsDir =>
-      _dirOverride ?? Directory(p.join(Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'logs'));
+      _dirOverride ?? Directory(appDataPath('logs'));
 
   static File get _log => File(p.join(logsDir.path, 'app.log'));
 

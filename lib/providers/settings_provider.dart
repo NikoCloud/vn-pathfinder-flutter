@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import '../theme.dart';
+import '../utils/app_paths.dart';
 
 // ── Settings Model ────────────────────────────────────────────────────────────
 
@@ -243,8 +244,7 @@ class AppSettings {
 // ── Settings File Path ────────────────────────────────────────────────────────
 
 File _settingsFile() {
-  final appdata = Platform.environment['APPDATA'] ?? '';
-  return File(p.join(appdata, 'VN Pathfinder', 'settings.json'));
+  return File(appDataPath('settings.json'));
 }
 
 // ── Notifier ──────────────────────────────────────────────────────────────────

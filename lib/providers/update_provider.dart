@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
 import '../services/update_check_service.dart';
 import 'feed_provider.dart';
 import 'library_provider.dart';
 import 'settings_provider.dart';
+import '../utils/app_paths.dart';
 
 /// What the game update check knows.
 class UpdateCheckState {
@@ -111,8 +111,7 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
   static const _ratingsPerCheck = 20;
   static const _ratingGap = Duration(seconds: 3);
 
-  static File get _cacheFile => File(p.join(
-      Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'update_check.json'));
+  static File get _cacheFile => File(appDataPath('update_check.json'));
 
   static UpdateCheckState _loadCache() {
     try {

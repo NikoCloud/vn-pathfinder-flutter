@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as p;
+import '../utils/app_paths.dart';
 
 /// Where each archive was extracted to. Extracted folders are named from the
 /// best of the archive's and its inner folder's names (planExtractFolderName),
@@ -11,8 +11,7 @@ import 'package:path/path.dart' as p;
 class ExtractionLog {
   static Map<String, String>? _cache;
 
-  static File get _file => File(p.join(
-      Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'extractions.json'));
+  static File get _file => File(appDataPath('extractions.json'));
 
   static Map<String, String> get _entries {
     if (_cache != null) return _cache!;

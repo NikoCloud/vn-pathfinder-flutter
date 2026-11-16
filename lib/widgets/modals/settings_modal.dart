@@ -16,6 +16,7 @@ import '../../services/metadata_service.dart';
 import '../../services/scraping_service.dart';
 import 'orphan_scanner_modal.dart';
 import '../../services/crash_log.dart';
+import '../../utils/app_paths.dart';
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -2395,7 +2396,7 @@ class _AboutPanel extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Version $appVersion',
+              isDevBuild ? 'Version $appVersion, development build' : 'Version $appVersion',
               style: AppText.ui(
                   fontSize: 12, color: AppColors.textMuted),
             ),

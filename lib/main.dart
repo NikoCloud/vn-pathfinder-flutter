@@ -4,9 +4,11 @@ import 'package:window_manager/window_manager.dart';
 import 'app.dart';
 import 'services/crash_log.dart';
 import 'widgets/crash_report_prompt.dart';
+import 'utils/app_paths.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  seedDevData();
   // Before anything else, so the last run's log is read before this one writes.
   final crashReport = CrashLog.start();
 
@@ -16,7 +18,7 @@ void main() async {
     size: Size(1280, 800),
     minimumSize: Size(960, 600),
     center: true,
-    title: 'VN Pathfinder',
+    title: isDevBuild ? 'VN Pathfinder Dev' : 'VN Pathfinder',
     backgroundColor: Color(0xFF0D1017),
     titleBarStyle: TitleBarStyle.hidden,
     windowButtonVisibility: false,

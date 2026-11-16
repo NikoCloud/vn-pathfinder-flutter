@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import '../models/game_group.dart';
 import '../providers/library_provider.dart';
 import 'scanner_service.dart';
+import '../utils/app_paths.dart';
 
 /// The picture Ren'Py stores in a save, for the "pick up where you left off"
 /// shelf. Saves can show anything, so these go through GameArt like all art,
@@ -33,7 +34,7 @@ class SaveShot {
 }
 
 Directory get _cache =>
-    Directory(p.join(Platform.environment['APPDATA'] ?? '', 'VN Pathfinder', 'save_shots'));
+    Directory(appDataPath('save_shots'));
 
 /// Pulls the screenshot out of a save, once per save file version.
 Future<String?> _extract((String save, int stamp, String cacheDir) job) async {
