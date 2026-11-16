@@ -176,6 +176,26 @@ List<RawFeedItem> mergeFeedItems(
 
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
+/// A failed refresh is tried again after this long, not every minute.
+const feedRetryAfter = Duration(minutes: 15);
+
+/// Whether an automatic refresh is due: [hours] since the last one (or there
+/// never was one), and not tried in the last [feedRetryAfter]. Never with
+/// [hours] at 0, which means refreshing by hand only.
+bool feedRefreshDue({required DateTime? lastRefreshed, required DateTime? lastTry, required int hours, required DateTime now}) {
+  if (hours <= 0) return false;
+  if (lastTry != null && now.difference(lastTry) < feedRetryAfter) return false;
+  return lastRefreshed == null || !now.isBefore(lastRefreshed.add(Duration(hours: hours)));
+}
+
+/// When the next automatic refresh happens: [hours] after the last one, or
+/// now if that's passed. Null when refreshing by hand only.
+DateTime? nextFeedRefresh({required DateTime? lastRefreshed, required int hours, required DateTime now}) {
+  if (hours <= 0) return null;
+  final next = lastRefreshed?.add(Duration(hours: hours));
+  return next == null || next.isBefore(now) ? now : next;
+}
+
 class FeedNotifier extends StateNotifier<FeedState> {
   /// A thread that won't open is passed over. This many in a row means the
   /// site itself has stopped answering.
@@ -232,22 +252,34 @@ class FeedNotifier extends StateNotifier<FeedState> {
       );
     }
 
-    final settings = _ref.read(settingsProvider);
-    if (!settings.feedEnabled) return;
+    // 2. Check once a minute whether a refresh is due, against the clock:
+    //    a timer counting the interval would start from launch rather than the
+    //    last refresh, and stops counting while the PC sleeps.
+    if (!mounted) return; // closed while the saved list was loading
+    _schedule();
+    // Going online, or changing the feed settings, checks straight away.
+    _ref.listen(settingsProvider.select((s) => (s.lockdown, s.feedEnabled, s.feedRefreshHours)), (_, _) {
+      _schedule();
+      _refreshIfDue();
+    });
 
-    // 2. Start the periodic timer.
-    if (settings.feedRefreshHours > 0) {
-      _startTimer(settings.feedRefreshHours);
+    // 3. Refresh on launch if the saved list is due or from an older version.
+    if (cache.outdated && _ref.read(settingsProvider).feedEnabled) {
+      refresh();
+    } else {
+      _refreshIfDue();
     }
+  }
 
-    // 3. Auto-refresh on launch if the cache is stale (older than the interval)
-    //    or has never been fetched.
-    final lastRefreshed = cache.lastRefreshed;
-    final staleThreshold = Duration(hours: settings.feedRefreshHours);
-    final isStale = cache.outdated ||
-        lastRefreshed == null ||
-        DateTime.now().difference(lastRefreshed) >= staleThreshold;
-    if (isStale) {
+  /// When the last refresh was tried, so one that fails isn't retried every
+  /// minute.
+  DateTime? _lastTry;
+
+  void _refreshIfDue() {
+    if (!mounted || _running != null || _real != null) return;
+    final s = _ref.read(settingsProvider);
+    if (!s.feedEnabled || s.lockdown) return;
+    if (feedRefreshDue(lastRefreshed: state.lastRefreshed, lastTry: _lastTry, hours: s.feedRefreshHours, now: DateTime.now())) {
       refresh();
     }
   }
@@ -264,6 +296,7 @@ class FeedNotifier extends StateNotifier<FeedState> {
     if (_real != null) return;
     // Lockdown keeps the saved list, and "updated" would be untrue.
     if (_ref.read(settingsProvider).lockdown) return;
+    _lastTry = DateTime.now();
     state = state.copyWith(isLoading: true, error: null);
     // Acquire a scraping session so WebView2 initialises for authenticated
     // sources (F95Zone JSON API, LewdCorner/AzC if plain HTTP is blocked).
@@ -342,18 +375,22 @@ class FeedNotifier extends StateNotifier<FeedState> {
     await _saveCache(state.items, state.lastRefreshed, _releases, _sites);
   }
 
-  /// Update the auto-refresh schedule. Call when the user changes feed settings.
+  /// Call when the user changes feed settings: a refresh that's now due
+  /// starts at once. The once-a-minute check reads the settings itself.
   void updateSchedule(bool enabled, int refreshHours) {
-    _timer?.cancel();
-    _timer = null;
-    if (enabled && refreshHours > 0) {
-      _startTimer(refreshHours);
-    }
+    _schedule();
+    _refreshIfDue();
   }
 
-  void _startTimer(int hours) {
-    _timer?.cancel();
-    _timer = Timer.periodic(Duration(hours: hours), (_) => refresh());
+  /// The minute check runs while the Feed is on with automatic refresh.
+  void _schedule() {
+    final s = _ref.read(settingsProvider);
+    if (!mounted || !s.feedEnabled || s.feedRefreshHours <= 0) {
+      _timer?.cancel();
+      _timer = null;
+      return;
+    }
+    _timer ??= Timer.periodic(const Duration(minutes: 1), (_) => _refreshIfDue());
   }
 
   @override

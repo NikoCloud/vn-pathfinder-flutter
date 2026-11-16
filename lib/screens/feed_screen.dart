@@ -461,8 +461,6 @@ class _DayHead extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final feed = ref.watch(feedProvider);
     final locked = ref.watch(lockdownProvider);
-    final last = feed.lastRefreshed;
-    final when = last == null ? 'Never updated' : '${locked ? 'Saved' : 'Updated'} ${_ago(last)}';
     return Padding(
       padding: const EdgeInsets.only(top: 16, bottom: 12),
       child: Row(
@@ -482,7 +480,7 @@ class _DayHead extends ConsumerWidget {
               },
             ),
             Container(width: 1, height: 18, margin: const EdgeInsets.symmetric(horizontal: 6), color: AppColors.border),
-            Text(when, style: AppText.body(color: AppColors.textMuted)),
+            const _RefreshClock(),
             const SizedBox(width: 4),
             VpButton(
               label: feed.isLoading ? 'Refreshing' : 'Refresh',
@@ -814,4 +812,59 @@ class _FilterPanel extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// "Updated 12 min ago · next in 5 hr 48 min", redrawn every few seconds so
+/// it's always true. Offline it says when the list was saved; with automatic
+/// refresh off, only when it was updated.
+class _RefreshClock extends ConsumerStatefulWidget {
+  const _RefreshClock();
+
+  @override
+  ConsumerState<_RefreshClock> createState() => _RefreshClockState();
+}
+
+class _RefreshClockState extends ConsumerState<_RefreshClock> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final feed = ref.watch(feedProvider);
+    final locked = ref.watch(lockdownProvider);
+    final hours = ref.watch(settingsProvider.select((s) => s.feedRefreshHours));
+    final last = feed.lastRefreshed;
+    final now = DateTime.now();
+    final parts = [last == null ? 'Never updated' : '${locked ? 'Saved' : 'Updated'} ${_ago(last)}'];
+    if (!locked && !feed.isLoading) {
+      final next = nextFeedRefresh(lastRefreshed: last, hours: hours, now: now);
+      if (next != null) parts.add(next.difference(now).inMinutes < 1 ? 'refreshing soon' : 'next in ${_span(next.difference(now))}');
+    }
+    return Tooltip(
+      message: hours <= 0
+          ? 'Automatic refresh is off in Settings'
+          : 'Refreshes on its own every $hours hours, counted from the last refresh',
+      child: Text(parts.join(' · '), style: AppText.body(color: AppColors.textMuted)),
+    );
+  }
+}
+
+/// "5 hr 48 min", "12 min".
+String _span(Duration d) {
+  final h = d.inHours, m = d.inMinutes % 60;
+  if (h == 0) return '${d.inMinutes.clamp(1, 59)} min';
+  return m == 0 ? '$h hr' : '$h hr $m min';
 }
