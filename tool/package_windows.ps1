@@ -2,8 +2,13 @@
 #   VN-Pathfinder-<version>-windows-portable.zip   always
 #   VN-Pathfinder-<version>-windows-setup.exe      if Inno Setup 6 is installed
 #
-# Usage, from anywhere:  powershell -File tool\package_windows.ps1 [-SkipBuild]
-param([switch]$SkipBuild)
+# Usage, from anywhere:  powershell -File tool\package_windows.ps1 [-SkipBuild] [-Dev]
+#
+# -Dev makes a development build instead: portable only, named with the commit,
+# keeping its data in %APPDATA%\VN Pathfinder Dev (copied from the normal folder
+# on its first start) and never offering app updates, so it runs beside a
+# released copy without touching it.
+param([switch]$SkipBuild, [switch]$Dev)
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -11,10 +16,18 @@ Set-Location $repo
 
 $versionLine = Select-String -Path 'lib\services\app_update_service.dart' -Pattern "const appVersion = '([^']+)'"
 $version = $versionLine.Matches[0].Groups[1].Value
+if ($Dev) {
+  $commit = (git rev-parse --short HEAD).Trim()
+  $version = "$version-dev-$commit"
+}
 Write-Host "Packaging VN Pathfinder $version"
 
 if (-not $SkipBuild) {
-  flutter build windows --release
+  if ($Dev) {
+    flutter build windows --release --dart-define=VNPF_DEV=true
+  } else {
+    flutter build windows --release
+  }
   if ($LASTEXITCODE -ne 0) { throw 'flutter build failed' }
 }
 
@@ -37,6 +50,11 @@ $zip = Join-Path $dist "VN-Pathfinder-$version-windows-portable.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path "$app\*" -DestinationPath $zip
 Write-Host "Portable: $zip ($([math]::Round((Get-Item $zip).Length / 1MB)) MB)"
+
+if ($Dev) {
+  Write-Host 'Development build: no installer.'
+  return
+}
 
 $iscc = @(
   "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",

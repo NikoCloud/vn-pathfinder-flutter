@@ -83,7 +83,7 @@ This is a release product, not a research repo. Write for the people using it.
 - Agent handoff notes never go in the repo or its docs.
 
 ## Packaging
-`tool/package_windows.ps1` builds the app and writes a portable ZIP to `dist/` (gitignored), plus an installer if Inno Setup 6 is installed (`winget install JRSoftware.InnoSetup`). `-SkipBuild` packages the existing build, so it works while the app is open. The version comes from `appVersion` in `lib/services/app_update_service.dart`.
+`tool/package_windows.ps1` builds the app and writes a portable ZIP to `dist/` (gitignored), plus an installer if Inno Setup 6 is installed (`winget install JRSoftware.InnoSetup`). `-SkipBuild` packages the existing build, so it works while the app is open. The version comes from `appVersion` in `lib/services/app_update_service.dart`. `-Dev` makes a portable development build (`--dart-define=VNPF_DEV=true`) that keeps its data in `%APPDATA%\VN Pathfinder Dev` and never offers app updates, so it can run beside a released copy.
 
 ## Mockup
 Located in `mockup/` folder. This is the design reference — implement Flutter to match it.

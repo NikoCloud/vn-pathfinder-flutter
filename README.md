@@ -77,6 +77,8 @@ Every game has one page, whether you own it or found it on the Feed.
 - A version path from what you have to the latest, with what changed in each version when the thread lists it
 - Screenshots, tags and notes
 - Your status, play time and sessions, plus patches and properties
+- **What's in it** for Ren'Py games: renders, animations, words, audio and size per version, counted from the game's own files when you open its page. With two or more versions counted, a chart of how the game grew and what each update added or removed
+- **What changed** between two recorded versions: pictures removed, changed or added, and lines removed or rewritten, scene by scene, plus everything earlier versions had that the newest doesn't, with the last version that still had it. Before an update removes the old version, it's recorded and thumbnails of what the new one dropped are kept
 
 ### Game status
 
@@ -154,7 +156,8 @@ Games are matched by forum thread, using the link saved by Fetch Metadata. Games
 ### Getting games
 
 - Download or Update from a card or a game's page
-- Pick the site, platform and file host, and the site's own page opens in the app, exactly as it is on the site, with any check, wait or ad. You finish it there
+- Pick the site, platform and file host, and the site's own page opens in the app, exactly as it is on the site, with any check, wait or ad. You finish it there. If an ad tries to send the page to another site, it's brought back to the host, and you can still go there if you meant to
+- Mega downloads are caught too: the file shows in the dock and unpacks like any other
 - The file lands in your first library folder, then Pathfinder extracts it, adds it to your library and shows it as ready to play. ZIP, RAR and 7z archives are extracted for you; anything else stays in the folder for you to handle
 - The game arrives already fetched: its cover, screenshots, description, tags and thread link come with it, and update alerts work from the start
 - For an update, keep the old version, remove it, or remove it and keep its download. Saves only the old version has move to the new one first. A kept download waits in a hidden folder, and the game page's **Kept downloads** restores it
@@ -194,7 +197,7 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 
 - **Offline by default.** Nothing goes online until you turn off Lockdown Mode.
 - **No accounts, telemetry or analytics.**
-- **Your data stays on your PC.** App data is in `%APPDATA%\VN Pathfinder\`, and each game's metadata and images are in a `.vnpf` folder inside the game. All fonts ship with the app, so nothing is fetched just to draw text.
+- **Your data stays on your PC.** App data is in `%APPDATA%\VN Pathfinder\`, including the version records and thumbnails behind What changed, and each game's metadata and images are in a `.vnpf` folder inside the game. All fonts ship with the app, so nothing is fetched just to draw text.
 - **The app only contacts the services you use.** Fetch Metadata, the Feed and game pages contact the sites you've chosen. Update checks send F95Zone the forum thread IDs of your games, plus title searches for games without a saved link and, a few at a time, to refresh ratings. To stop that, turn off Game Update Checks. Update Checks asks GitHub for the list of VN Pathfinder releases when the app starts. To stop that, turn off Update Checks. Updates are only downloaded when you choose Update now.
 - **Stored without encryption.** Forum sessions are kept on your PC as plain files.
 
@@ -204,6 +207,7 @@ Update alerts and ratings start on their own once Lockdown Mode is off.
 - LewdCorner no longer serves the full-size files of many older attachments. When that happens, Pathfinder uses another source for the same game if it can confirm a match, and otherwise saves small thumbnails and tells you.
 - Update checks ask F95Zone directly. LewdCorner and Azkosel's Corner updates only show up through the Feed.
 - With a library on a network share, a server that saves new files without permission to run them stops games from launching, and Windows says access is denied. The fix is on the server: let new files be executable.
+- What changed can only compare versions recorded while they were installed, so versions removed before this release can't be compared.
 - With the MEGA desktop app installed, MEGA links download through that app, so Pathfinder can't follow them. Save the file to your library folder and it shows up in Archive, with its art if you already have the game. A game you don't have yet arrives as a plain row, without its cover or screenshots.
 - On LewdCorner and Azkosel's Corner, a fix released under the same version number doesn't come back up the Feed.
 - The first time the Feed sees a LewdCorner thread it has no history for it, so a small edit can pass as that release's date once.
