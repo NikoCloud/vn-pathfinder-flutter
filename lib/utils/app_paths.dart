@@ -11,9 +11,13 @@ const isDevBuild = bool.fromEnvironment('VNPF_DEV');
 /// `%APPDATA%\VN Pathfinder Dev` for a development build. Ren'Py's folder and
 /// the game folders themselves are shared either way.
 String appDataPath([String? child, String? child2]) {
-  final root = p.join(Platform.environment['APPDATA'] ?? '', isDevBuild ? 'VN Pathfinder Dev' : 'VN Pathfinder');
+  final root = appDataRootForTesting ??
+      p.join(Platform.environment['APPDATA'] ?? '', isDevBuild ? 'VN Pathfinder Dev' : 'VN Pathfinder');
   return p.join(root, child ?? '', child2 ?? '');
 }
+
+/// Tests point this at a temp folder so they never touch the real data.
+String? appDataRootForTesting;
 
 /// First start of a development build: copy the normal copy's settings and
 /// library data across, so it opens on the same library. Images and logs are

@@ -1336,7 +1336,11 @@ String versionSignature(Directory gameFolder) {
 /// from its loose files and its .rpa archives. Translations (`tl/`) don't
 /// count. Words come from the compiled scripts, or the sources when a script
 /// has no compiled copy. Null when the folder isn't a Ren'Py game.
-VersionStats? countRenpyVersion(Directory gameFolder) {
+///
+/// With [recordPath], also writes the version's record there: every picture
+/// and video with its size, and every line of dialogue and menu choice by
+/// scene, so versions can be compared later (see version_records.dart).
+VersionStats? countRenpyVersion(Directory gameFolder, {String? recordPath, String version = ''}) {
   final game = Directory(p.join(gameFolder.path, 'game'));
   if (!game.existsSync()) return null;
   final signature = versionSignature(gameFolder);
@@ -1361,9 +1365,11 @@ VersionStats? countRenpyVersion(Directory gameFolder) {
     }
   } catch (_) {}
   final files = _Files(game, archives);
+  final keep = recordPath != null;
 
   var renders = 0, animations = 0, audio = 0, music = 0;
   final scripts = <String, String>{};
+  final media = <String, int>{};
   for (final key in files.paths) {
     final ext = p.extension(key);
     final folder = p.dirname(key);
@@ -1372,10 +1378,12 @@ VersionStats? countRenpyVersion(Directory gameFolder) {
       if (ext == '.rpyc' || !scripts.containsKey(stem)) scripts[stem] = key;
     } else if (_videoExts.contains(ext)) {
       if (!_uiFolder.hasMatch(folder)) animations++;
+      if (keep) media[key] = files.sizeOf(key) ?? 0;
     } else if (_audioExts.contains(ext)) {
       audio++;
       if (_musicFolder.hasMatch(folder)) music++;
     } else if (_imageExts.contains(ext)) {
+      if (keep) media[key] = files.sizeOf(key) ?? 0;
       // Judged by where it is and what it's called, not by opening it: a
       // big game has thousands of pictures, and reading each one's size
       // takes minutes on a hard drive.
@@ -1385,11 +1393,19 @@ VersionStats? countRenpyVersion(Directory gameFolder) {
   }
 
   int? words;
-  for (final key in scripts.values) {
+  final lines = <List<String>>[];
+  // Scripts in a steady order, so a record's lines come out the same each time.
+  for (final key in scripts.values.toList()..sort()) {
     final bytes = files.read(key);
     if (bytes == null) continue;
-    final n = key.endsWith('.rpy') ? _sourceWords(_decodeText(bytes)) : _compiledWords(bytes);
-    if (n != null) words = (words ?? 0) + n;
+    final said = key.endsWith('.rpy') ? _sourceLines(_decodeText(bytes)) : _compiledLines(bytes);
+    if (said == null) continue;
+    var n = 0;
+    for (final l in said) {
+      if (l[1] != menuChoice) n += _wordsIn(l[2]);
+    }
+    words = (words ?? 0) + n;
+    if (keep) lines.addAll(said);
   }
 
   var folderBytes = 0;
@@ -1398,6 +1414,20 @@ VersionStats? countRenpyVersion(Directory gameFolder) {
       if (e is File) folderBytes += e.lengthSync();
     }
   } catch (_) {}
+
+  if (recordPath != null) {
+    try {
+      final f = File(recordPath);
+      f.parent.createSync(recursive: true);
+      f.writeAsBytesSync(gzip.encode(utf8.encode(jsonEncode({
+        'version': version,
+        'signature': signature,
+        if (builtAt != null) 'built_at': builtAt.toIso8601String(),
+        'media': media,
+        'lines': lines,
+      }))));
+    } catch (_) {} // the counts still stand without a record
+  }
 
   return VersionStats(
     renders: renders,
@@ -1420,8 +1450,14 @@ int _wordsIn(String text) {
   return RegExp(r"[\p{L}\p{N}][\p{L}\p{N}'’-]*", unicode: true).allMatches(plain).length;
 }
 
-/// Words said in a compiled script: every `say` statement's text.
-int? _compiledWords(Uint8List bytes) {
+/// In a record's line, the speaker given to a menu choice. No character can
+/// be called this: names are identifiers.
+const menuChoice = '?menu';
+
+/// The lines said in a compiled script, in order, each as [scene, speaker,
+/// text]: every `say` statement, and every menu choice with [menuChoice] as
+/// its speaker. The scene is the label the line sits under.
+List<List<String>>? _compiledLines(Uint8List bytes) {
   final raw = _rpycData(bytes);
   if (raw == null) return null;
   Object? tree;
@@ -1430,33 +1466,52 @@ int? _compiledWords(Uint8List bytes) {
   } catch (_) {
     return null;
   }
-  var total = 0;
+  final out = <List<String>>[];
   final seen = HashSet<Object>.identity();
-  final stack = <Object?>[tree];
+  // Pushed in reverse so they come off in script order; a statement's `next`
+  // goes in first, so what's inside a statement comes before what follows it.
+  final stack = <(Object?, String)>[(tree, '')];
+  void pushAll(Iterable<Object?> items, String label) {
+    for (final o in items.toList().reversed) {
+      stack.add((o, label));
+    }
+  }
+
   var steps = 0;
   while (stack.isNotEmpty && steps++ < 5000000) {
-    final o = stack.removeLast();
+    final (o, label) = stack.removeLast();
     if (o == null || o is String || o is num || o is bool || o is Uint8List) continue;
     if (!seen.add(o)) continue;
     if (o is List) {
-      stack.addAll(o);
+      pushAll(o, label);
     } else if (o is Map) {
-      stack.addAll(o.values);
+      pushAll(o.values, label);
     } else if (o is PickledObject) {
-      if (o.cls == 'renpy.ast.Say') {
-        final what = _str(o.attrs['what']);
-        if (what != null) total += _wordsIn(what);
-        continue; // nothing else is said inside a say
+      final a = o.attrs;
+      var here = label;
+      switch (o.cls) {
+        case 'renpy.ast.Say':
+          final what = _str(a['what']);
+          if (what != null) out.add([label, _str(a['who']) ?? '', what]);
+          stack.add((a['next'], label));
+          continue;
+        case 'renpy.ast.Label':
+          here = _str(a['name']) ?? label;
+        case 'renpy.ast.Menu':
+          for (final item in _listOfAny(a['items'])) {
+            final parts = _listOfAny(item);
+            final caption = parts.isEmpty ? null : _str(parts.first);
+            if (caption != null && caption.isNotEmpty) out.add([label, menuChoice, caption]);
+          }
       }
-      stack
-        ..addAll(o.args)
-        ..add(o.state)
-        ..addAll(o.items)
-        ..addAll(o.entries.values);
+      stack.add((a['next'], here));
+      pushAll([...o.args, for (final e in a.entries) if (e.key != 'next') e.value, ...o.items, ...o.entries.values], here);
     }
   }
-  return total;
+  return out;
 }
+
+List<Object?> _listOfAny(Object? o) => o is List ? o : o is PickledObject ? [...o.args, ...o.items] : const [];
 
 /// Statements that start with a word and a string but aren't dialogue.
 const _notSay = {
@@ -1470,12 +1525,14 @@ const _notSay = {
 
 final _sayLine = RegExp(r'^([A-Za-z_][\w.]*(?:\s+[\w-]+)*\s+)?"((?:[^"\\]|\\.)*)"(.*)$');
 final _blockStart = RegExp(r'^(init\b.*\bpython|python|screen|style|transform)\b.*:$');
+final _labelLine = RegExp(r'^label\s+([\w.]+)');
 
-/// Words said in a script's source: lines of the form `e "Hello."` or
-/// `"Narration."`. Menu choices (ending in `:`), python blocks and screen
+/// The same from a script's source: lines of the form `e "Hello."` or
+/// `"Narration."`, and menu choices (`"Go left":`). Python blocks and screen
 /// code are left out.
-int _sourceWords(String text) {
-  var total = 0;
+List<List<String>> _sourceLines(String text) {
+  final out = <List<String>>[];
+  var label = '';
   int? skipDeeperThan;
   for (final rawLine in text.split(RegExp(r'\r?\n'))) {
     final line = rawLine.trimRight();
@@ -1490,12 +1547,59 @@ int _sourceWords(String text) {
       skipDeeperThan = depth;
       continue;
     }
+    if (_labelLine.firstMatch(s) case final m?) {
+      label = m[1]!;
+      continue;
+    }
     final m = _sayLine.firstMatch(s);
     if (m == null) continue;
-    if (m[3]!.trim().endsWith(':')) continue; // a menu choice
     final who = m[1]?.trim();
+    final said = _unescape(m[2]!);
+    if (m[3]!.trim().endsWith(':')) {
+      if (who == null) out.add([label, menuChoice, said]);
+      continue;
+    }
     if (who != null && _notSay.contains(who.split(RegExp(r'\s+')).first)) continue;
-    total += _wordsIn(_unescape(m[2]!));
+    out.add([label, who ?? '', said]);
   }
-  return total;
+  return out;
+}
+
+/// The game's files, loose and in its archives, for reading by name.
+_Files? _openGame(Directory gameFolder) {
+  final game = Directory(p.join(gameFolder.path, 'game'));
+  if (!game.existsSync()) return null;
+  final archives = <RpaArchive>[];
+  try {
+    for (final f in game.listSync().whereType<File>()) {
+      if (!f.path.toLowerCase().endsWith('.rpa')) continue;
+      final a = RpaArchive.open(f);
+      if (a != null) archives.add(a);
+    }
+  } catch (_) {}
+  return _Files(game, archives);
+}
+
+/// Every picture and video in a version with its size, as a record keeps
+/// them, without reading any of them.
+Map<String, int> mediaOf(Directory gameFolder) {
+  final files = _openGame(gameFolder);
+  if (files == null) return const {};
+  return {
+    for (final key in files.paths)
+      if (_imageExts.contains(p.extension(key)) || _videoExts.contains(p.extension(key))) key: files.sizeOf(key) ?? 0,
+  };
+}
+
+/// Reads [keys] (names as a record has them) out of a version folder,
+/// whether loose or in an archive. Missing ones are left out.
+Map<String, Uint8List> readGameFiles(Directory gameFolder, List<String> keys) {
+  final files = _openGame(gameFolder);
+  if (files == null) return const {};
+  final out = <String, Uint8List>{};
+  for (final k in keys) {
+    final bytes = files.read(k);
+    if (bytes != null) out[k] = bytes;
+  }
+  return out;
 }

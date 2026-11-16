@@ -12,6 +12,7 @@ import 'feed_images_provider.dart';
 import 'library_provider.dart';
 import 'settings_provider.dart';
 import '../services/old_versions.dart';
+import '../services/update_record.dart';
 import '../services/extraction_log.dart';
 import '../services/safe_remove.dart';
 import 'notification_provider.dart';
@@ -323,7 +324,7 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
   /// the user ticked that on the Get sheet.
   /// Saves only the old folder has move into the new version first, and its
   /// archive goes to the old-versions folder when the user chose to keep it.
-  void _removeReplaced(DownloadJob job) {
+  Future<void> _removeReplaced(DownloadJob job) async {
     final folder = job.replaceFolder;
     if (folder == null) return;
     final notes = _ref.read(notificationProvider.notifier);
@@ -334,6 +335,18 @@ class DownloadsNotifier extends StateNotifier<List<DownloadJob>> {
     if (newFolder == null || !Directory(newFolder).existsSync() || sameFolder(newFolder, folder)) {
       notes.info('Kept $name: the new version is in that folder');
       return;
+    }
+    // What the old version held, and thumbnails of what the new one dropped
+    // or changed, while the old folder is still there to read (#44).
+    final key = job.baseKey;
+    if (key != null && job.keepVersion.isNotEmpty) {
+      await recordBeforeRemoval(
+        ud: _ref.read(userDataProvider.notifier),
+        baseKey: key,
+        oldVersion: job.keepVersion,
+        oldFolder: folder,
+        newFolder: newFolder,
+      );
     }
     try {
       checkNotInUse(folder);

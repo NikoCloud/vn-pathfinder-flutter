@@ -10,6 +10,8 @@ import '../../theme.dart';
 import '../../utils/formatters.dart';
 import '../common/kit.dart';
 import 'version_stats_chart.dart';
+import 'version_diff_view.dart';
+import '../../services/version_records.dart' show hasRecord;
 
 /// Whether [g] has anything this section can show: a Ren'Py version
 /// installed, or counts kept from one.
@@ -127,6 +129,32 @@ class _VersionStatsViewState extends ConsumerState<VersionStatsView> {
             style: AppText.ui(fontSize: 12.5, color: AppColors.textMuted),
           ),
         ],
+        // What changed: needs two versions recorded with their pictures and lines.
+        Builder(builder: (context) {
+          final recorded = [for (final (v, _) in history) if (hasRecord(g.baseKey, v)) v];
+          if (recorded.length < 2) {
+            if (history.length < 2) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Text(
+                'To show what changed between versions, both need to be recorded while installed. '
+                'From now on that happens when a version is counted, and before an update removes the old one.',
+                style: AppText.ui(fontSize: 12.5, color: AppColors.textMuted),
+              ),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.only(top: 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('What changed', style: AppText.ui(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                const SizedBox(height: 10),
+                VersionDiffView(group: g, versions: recorded),
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
